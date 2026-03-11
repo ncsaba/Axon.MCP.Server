@@ -4,7 +4,7 @@
 
 **Required:**
 - Python 3.11 or higher
-- PostgreSQL 15+ with pgvector extension
+- PostgreSQL 17+ with pgvector extension
 - Redis 7+
 - Git 2.30+
 

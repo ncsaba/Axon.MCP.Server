@@ -65,7 +65,3 @@ Thumbs.db
 docker/prometheus.yml
 docker/alerts.yml
 docker/grafana/
-
-# Roslyn build artifacts (rebuilt in Docker)
-roslyn_analyzer/bin/
-roslyn_analyzer/obj/

@@ -104,7 +104,7 @@ const TOOLS: ToolDefinition[] = [
     icon: "📦",
     fields: [
       { name: "repository_id", label: "Repository ID", type: "number", required: true },
-      { name: "dependency_type", label: "Type", type: "text", placeholder: "npm, nuget, pip" },
+      { name: "dependency_type", label: "Type", type: "text", placeholder: "npm, pip" },
       { name: "limit", label: "Limit", type: "number", defaultValue: 50 },
     ],
   },

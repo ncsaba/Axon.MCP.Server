@@ -66,7 +66,7 @@ graph TD
 
 ### 5. Data Stores
 - **PostgreSQL (`postgres`)**:
-    - Image: `pgvector/pgvector:pg15` (Supports vector similarity search).
+    - Image: `pgvector/pgvector:pg17` (Supports vector similarity search).
     - Volume: `postgres_data` (Persistent storage).
 - **Redis (`redis`)**:
     - Image: `redis:7-alpine`.

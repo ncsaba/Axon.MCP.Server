@@ -13,7 +13,7 @@ export const EfEntitiesTable: React.FC<EfEntitiesTableProps> = ({ entities, load
     }
 
     if (entities.length === 0) {
-        return <div className={styles.empty}>No EF Core entities detected.</div>;
+        return <div className={styles.empty}>No ORM entities detected.</div>;
     }
 
     return (

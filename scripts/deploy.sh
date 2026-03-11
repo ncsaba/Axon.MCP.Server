@@ -55,15 +55,6 @@ else
     exit 1
 fi
 
-# Check if Roslyn analyzer is available
-echo "🔍 Checking Roslyn analyzer..."
-if docker exec axon-api test -f /app/roslyn_analyzer/bin/Release/net9.0/RoslynAnalyzer.exe; then
-    echo "✅ Roslyn analyzer is available (Hybrid mode enabled)"
-else
-    echo "⚠️  Roslyn analyzer not found (Tree-sitter only mode)"
-    echo "   This is not critical - system will work with Tree-sitter only"
-fi
-
 echo ""
 echo "🎉 Deployment successful!"
 echo ""

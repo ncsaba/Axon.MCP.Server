@@ -48,7 +48,7 @@ async def main():
                     print(f"    - {d.package_name} ({d.dependency_type})")
 
             # 4. Check Symbol Table
-            print(f"\n  Checking 'symbols' table for Repo {repo.id} (nuget/npm)...")
+            print(f"\n  Checking 'symbols' table for Repo {repo.id} (package managers)...")
             # Try to replicate the query in list_dependencies
             # Note: casting JSON to String might be DB specific (SQLite vs Postgres)
             # We'll just fetch all symbols and filter in python to be sure
@@ -61,10 +61,10 @@ async def main():
             for s in symbols:
                 if s.structured_docs and isinstance(s.structured_docs, dict):
                     dtype = s.structured_docs.get('type')
-                    if dtype in ['nuget_package', 'npm_package']:
+                    if dtype in ['package', 'npm_package']:
                         pkg_symbols.append(s)
             
-            print(f"  Found {len(pkg_symbols)} symbols with type nuget_package/npm_package.")
+            print(f"  Found {len(pkg_symbols)} symbols with type package manager symbols.")
             for s in pkg_symbols[:5]:
                 print(f"    - {s.name} ({s.structured_docs.get('type')})")
 

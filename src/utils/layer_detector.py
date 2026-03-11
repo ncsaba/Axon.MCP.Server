@@ -116,7 +116,7 @@ class LayerDetector:
         if any(pattern in file_path for pattern in ['controllers/', 'controller/', '/controllers', '/controller']):
             return True
         
-        # Attribute-based detection (C# [ApiController], [Controller])
+        # Attribute-based detection for controller markers
         if symbol.structured_docs:
             attrs = symbol.structured_docs.get('attributes', [])
             if any('Controller' in str(attr) for attr in attrs):

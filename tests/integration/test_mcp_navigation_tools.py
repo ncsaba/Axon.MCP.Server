@@ -65,7 +65,7 @@ class TestAPIEndpointExtraction:
     """Test API endpoint extraction."""
     
     async def test_extract_endpoints_from_controller(self):
-        """Test extracting endpoints from ASP.NET controller."""
+        """Test extracting endpoints from controller patterns."""
         # Test would verify:
         # 1. Controller detection by name and attributes
         # 2. Class-level route extraction
@@ -128,4 +128,3 @@ class TestCallHierarchyTools:
         # A calls B calls C calls A
         # Should detect and handle gracefully
         pass
-

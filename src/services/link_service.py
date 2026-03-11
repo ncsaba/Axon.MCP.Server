@@ -554,7 +554,7 @@ class LinkService:
                 or_(
                     # Explicit endpoint symbols
                     Symbol.kind == SymbolKindEnum.ENDPOINT,
-                    # C# Controller methods
+                    # Controller methods
                     and_(
                         Symbol.kind == SymbolKindEnum.METHOD,
                         Symbol.fully_qualified_name.ilike('%Controller.%')
@@ -668,7 +668,7 @@ class LinkService:
             if 'express_route' in symbol.structured_docs:
                 return symbol.structured_docs.get('express_route')
             
-            # C# Route attributes in structured docs
+            # Route attributes in structured docs
             if 'route' in symbol.structured_docs:
                 return symbol.structured_docs.get('route')
             

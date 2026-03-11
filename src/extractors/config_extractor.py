@@ -222,7 +222,7 @@ class ConfigExtractor:
         Also removes trailing commas before closing brackets/braces.
         
         This allows parsing of JSONC (JSON with Comments) used in VS Code and many
-        .NET configuration files.
+        application configuration files.
         """
         
         # Remove single-line comments (// ...)

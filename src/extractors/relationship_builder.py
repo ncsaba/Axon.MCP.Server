@@ -284,7 +284,7 @@ class RelationshipBuilder:
         """Extract base class names from signature."""
         base_classes = []
         
-        # C# style: class Derived : Base
+        # Language style: class Derived : Base
         if ':' in signature:
             parts = signature.split(':')
             if len(parts) > 1:

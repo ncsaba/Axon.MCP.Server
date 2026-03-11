@@ -187,7 +187,7 @@ class Symbol(Base):
     signature = Column(Text)
     documentation = Column(Text)
     structured_docs = Column(JSON)  # XML/JSDoc structured documentation
-    attributes = Column(JSON)  # C# attributes, TypeScript decorators
+    attributes = Column(JSON)  # Language attributes/decorators
     parameters = Column(JSON)
     return_type = Column(String(1000))
     

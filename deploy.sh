@@ -99,16 +99,6 @@ docker compose --env-file .env -f docker/docker-compose.yml up -d
 echo -e "${GREEN}✓ Services deployed${NC}"
 echo ""
 
-# Verify Roslyn analyzer
-echo -e "${BLUE}Verifying Roslyn analyzer...${NC}"
-sleep 5  # Wait for containers to start
-if docker exec axon-api test -f /app/roslyn_analyzer/bin/Release/net9.0/RoslynAnalyzer.dll 2>/dev/null; then
-    echo -e "${GREEN}✓ Roslyn analyzer available (Hybrid mode)${NC}"
-else
-    echo -e "${YELLOW}⚠ Roslyn analyzer not found (Tree-sitter only mode)${NC}"
-fi
-echo ""
-
 # Show status
 echo "=========================================="
 echo -e "${GREEN}Deployment Complete!${NC}"

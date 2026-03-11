@@ -357,7 +357,7 @@ async def trace_request_flow(
                 max_tokens=20000,  # Increased token budget
                 include_source_code=False,  # Only signatures for performance
                 include_signatures=True,
-                resolve_interfaces=True,  # Enable .NET DI tracing
+                resolve_interfaces=True,  # Enable interface-implementation tracing
                 detect_cqrs_handlers=True,  # Enable CQRS detection
             )
             

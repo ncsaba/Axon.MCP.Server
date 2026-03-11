@@ -13,7 +13,6 @@ pnpm-debug.log*
 *.suo
 *.ntvs*
 *.njsproj
-*.sln
 *.sw?
 coverage
 .vscode
@@ -22,4 +21,3 @@ coverage
 !README.md
 test
 vitest.config.ts
-

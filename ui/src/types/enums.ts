@@ -26,7 +26,6 @@ export enum JobStatusEnum {
 }
 
 export enum LanguageEnum {
-  csharp = "CSHARP",
   javascript = "JAVASCRIPT",
   typescript = "TYPESCRIPT",
   vue = "VUE",

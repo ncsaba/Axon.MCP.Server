@@ -38,7 +38,7 @@
 
 - [ ] `AX-028` | `P2` | owner=`cron` | summary=`Reduce remaining project-controlled UTC/deprecation warning sources.` | next_step=`Continue sweeping project modules for residual datetime.utcnow() usage; auth token path now migrated to timezone-aware UTC.`
 
-- [ ] `AX-038` | `P2` | owner=`main+cron` | summary=`Refactor oversized hotspots into smaller composable modules (parser/extractor/service layers).` | next_step=`Start with highest-maintenance modules (csharp_parser, javascript_parser, link_service, knowledge_extractor) and split by concern with regression safety nets.`
+- [ ] `AX-038` | `P2` | owner=`main+cron` | summary=`Refactor oversized hotspots into smaller composable modules (parser/extractor/service layers).` | next_step=`Start with highest-maintenance modules (javascript_parser, link_service, knowledge_extractor) and split by concern with regression safety nets.`
 
 - [ ] `AX-039` | `P2` | owner=`main+cron` | summary=`Close tracked functional TODOs in critical analysis paths.` | next_step=`Implement TODOs for call-graph signature matching, sync progress Redis persistence, and chunk-context import persistence.`
 

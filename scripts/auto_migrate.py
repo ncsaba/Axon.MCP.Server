@@ -2527,10 +2527,10 @@ async def migrate_services_table() -> bool:
 
 async def migrate_ef_entities_table() -> bool:
     """
-    Migrate database to add ef_entities table for Entity Framework Core entity mappings.
+    Migrate database to add ef_entities table for ORM entity mappings.
     
     Adds:
-    - ef_entities table to store EF Core entity schema information
+    - ef_entities table to store ORM entity schema information
     - Indexes for efficient querying
     - Unique constraint for repository_id + entity_name
     
@@ -2813,7 +2813,7 @@ async def run_all_migrations() -> bool:
             ("add_lambda_support", migrate_lambda_support),
             ("add_docker_services", migrate_docker_services),  # Phase 4: Docker Compose support
             ("add_services_table", migrate_services_table),  # Phase 1: Service Detection
-            ("add_ef_entities_table", migrate_ef_entities_table),  # EF Core entity mappings
+            ("add_ef_entities_table", migrate_ef_entities_table),  # ORM entity mappings
             ("add_ai_enrichment", migrate_ai_enrichment),  # Axon v3.2: AI Enrichment
             ("add_repository_manifesto", migrate_repository_manifesto),  # Axon v3.4: Repository Aggregation
             ("add_complexity_index", migrate_complexity_index),  # Critical for aggregation performance

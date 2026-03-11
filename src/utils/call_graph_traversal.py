@@ -63,7 +63,7 @@ class TraversalConfig:
     include_confidence: bool = False  # Calculate and include confidence scores
     # Optional: External dependencies
     include_external_deps: bool = False  # Include symbols from external packages
-    # Optional: .NET DI Interface Resolution
+    # Optional: interface resolution
     resolve_interfaces: bool = True  # Automatically resolve interface calls to implementations
     # Optional: CQRS/MediatR Pattern Detection
     detect_cqrs_handlers: bool = True  # Detect and follow MediatR-style command/query handlers
@@ -289,7 +289,7 @@ class CallGraphTraverser:
                 for related_id, rel_type in next_relations:
                     queue.append((related_id, current_depth + 1, rel_type))
                 
-                # NEW: Interface Resolution for .NET DI Tracing
+                # Interface resolution for dependency-injected flows
                 if config.resolve_interfaces:
                     # Get the actual symbol object to check if it's an interface
                     symbol_result = await self.session.execute(
@@ -503,13 +503,13 @@ class CallGraphTraverser:
             True if external, False otherwise
         """
         external_indicators = [
-            '.dll',  # .NET assemblies
+            '.dll',  # compiled assemblies
             'node_modules/',  # npm packages
             'site-packages/',  # Python packages
-            'System.',  # .NET framework
+            'System.',  # common framework namespace
             'Microsoft.',  # Microsoft libraries
-            'Newtonsoft.',  # Common .NET library
-            'EntityFramework',  # EF
+            'Newtonsoft.',  # common library namespace
+            'EntityFramework',  # common ORM namespace
         ]
         
         file_path_lower = file_path.lower()
@@ -560,7 +560,7 @@ class CallGraphTraverser:
         """
         Resolve an interface or abstract class to its concrete implementations.
         
-        This is critical for .NET DI tracing where controllers depend on interfaces
+        Useful where controllers depend on interfaces
         (e.g., IUserService) but we need to trace into the actual implementation
         (e.g., UserService).
         

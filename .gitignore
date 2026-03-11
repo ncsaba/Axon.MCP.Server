@@ -70,13 +70,12 @@ ui/coverage/
 site/
 .mkdocs_cache/
 
-# .NET
+# Build artifacts
 obj/
 bin/
 *.user
 *.suo
 *.cache
-**/obj/Debug/**/RoslynAnalyzer.assets.cache
 
 # OS
 .DS_Store

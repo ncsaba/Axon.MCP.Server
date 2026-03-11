@@ -23,7 +23,7 @@ async def test_pgvector_extension_available(async_session):
 
 @pytest.mark.asyncio
 async def test_parser_factory_routes_python_and_java():
-    """Verify parser routing uses the post-C# language surface."""
+    """Verify parser routing uses the current language surface."""
     python_parser = ParserFactory.get_parser_for_file(Path("service.py"))
     java_parser = ParserFactory.get_parser_for_file(Path("App.java"))
     appsettings_parser = ParserFactory.get_parser_for_file(Path("appsettings.Development.json"))

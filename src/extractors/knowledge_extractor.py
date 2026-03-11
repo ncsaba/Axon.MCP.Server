@@ -644,7 +644,7 @@ class KnowledgeExtractor:
         parse_result: ParseResult,
         file_id: int
     ) -> int:
-        # C# project reference indexing has been removed in this fork.
+        # Project reference indexing is currently disabled in this fork.
         return 0
 
     async def _create_solutions_and_projects(
@@ -652,7 +652,7 @@ class KnowledgeExtractor:
         parse_result: ParseResult,
         file_id: int
     ) -> Tuple[int, int]:
-        # C# solution/project indexing has been removed in this fork.
+        # Solution/project indexing is currently disabled in this fork.
         return 0, 0
 
     async def _merge_partial_classes(self, file_id: int, created_symbols: List[Symbol]):

@@ -219,10 +219,10 @@ class ServiceDocGenerator:
         if "Message Bus" in description or "MassTransit" in description:
             patterns.append("Event-Driven Architecture")
         
-        # Use regex to avoid CodeQL false positive (lists ASP.NET as a potential URL domain)
-        # Matches "ASP.NET" or "Web SDK" as whole words/phrases
-        if "Web SDK" in description or re.search(r'\bASP\.NET\b', description, re.IGNORECASE):
-            patterns.append("ASP.NET Core Web API")
+        # Use regex to avoid false positives while identifying web frameworks
+        # Matches common web framework hints as whole words/phrases
+        if "Web SDK" in description or re.search(r'\bFastAPI\b|\bDjango\b|\bFlask\b|\bSpring\b', description, re.IGNORECASE):
+            patterns.append("Web API Framework")
         
         return patterns
 
