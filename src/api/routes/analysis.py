@@ -5,13 +5,13 @@ from sqlalchemy.orm import selectinload
 
 from src.api.dependencies import get_db_session
 from src.database.models import (
-    Repository, Service, EfEntity, OutgoingApiCall, 
+    Repository, Service, OutgoingApiCall, 
     PublishedEvent, EventSubscription, ApiEndpointLink, 
     EventLink, ConfigurationEntry, File
 )
 from src.database.session import AsyncSession
 from src.api.schemas.analysis import (
-    ServiceAnalysis, EfEntityAnalysis, IntegrationSummary,
+    ServiceAnalysis, IntegrationSummary,
     ConfigFinding, QualityAnalysis, QualityMetric
 )
 from src.api.auth import get_current_user
@@ -44,34 +44,6 @@ async def get_repository_services(
             documentation_path=s.documentation_path,
             created_at=s.created_at
         ) for s in services
-    ]
-
-@router.get("/repositories/{repository_id}/analysis/ef-entities", response_model=List[EfEntityAnalysis])
-async def get_repository_ef_entities(
-    repository_id: int,
-    db: AsyncSession = Depends(get_db_session)
-):
-    """Get EF Core entities for a repository."""
-    repo = await db.get(Repository, repository_id)
-    if not repo:
-        raise HTTPException(status_code=404, detail="Repository not found")
-        
-    result = await db.execute(
-        select(EfEntity).where(EfEntity.repository_id == repository_id).order_by(EfEntity.entity_name)
-    )
-    entities = result.scalars().all()
-    
-    return [
-        EfEntityAnalysis(
-            id=e.id,
-            entity_name=e.entity_name,
-            namespace=e.namespace,
-            table_name=e.table_name,
-            schema_name=e.schema_name,
-            properties_count=len(e.properties) if e.properties else 0,
-            relationships_count=len(e.relationships) if e.relationships else 0,
-            has_primary_key=bool(e.primary_keys)
-        ) for e in entities
     ]
 
 @router.get("/repositories/{repository_id}/analysis/integrations", response_model=IntegrationSummary)

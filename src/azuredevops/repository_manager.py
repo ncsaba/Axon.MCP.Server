@@ -465,11 +465,10 @@ class AzureDevOpsRepositoryManager:
         if extensions is None:
             extensions = [
                 # Code files
-                ".py", ".js", ".ts", ".tsx", ".jsx", ".vue", ".cs", ".java", 
+                ".py", ".js", ".ts", ".tsx", ".jsx", ".vue", ".java", 
                 ".go", ".rs", ".cpp", ".c", ".h", ".hpp", ".php", ".rb", 
                 ".swift", ".kt", ".scala", ".clj", ".fs", ".vb",
                 # Dependency and config files
-                ".csproj", ".sln",  # NuGet dependencies
                 ".json", ".yaml", ".yml", ".xml", ".toml", ".ini", ".cfg",
                 # Database files
                 ".sql",
@@ -488,7 +487,7 @@ class AzureDevOpsRepositoryManager:
                 ".pytest_cache", "venv", ".venv", "env", ".env",
                 "dist", "build", "target", "bin", "obj", ".vs", 
                 ".vscode", ".idea", "coverage", ".coverage",
-                "vendor", "packages", ".nuget"
+                "vendor", "packages"
             }
             
             filtered_files = []

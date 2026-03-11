@@ -76,8 +76,6 @@ class Repository(Base):
     files = relationship("File", back_populates="repository", cascade="all, delete-orphan")
     jobs = relationship("Job", back_populates="repository", cascade="all, delete-orphan")
     module_summaries = relationship("ModuleSummary", back_populates="repository", cascade="all, delete-orphan")
-    solutions = relationship("Solution", back_populates="repository", cascade="all, delete-orphan")
-    projects = relationship("Project", back_populates="repository", cascade="all, delete-orphan")
     services = relationship("Service", back_populates="repository", cascade="all, delete-orphan")
 
     __table_args__ = (
@@ -101,7 +99,7 @@ class Service(Base):
     
     # Structural info
     root_namespace = Column(String(255))
-    project_path = Column(String(1000))  # Path to .csproj or package.json
+    project_path = Column(String(1000))  # Path to project metadata file
     entry_points = Column(JSON)  # List of detected controllers/endpoints
     framework_version = Column(String(50))  # e.g., "net8.0"
     
@@ -115,48 +113,6 @@ class Service(Base):
     # Relationships
     repository = relationship("Repository", back_populates="services")
     symbols = relationship("Symbol", back_populates="service")
-
-
-class EfEntity(Base):
-    """Entity Framework Core entity mapping (table schema, properties, relationships)."""
-    
-    __tablename__ = "ef_entities"
-    
-    id = Column(Integer, primary_key=True)
-    repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    
-    # Entity identification
-    entity_name = Column(String(500), nullable=False, index=True)  # e.g., "Order"
-    namespace = Column(String(1000))  # e.g., "Sales.Domain.Entities"
-    
-    # Database mapping
-    table_name = Column(String(500), index=True)  # Physical table name
-    schema_name = Column(String(200))  # Database schema (e.g., "dbo", "sales")
-    
-    # Keys and properties
-    primary_keys = Column(JSON)  # ["Id"] or ["Key1", "Key2"] for composite keys
-    properties = Column(JSON)  # Array of property objects with column mappings
-    
-    # Relationships (navigation properties)
-    relationships = Column(JSON)  # Array of relationship objects (HasOne, HasMany, etc.)
-    
-    # Full mapping details
-    raw_mapping = Column(JSON)  # Complete EF mapping configuration for reference
-    
-    # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-    
-    __table_args__ = (
-        Index("idx_ef_entity_repo", "repository_id"),
-        Index("idx_ef_entity_table", "table_name"),
-        Index("idx_ef_entity_name", "entity_name"),
-        # Unique constraint: one entity per name per repository
-        UniqueConstraint(
-            "repository_id", "entity_name",
-            name="uq_ef_entity_repo_name"
-        ),
-    )
 
 
 class Commit(Base):
@@ -209,66 +165,6 @@ class File(Base):
     )
 
 
-class Solution(Base):
-    """Visual Studio Solution (.sln file)."""
-    
-    __tablename__ = "solutions"
-    
-    id = Column(Integer, primary_key=True)
-    repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    file_path = Column(String(1000), nullable=False)
-    name = Column(String(255), nullable=False)
-    format_version = Column(String(50))  # e.g., "12.00"
-    visual_studio_version = Column(String(50))  # e.g., "Version 17.0"
-    visual_studio_full_version = Column(String(50))
-    minimum_visual_studio_version = Column(String(50))
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-
-    # Relationships
-    repository = relationship("Repository", back_populates="solutions")
-    projects = relationship("Project", back_populates="solution", cascade="all, delete-orphan")
-    
-    __table_args__ = (
-        Index("idx_solution_repo", "repository_id"),
-    )
-
-
-class Project(Base):
-    """Project from .sln or .csproj."""
-    
-    __tablename__ = "projects"
-    
-    id = Column(Integer, primary_key=True)
-    repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    solution_id = Column(Integer, ForeignKey("solutions.id", ondelete="SET NULL"), index=True)
-    project_guid = Column(String(36), index=True)  # Visual Studio project GUID
-    name = Column(String(255), nullable=False, index=True)
-    file_path = Column(String(1000), nullable=False)
-    project_type = Column(String(100))  # "C# Project", "Test Project", etc.
-    project_type_guid = Column(String(36))
-    assembly_name = Column(String(255))
-    target_framework = Column(String(100))
-    output_type = Column(String(50))  # "Library", "Exe", "WinExe"
-    define_constants = Column(JSON)  # ["DEBUG", "TRACE"]
-    lang_version = Column(String(20))  # "10.0", "latest"
-    nullable_context = Column(String(50))  # "enable", "disable", etc.
-    root_namespace = Column(String(255))  # Default namespace for the project
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-
-    # Relationships
-    repository = relationship("Repository", back_populates="projects")
-    solution = relationship("Solution", back_populates="projects")
-    
-    __table_args__ = (
-        Index("idx_project_repo", "repository_id"),
-        Index("idx_project_solution", "solution_id"),
-        Index("idx_project_guid", "project_guid"),
-        Index("idx_project_name", "name"),
-    )
-
-
 class Symbol(Base):
     """Code symbol (function, class, variable, etc.)."""
 
@@ -277,7 +173,6 @@ class Symbol(Base):
     id = Column(Integer, primary_key=True)
     file_id = Column(Integer, ForeignKey("files.id", ondelete="CASCADE"), nullable=False, index=True)
     commit_id = Column(Integer, ForeignKey("commits.id", ondelete="SET NULL"), index=True)
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), index=True)  # Phase 2.2
     service_id = Column(Integer, ForeignKey("services.id", ondelete="SET NULL"), index=True)  # Service Boundary
     assembly_name = Column(String(255))  # Phase 2.2
     language = Column(value_enum(LanguageEnum), nullable=False, index=True)
@@ -455,7 +350,7 @@ class ConfigurationEntry(Base):
 
 
 class Dependency(Base):
-    """Package dependency from package.json, .csproj, etc."""
+    """Package dependency from package managers (npm, pip, etc.)."""
     
     __tablename__ = "dependencies"
     
@@ -465,7 +360,7 @@ class Dependency(Base):
     package_name = Column(String(255), nullable=False, index=True)
     package_version = Column(String(100))
     version_constraint = Column(String(100))
-    dependency_type = Column(String(50), index=True)  # "nuget", "npm", "pip", "maven"
+    dependency_type = Column(String(50), index=True)  # "npm", "pip", "maven", ...
     is_dev_dependency = Column(Integer, default=0)  # Boolean stored as integer
     is_transitive = Column(Integer, default=0)  # Boolean stored as integer
     license = Column(String(100))
@@ -476,24 +371,6 @@ class Dependency(Base):
     __table_args__ = (
         Index("idx_dep_package", "package_name"),
         Index("idx_dep_repo_type", "repository_id", "dependency_type"),
-    )
-
-
-class ProjectReference(Base):
-    """Project reference from .csproj files."""
-    
-    __tablename__ = "project_references"
-    
-    id = Column(Integer, primary_key=True)
-    repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    source_project_path = Column(String(1000), nullable=False)
-    target_project_path = Column(String(1000), nullable=False)
-    reference_type = Column(String(50))  # "project", "package"
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
-    __table_args__ = (
-        Index("idx_proj_ref_repo", "repository_id"),
-        Index("idx_proj_ref_source", "source_project_path"),
     )
 
 
@@ -941,5 +818,3 @@ class ServiceRepositoryMapping(Base):
             name="uq_service_mapping_service_repo"
         ),
     )
-
-

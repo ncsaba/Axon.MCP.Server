@@ -29,7 +29,7 @@ async def search_code(
         query: Search query (function name, class name, or description)
         limit: Maximum number of results (default: 10, max: 50)
         repository_name: Filter by repository name
-        language: Filter by programming language (csharp, javascript, typescript, vue)
+        language: Filter by programming language (python, javascript, typescript, java, vue)
         symbol_kind: Filter by symbol kind (function, class, method, etc.)
 
     Returns:

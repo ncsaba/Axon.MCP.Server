@@ -23,7 +23,6 @@ class PipelineMetrics:
     event_subscriptions_count: int = 0
     dependencies_found: int = 0
     configs_found: int = 0
-    ef_entities_found: int = 0
     services_detected: int = 0
     services_documented: int = 0
     

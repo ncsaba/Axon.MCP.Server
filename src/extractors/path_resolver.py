@@ -179,7 +179,7 @@ class PathResolver:
         Resolve package import path.
         
         For internal packages, tries to find in src/ or other common locations.
-        For external packages (node_modules, nuget), returns None.
+        For external packages (e.g., node_modules), returns None.
         """
         # Check if it's an external package (contains no path separators)
         if '/' not in import_path:
@@ -203,11 +203,10 @@ class PathResolver:
         extensions_map = {
             'javascript': ['.js', '.jsx', '.mjs'],
             'typescript': ['.ts', '.tsx', '.d.ts'],
-            'csharp': ['.cs'],
+            'java': ['.java'],
             'vue': ['.vue'],
             'python': ['.py'],
             'markdown': ['.md', '.markdown']
         }
         
         return extensions_map.get(language.lower(), [''])
-

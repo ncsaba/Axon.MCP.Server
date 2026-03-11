@@ -233,11 +233,11 @@ class RepositoryManager:
         if extensions is None:
             extensions = [
                 # Code files
-                ".cs", ".js", ".ts", ".vue", ".tsx", ".jsx",
-                # Dependency files
-                ".csproj", ".sln", ".json",  # .csproj for NuGet, package.json for npm
+                ".py", ".java", ".js", ".ts", ".vue", ".tsx", ".jsx",
+                # Dependency and config files
+                ".json", ".yaml", ".yml", ".xml", ".toml", ".ini", ".cfg",
                 # Configuration files
-                ".md", ".markdown", ".sql", ".ddl"
+                ".md", ".markdown", ".sql", ".ddl", ".html"
             ]
 
         # Directories to exclude
@@ -307,7 +307,6 @@ class RepositoryManager:
             Detected language enum
         """
         extension_map = {
-            ".cs": LanguageEnum.CSHARP,
             ".js": LanguageEnum.JAVASCRIPT,
             ".jsx": LanguageEnum.JAVASCRIPT,
             ".ts": LanguageEnum.TYPESCRIPT,
@@ -320,8 +319,6 @@ class RepositoryManager:
             ".ddl": LanguageEnum.SQL,
             ".md": LanguageEnum.MARKDOWN,
             ".markdown": LanguageEnum.MARKDOWN,
-            ".csproj": LanguageEnum.CSHARP,  # .csproj files are C# project files
-            ".sln": LanguageEnum.CSHARP,     # .sln files are C# solution files
             ".json": LanguageEnum.JAVASCRIPT,  # .json files (package.json, etc.) are JavaScript ecosystem
         }
 
@@ -331,9 +328,7 @@ class RepositoryManager:
         if suffix == ".json":
             filename = file_path.name.lower()
             # Categorize based on filename
-            if filename.startswith("appsettings"):
-                return LanguageEnum.CSHARP  # appsettings.json is C# config
-            elif filename == "package.json":
+            if filename == "package.json":
                 return LanguageEnum.JAVASCRIPT  # package.json is npm/JavaScript
             # Default to JavaScript for other JSON files
             return LanguageEnum.JAVASCRIPT
@@ -406,5 +401,4 @@ class RepositoryManager:
         except Exception as e:
             logger.error("failed_to_get_head_commit", repo_path=str(repo_path), error=str(e))
             return None
-
 

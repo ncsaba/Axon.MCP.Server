@@ -22,7 +22,7 @@ class TestAppSettingsParser:
 }"""
         result = self.parser.parse(json_content, "appsettings.json")
         
-        assert result.language.value == LanguageEnum.CSHARP.value
+        assert result.language.value == LanguageEnum.JAVASCRIPT.value
         assert len(result.symbols) == 4
         
         # Check for constants (config values)
@@ -126,4 +126,3 @@ class TestAppSettingsParser:
         
         assert len(result.parse_errors) > 0
         assert "JSON parsing error" in result.parse_errors[0]
-

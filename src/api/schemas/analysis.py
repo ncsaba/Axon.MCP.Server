@@ -12,16 +12,6 @@ class ServiceAnalysis(BaseModel):
     entry_points_count: int
     documentation_path: Optional[str] = None
     created_at: datetime
-
-class EfEntityAnalysis(BaseModel):
-    id: int
-    entity_name: str
-    namespace: Optional[str] = None
-    table_name: Optional[str] = None
-    schema_name: Optional[str] = None
-    properties_count: int
-    relationships_count: int
-    has_primary_key: bool
     
 class IntegrationAnalysis(BaseModel):
     outgoing_calls_count: int

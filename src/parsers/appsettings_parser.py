@@ -11,7 +11,7 @@ class AppSettingsParser(BaseParser):
     """Parser for appsettings.json configuration files."""
     
     def __init__(self):
-        self.language = LanguageEnum.CSHARP
+        self.language = LanguageEnum.JAVASCRIPT
     
     def get_language(self) -> LanguageEnum:
         """Return the language this parser handles."""
@@ -176,4 +176,3 @@ class AppSettingsParser(BaseParser):
                 return True
         
         return False
-

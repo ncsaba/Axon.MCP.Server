@@ -77,13 +77,11 @@ class RelationshipBuilder:
             base_classes = []
             interfaces = []
             
-            # Use Roslyn data if available
-            if symbol.structured_docs and symbol.structured_docs.get('roslyn'):
-                roslyn = symbol.structured_docs['roslyn']
-                if roslyn.get('base_type') and roslyn['base_type'] != 'object':
-                    base_classes.append(roslyn['base_type'])
-                if roslyn.get('interfaces'):
-                    interfaces.extend(roslyn['interfaces'])
+            if symbol.structured_docs:
+                if symbol.structured_docs.get('base_type') and symbol.structured_docs['base_type'] != 'object':
+                    base_classes.append(symbol.structured_docs['base_type'])
+                if symbol.structured_docs.get('interfaces'):
+                    interfaces.extend(symbol.structured_docs['interfaces'])
             else:
                 # Fallback to signature parsing
                 extracted = self._extract_base_classes(symbol.signature or "")
@@ -131,9 +129,7 @@ class RelationshipBuilder:
                 
             is_override = False
             if symbol.structured_docs:
-                if symbol.structured_docs.get('roslyn', {}).get('is_override'):
-                    is_override = True
-                elif symbol.structured_docs.get('is_override'):
+                if symbol.structured_docs.get('is_override'):
                     is_override = True
             
             if is_override:
@@ -145,9 +141,7 @@ class RelationshipBuilder:
                     
                     is_virtual = False
                     if base_method.structured_docs:
-                        if base_method.structured_docs.get('roslyn', {}).get('is_virtual') or \
-                           base_method.structured_docs.get('roslyn', {}).get('is_abstract') or \
-                           base_method.structured_docs.get('is_virtual') or \
+                        if base_method.structured_docs.get('is_virtual') or \
                            base_method.structured_docs.get('is_abstract'):
                             is_virtual = True
                     
@@ -182,7 +176,7 @@ class RelationshipBuilder:
                     continue
                 
                 # We care about: di_registration, variable_usage, property_access, field_access
-                # Note: 'variable_usage' isn't explicitly in CSharpParser yet, but 'di_registration' and 'type_reference' (used as variable type) are.
+                # 'di_registration' and 'type_reference' provide strong USES signals.
                 # Actually, specialized USES logic is best for:
                 # 1. DI Registrations (A uses B)
                 # 2. Variable declarations (A uses type B) -> This is also REFERENCES, but can be stronger USES if method body
@@ -377,4 +371,3 @@ class RelationshipBuilder:
         )
         
         return relationships_created
-

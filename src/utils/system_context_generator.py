@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
 from sqlalchemy.orm import selectinload
 
-from src.database.models import Repository, Symbol, File, Project
+from src.database.models import Repository, Symbol, File
 from src.config.enums import SymbolKindEnum
 from src.utils.logging_config import get_logger
 
@@ -77,7 +77,7 @@ class SystemContextGenerator:
         return repo_dicts
 
     async def _infer_tech_stack(self, repository_id: Optional[int]) -> Dict[str, List[str]]:
-        # This is a simplified inference. Real implementation would query Project/PackageJson tables
+        # This is a simplified inference from indexed files/symbols.
         tech_stack = {
             "languages": [],
             "frameworks": [],
@@ -92,14 +92,8 @@ class SystemContextGenerator:
         result = await self.session.execute(query)
         tech_stack["languages"] = [str(r) for r in result.scalars().all() if r]
 
-        # Get Frameworks from Projects (e.g. TargetFramework)
-        p_query = select(Project.target_framework).distinct()
-        if repository_id:
-            p_query = p_query.where(Project.repository_id == repository_id)
-        
-        p_result = await self.session.execute(p_query)
-        frameworks = [str(r) for r in p_result.scalars().all() if r]
-        tech_stack["frameworks"] = frameworks
+        # Placeholder framework inference from docs/config symbols can be added later.
+        tech_stack["frameworks"] = []
 
         return tech_stack
 
@@ -135,9 +129,7 @@ class SystemContextGenerator:
         return symbol.documentation or ""
 
     async def _get_schema_overview(self) -> Dict[str, Any]:
-        """Attempt to extract schema info if EF Tools have populated it."""
-        # Check for ef_entities table content (if migrated)
-        # For now return placeholder
+        """Attempt to extract schema info from indexed artifacts."""
         return {"note": "Schema extraction pending implementation of EF/SQL parsers"}
 
     async def _get_repository_language(self, repository_id: int) -> str:
@@ -156,4 +148,3 @@ class SystemContextGenerator:
         except Exception as e:
             logger.error(f"failed_to_determine_language: {e}")
             return "Unknown"
-

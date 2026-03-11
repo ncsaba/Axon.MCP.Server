@@ -222,8 +222,6 @@ class ImportRelationshipBuilder:
         
         if file.language == LanguageEnum.JAVASCRIPT or file.language == LanguageEnum.TYPESCRIPT:
             imports = await self._extract_js_imports(code, file, file_path)
-        elif file.language == LanguageEnum.CSHARP:
-            imports = await self._extract_csharp_imports(code, file, file_path)
         
         return imports
     
@@ -309,34 +307,3 @@ class ImportRelationshipBuilder:
         
         return imports
     
-    async def _extract_csharp_imports(
-        self,
-        code: str,
-        file: File,
-        file_path: Path
-    ) -> List[Dict[str, Any]]:
-        """Extract C# using statements."""
-        import re
-        imports = []
-        
-        # Match: using MyNamespace.MyClass;
-        using_statements = re.finditer(
-            r'using\s+([\w\.]+);',
-            code
-        )
-        
-        for match in using_statements:
-            namespace = match.group(1)
-            
-            # In C#, using statements typically import namespaces
-            # We can try to find files in that namespace
-            # For now, store the namespace as metadata
-            imports.append({
-                'import_path': namespace,
-                'file_id': None,  # C# imports are namespace-based
-                'symbols': [],
-                'namespace': namespace
-            })
-        
-        return imports
-

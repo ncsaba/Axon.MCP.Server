@@ -26,7 +26,7 @@ TOOLS = [
                 },
                 "language": {
                     "type": "string",
-                    "description": "Filter by programming language (csharp, javascript, typescript, vue)"
+                    "description": "Filter by programming language (python, javascript, typescript, java, vue)"
                 },
                 "symbol_kind": {
                     "type": "string",
@@ -155,7 +155,7 @@ TOOLS = [
                 },
                 "dependency_type": {
                     "type": "string",
-                    "description": "Optional type filter (nuget, npm, etc.)"
+                    "description": "Optional type filter (npm, pip, etc.)"
                 },
                 "limit": {
                     "type": "integer",
@@ -564,43 +564,6 @@ TOOLS = [
                 }
             },
             "required": ["service_name"]
-        }
-    ),
-    Tool(
-        name=MCPToolEnum.LIST_EF_ENTITIES.value,
-        description="List all EF Core entities in a repository",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repository_id": {
-                    "type": "integer",
-                    "description": "Repository ID"
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of entities to return",
-                    "default": 50
-                }
-            },
-            "required": ["repository_id"]
-        }
-    ),
-    Tool(
-        name=MCPToolEnum.GET_DB_ENTITY_MAPPING.value,
-        description="Get database entity mapping for a specific EF Core entity",
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "repository_id": {
-                    "type": "integer",
-                    "description": "Repository ID"
-                },
-                "entity_name": {
-                    "type": "string",
-                    "description": "Entity class name (e.g., 'Order')"
-                }
-            },
-            "required": ["repository_id", "entity_name"]
         }
     ),
     Tool(

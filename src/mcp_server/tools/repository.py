@@ -418,7 +418,7 @@ async def list_dependencies(
 
     Args:
         repository_id: Repository ID
-        dependency_type: Optional type filter (nuget, npm, etc.)
+        dependency_type: Optional type filter (npm, pip, etc.)
         limit: Maximum results
 
     Returns:
@@ -449,16 +449,13 @@ async def list_dependencies(
                 ]
             
             # Group by type
-            nuget_deps = []
             npm_deps = []
             other_deps = []
             
             for dep in dependencies:
                 dep_info = f"- **{dep.package_name}** v{dep.package_version or 'unknown'}{' (dev)' if dep.is_dev_dependency else ''} - {dep.file_path}\n"
                 
-                if dep.dependency_type == 'nuget':
-                    nuget_deps.append(dep_info)
-                elif dep.dependency_type == 'npm':
+                if dep.dependency_type == 'npm':
                     npm_deps.append(dep_info)
                 else:
                     other_deps.append(dep_info)
@@ -470,11 +467,6 @@ async def list_dependencies(
             repo_name = repo.name if repo else f"ID {repository_id}"
             
             formatted = [f"Dependencies for repository: **{repo_name}**\n\n"]
-            
-            if nuget_deps:
-                formatted.append(f"### NuGet Packages ({len(nuget_deps)})\n\n")
-                formatted.extend(nuget_deps)
-                formatted.append("\n")
             
             if npm_deps:
                 formatted.append(f"### NPM Packages ({len(npm_deps)})\n\n")

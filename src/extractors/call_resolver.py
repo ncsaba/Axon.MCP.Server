@@ -1,33 +1,28 @@
 """Call target resolution for building accurate call graphs."""
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Symbol, File, Relation
-from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum
-from datetime import datetime
+from src.config.enums import SymbolKindEnum, RelationTypeEnum
 from src.extractors.call_analyzer import Call
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
-from src.parsers.roslyn_integration import RoslynAnalyzer
-
 class CallResolver:
     """Resolves function/method calls to actual symbol IDs."""
     
-    def __init__(self, session: AsyncSession, roslyn_analyzer: Optional[RoslynAnalyzer] = None):
+    def __init__(self, session: AsyncSession):
         """
         Initialize call resolver.
         
         Args:
             session: Database session
-            roslyn_analyzer: Optional Roslyn analyzer for fallback resolution
         """
         self.session = session
-        self.roslyn_analyzer = roslyn_analyzer
     
     async def resolve_call_target(
         self,
@@ -125,20 +120,6 @@ class CallResolver:
             logger.debug("resolved_fuzzy", method=call.method_name, target_id=target.id)
             return target.id
             
-        # Strategy 5: Roslyn Fallback (External DLLs)
-        if self.roslyn_analyzer and code:
-            target_id = await self._resolve_with_roslyn(
-                call.method_name,
-                code,
-                file.path,
-                call.line_number,
-                call.start_column,
-                file.repository_id
-            )
-            if target_id:
-                logger.debug("resolved_via_roslyn", method=call.method_name, target_id=target_id)
-                return target_id
-        
         # DEBUG: Log unresolved call
         logger.debug(
             "call_not_resolved",
@@ -544,134 +525,3 @@ class CallResolver:
         )
         row = result.first()
         return row[0] if row else None
-
-    async def _resolve_with_roslyn(
-        self,
-        method_name: str,
-        code: str,
-        file_path: str,
-        line: int,
-        column: int,
-        repository_id: int
-    ) -> Optional[int]:
-        """Resolve using Roslyn analyzer."""
-        if not self.roslyn_analyzer or not self.roslyn_analyzer.is_available():
-            return None
-            
-        # Calculate offset
-        try:
-            lines = code.split('\n')
-            if line > len(lines):
-                return None
-            # Simple offset calculation
-            offset = sum(len(l) + 1 for l in lines[:line-1]) + column
-        except Exception:
-            return None
-
-        # Call Roslyn
-        symbol_info = await self.roslyn_analyzer.resolve_reference(
-            code,
-            file_path,
-            offset
-        )
-        
-        if not symbol_info:
-            return None
-            
-        fqn = symbol_info.get("fully_qualified_name")
-        is_external = symbol_info.get("is_external", False)
-        assembly_name = symbol_info.get("assembly_name")
-        
-        if not fqn:
-            return None
-            
-        # Check if symbol exists in DB
-        result = await self.session.execute(
-            select(Symbol).where(Symbol.fully_qualified_name == fqn).limit(1)
-        )
-        existing = result.scalar_one_or_none()
-        
-        if existing:
-            return existing.id
-            
-        if is_external and assembly_name:
-            # Create synthetic external symbol
-            return await self._get_or_create_external_symbol(symbol_info, assembly_name, repository_id)
-            
-        return None
-
-    async def _get_or_create_external_symbol(
-        self,
-        symbol_info: Dict[str, Any],
-        assembly_name: str,
-        repository_id: int
-    ) -> int:
-        """Create a synthetic symbol for an external library reference."""
-        fqn = symbol_info["fully_qualified_name"]
-        
-        # Double check existence to avoid race conditions
-        result = await self.session.execute(
-            select(Symbol).where(Symbol.fully_qualified_name == fqn).limit(1)
-        )
-        existing = result.scalar_one_or_none()
-        if existing:
-            return existing.id
-
-        # Needed: A dummy file for this assembly to satisfy foreign key
-        # We'll treat the assembly name as a "path"
-        external_file_path = f"[External] {assembly_name}"
-        
-        # Check if "file" exists
-        result = await self.session.execute(
-            select(File).where(
-                File.repository_id == repository_id,
-                File.path == external_file_path
-            ).limit(1)
-        )
-        external_file = result.scalar_one_or_none()
-        
-        if not external_file:
-            # Create dummy file
-            external_file = File(
-                repository_id=repository_id,
-                path=external_file_path,
-                language=LanguageEnum.CSHARP,
-                size_bytes=0,
-                line_count=0,
-                content_hash="external",
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
-            )
-            self.session.add(external_file)
-            await self.session.flush() # flush to get ID
-            
-        # Map Kind string to Enum
-        kind_str = symbol_info.get("kind", "Method")
-        kind_enum = SymbolKindEnum.METHOD
-        try:
-            # Handle Roslyn kinds like "NamedType" -> CLASS
-            if kind_str == "NamedType":
-                kind_enum = SymbolKindEnum.CLASS
-            else:
-                kind_enum = SymbolKindEnum(kind_str)
-        except ValueError:
-            pass # Default to METHOD if unknown
-            
-        # Create Symbol
-        new_symbol = Symbol(
-            file_id=external_file.id,
-            language=LanguageEnum.CSHARP,
-            kind=kind_enum,
-            name=symbol_info.get("name", fqn.split('.')[-1]),
-            fully_qualified_name=fqn,
-            start_line=0,
-            end_line=0,
-            assembly_name=assembly_name,
-            is_generated=1 # Mark as generated/synthetic
-        )
-        
-        self.session.add(new_symbol)
-        await self.session.commit()
-        
-        return new_symbol.id
-

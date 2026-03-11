@@ -43,7 +43,7 @@ class TreeSitterParser(BaseParser):
         
         Args:
             language: Language enum
-            language_module: The tree-sitter language module (e.g., tree_sitter_c_sharp)
+            language_module: The tree-sitter language module (e.g., tree_sitter_java)
         """
         self.language = language
         try:
@@ -154,4 +154,3 @@ class TreeSitterParser(BaseParser):
             if child.type == node_type:
                 return child
         return None
-

@@ -1,7 +1,5 @@
 import time
 from src.extractors.reference_builder import ReferenceBuilder
-from src.parsers import ParserFactory
-from src.config.enums import LanguageEnum
 from src.utils.redis_logger import RedisLogPublisher
 from src.utils.logging_config import get_logger
 from ..step import PipelineStep
@@ -12,7 +10,6 @@ logger = get_logger(__name__)
 class ReferenceBuildingStep(PipelineStep):
     """
     Step 4.5: Build reference relationships (now that all symbols exist).
-    Uses Roslyn if available.
     """
     
     async def execute(self, ctx: PipelineContext) -> None:
@@ -23,16 +20,7 @@ class ReferenceBuildingStep(PipelineStep):
         await publisher.publish_log(ctx.repository_id, "Building reference relationships...")
 
         try:
-            # Try to reuse Roslyn instance to avoid overhead
-            roslyn_instance = None
-            try:
-                parser = ParserFactory.get_parser(LanguageEnum.CSHARP)
-                if hasattr(parser, 'roslyn'):
-                    roslyn_instance = parser.roslyn
-            except Exception:
-                pass
-
-            reference_builder = ReferenceBuilder(ctx.session, roslyn_analyzer=roslyn_instance)
+            reference_builder = ReferenceBuilder(ctx.session)
             ref_relations = await reference_builder.build_all_references(ctx.repository_id)
             
             ctx.metadata['references_created'] = ref_relations

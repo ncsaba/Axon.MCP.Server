@@ -29,7 +29,7 @@ class SecurityValidator:
     ALLOWED_CODE_EXTENSIONS = {
         '.py', '.js', '.ts', '.tsx', '.jsx', '.cs', '.java', '.go',
         '.vue', '.md', '.json', '.yaml', '.yml', '.xml', '.sql',
-        '.csproj', '.sln', '.txt', '.html', '.css', '.scss'
+        '.txt', '.html', '.css', '.scss'
     }
     
     @classmethod
@@ -287,4 +287,3 @@ class SecretDetector:
             )
         
         return redacted
-

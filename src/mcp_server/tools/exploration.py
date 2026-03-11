@@ -221,7 +221,7 @@ async def query_codebase_structure(
                 "- List public methods\n"
                 "- Show complex methods\n"
                 "- Find undocumented symbols\n"
-                "- Get Python/TypeScript/CSharp classes\n"
+                "- Get Python/TypeScript/Java classes\n"
                 "- Find unused symbols\n"
                 "- Show largest classes"
             )
@@ -250,7 +250,7 @@ async def query_codebase_structure(
                         f"- List public methods\n"
                         f"- Show complex methods\n"
                         f"- Find undocumented symbols\n"
-                        f"- Get Python/TypeScript/CSharp classes\n"
+                        f"- Get Python/TypeScript/Java classes\n"
                         f"- Find unused symbols\n"
                         f"- Show largest classes\n"
                         f"- List inheritance hierarchies"

@@ -161,9 +161,8 @@ class Settings(BaseSettings):
     extract_imports: bool = True  # Resolve import relationships automatically
     build_call_graph: bool = True  # Build call graph relationships (can be slow)
     detect_patterns: bool = False  # Detect design patterns (optional, can be slow)
-    extract_dependencies: bool = True  # Extract package dependencies (NuGet, npm, Python)
+    extract_dependencies: bool = True  # Extract package dependencies (npm, Python)
     extract_configuration: bool = True  # Extract configuration from appsettings.json, etc.
-    extract_ef_entities: bool = True  # Extract EF Core entities and mappings
 
     # Hierarchical Service Detection (for DDD architecture visibility)
     detect_library_services: bool = True  # Detect class libraries as services for hierarchical exploration

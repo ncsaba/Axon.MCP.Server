@@ -4,14 +4,11 @@ from typing import Dict, Type
 from pathlib import Path
 from src.config.enums import LanguageEnum
 from src.parsers.base_parser import BaseParser, ParseResult, ParsedSymbol
-from src.parsers.csharp_parser import CSharpParser
-from src.parsers.hybrid_parser import HybridCSharpParser
 from src.parsers.javascript_parser import JavaScriptParser, TypeScriptParser
+from src.parsers.java_parser import JavaParser
 from src.parsers.vue_parser import VueParser
 from src.parsers.markdown_parser import MarkdownParser
 from src.parsers.python_parser import PythonParser
-from src.parsers.csproj_parser import CsProjParser
-from src.parsers.solution_parser import SolutionParser
 from src.parsers.package_json_parser import PackageJsonParser
 from src.parsers.appsettings_parser import AppSettingsParser
 from src.parsers.sql_parser import SQLParser
@@ -56,16 +53,16 @@ class ParserFactory:
             Parser instance
         """
         suffix = file_path.suffix.lower()
-        
-        if suffix == '.cs':
-            return cls.get_parser(LanguageEnum.CSHARP)
-        elif suffix in ['.js', '.jsx', '.mjs']:
+
+        if suffix in ['.js', '.jsx', '.mjs']:
             return cls.get_parser(LanguageEnum.JAVASCRIPT)
         elif suffix == '.ts':
             return cls.get_parser(LanguageEnum.TYPESCRIPT)
         elif suffix == '.tsx':
             # TSX files need the JSX-aware grammar
             return TypeScriptParser(use_tsx=True)
+        elif suffix == '.java':
+            return cls.get_parser(LanguageEnum.JAVA)
         elif suffix == '.vue':
             return cls.get_parser(LanguageEnum.VUE)
         elif suffix == '.py':
@@ -74,10 +71,6 @@ class ParserFactory:
             return cls.get_parser(LanguageEnum.MARKDOWN)
         elif suffix in ['.sql', '.ddl']:
             return cls.get_parser(LanguageEnum.SQL)
-        elif suffix == '.csproj':
-            return CsProjParser()
-        elif suffix == '.sln':
-            return SolutionParser()
         elif file_path.name.lower() == 'package.json':
             return PackageJsonParser()
         elif file_path.name.lower().startswith('appsettings') and suffix == '.json':
@@ -99,9 +92,9 @@ class ParserFactory:
     def _create_parser(cls, language: LanguageEnum) -> BaseParser:
         """Create parser instance."""
         parser_map: Dict[LanguageEnum, Type[BaseParser]] = {
-            LanguageEnum.CSHARP: HybridCSharpParser,
             LanguageEnum.JAVASCRIPT: JavaScriptParser,
             LanguageEnum.TYPESCRIPT: TypeScriptParser,
+            LanguageEnum.JAVA: JavaParser,
             LanguageEnum.VUE: VueParser,
             LanguageEnum.PYTHON: PythonParser,
             LanguageEnum.MARKDOWN: MarkdownParser,
@@ -143,8 +136,8 @@ async def parse_file_async(file_path: Path) -> ParseResult:
     """
     Parse a file asynchronously.
     
-    Optimized to run async-capable parsers (like C# Roslyn) on the current loop,
-    avoiding the overhead and instability of spinning up new loops via asyncio.run().
+    Optimized to run async-capable parsers on the current loop, avoiding the
+    overhead and instability of spinning up new loops via asyncio.run().
     
     Args:
         file_path: Path to file
@@ -154,7 +147,7 @@ async def parse_file_async(file_path: Path) -> ParseResult:
     """
     parser = ParserFactory.get_parser_for_file(file_path)
     
-    # If parser supports async natively (e.g. HybridCSharpParser), run on current loop
+    # If parser supports async natively, run on current loop
     if hasattr(parser, 'parse_async'):
         with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
             code = f.read()
@@ -168,10 +161,9 @@ __all__ = [
     'BaseParser',
     'ParseResult',
     'ParsedSymbol',
-    'CSharpParser',
-    'HybridCSharpParser',
     'JavaScriptParser',
     'TypeScriptParser',
+    'JavaParser',
     'VueParser',
     'PythonParser',
     'ParserFactory',

@@ -201,7 +201,7 @@ class TextToSQLTranslator:
             # Symbols by language
             QueryPattern(
                 name="symbols_by_language",
-                pattern=r"(?:find|get|list).*(?:python|typescript|javascript|csharp|c#).*(?:symbols?|functions?|classes?)",
+                pattern=r"(?:find|get|list).*(?:python|typescript|javascript|java).*(?:symbols?|functions?|classes?)",
                 sql_template="""
                     SELECT s.id, s.name, s.kind, s.signature, f.path
                     FROM symbols s
@@ -367,8 +367,8 @@ class TextToSQLTranslator:
                 params["language"] = "TYPESCRIPT"
             elif "javascript" in query_lower or "js" in query_lower:
                 params["language"] = "JAVASCRIPT"
-            elif "csharp" in query_lower or "c#" in query_lower:
-                params["language"] = "CSHARP"
+            elif "java" in query_lower:
+                params["language"] = "JAVA"
             else:
                 params["language"] = "PYTHON"  # Default
         
@@ -685,4 +685,3 @@ class TextToSQLTranslator:
             }
             for pattern in self._patterns
         ]
-

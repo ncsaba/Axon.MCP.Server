@@ -585,8 +585,7 @@ class CallGraphTraverser:
         is_abstract = False
         if symbol.kind == SymbolKindEnum.CLASS:
             if symbol.structured_docs:
-                roslyn_data = symbol.structured_docs.get('roslyn', {})
-                is_abstract = roslyn_data.get('is_abstract', False) or symbol.structured_docs.get('is_abstract', False)
+                is_abstract = symbol.structured_docs.get('is_abstract', False)
             if not is_abstract:
                 return []  # Concrete class, no need to resolve
         
@@ -726,8 +725,7 @@ class CallGraphTraverser:
                 
                 # Get base types from structured_docs
                 if symbol.structured_docs:
-                    roslyn_data = symbol.structured_docs.get('roslyn', {})
-                    interfaces = roslyn_data.get('interfaces', [])
+                    interfaces = symbol.structured_docs.get('interfaces', [])
                     
                     # Check if any interface matches MediatR patterns
                     is_request = any(
@@ -845,4 +843,3 @@ class CallGraphTraverser:
                     lines.append("\n")
         
         return "".join(lines)
-

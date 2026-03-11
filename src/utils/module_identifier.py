@@ -40,7 +40,6 @@ class ModuleIdentifier:
         "python_package": ["__init__.py"],
         "typescript_module": ["package.json", "tsconfig.json", "index.ts", "index.tsx"],
         "javascript_module": ["package.json", "index.js", "index.jsx"],
-        "csharp_namespace": [".csproj", "AssemblyInfo.cs"],
         "go_package": ["go.mod", "main.go"],
         "rust_crate": ["Cargo.toml", "lib.rs", "main.rs"],
     }
@@ -347,4 +346,3 @@ class ModuleIdentifier:
         except Exception as e:
             logger.error(f"Error getting module symbols: {e}", exc_info=True)
             return []
-

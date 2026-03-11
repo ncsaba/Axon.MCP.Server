@@ -44,8 +44,7 @@ class DiscoveryStep(PipelineStep):
             ctx.repo_path
         )
         
-        # Sort files path alphabetically to ensure files in the same project 
-        # are processed consecutively. This is CRITICAL for Roslyn performance.
+        # Sort files path alphabetically to keep processing deterministic.
         files.sort()
 
         # Apply exclusion rules

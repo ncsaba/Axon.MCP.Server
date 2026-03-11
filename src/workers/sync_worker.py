@@ -245,8 +245,6 @@ async def _sync_repository_async(task, repository_id: int):
                     
                     # Import all steps
                     from src.workers.pipeline.steps.clone_step import CloneStep
-                    from src.workers.pipeline.steps.dotnet_restore_step import DotnetRestoreStep
-                    from src.workers.pipeline.steps.roslyn_init_step import RoslynInitStep
                     from src.workers.pipeline.steps.discovery_step import DiscoveryStep
                     from src.workers.pipeline.steps.parsing_step import ParsingStep
                     from src.workers.pipeline.steps.api_extraction_step import ApiExtractionStep
@@ -256,7 +254,6 @@ async def _sync_repository_async(task, repository_id: int):
                     from src.workers.pipeline.steps.call_graph_step import CallGraphStep
                     from src.workers.pipeline.steps.dependency_extraction_step import DependencyExtractionStep
                     from src.workers.pipeline.steps.config_extraction_step import ConfigExtractionStep
-                    from src.workers.pipeline.steps.ef_core_step import EfCoreExtractionStep
                     from src.workers.pipeline.steps.pattern_detection_step import PatternDetectionStep
                     from src.workers.pipeline.steps.combined_extraction_step import CombinedExtractionStep
                     from src.workers.pipeline.steps.embedding_step import EmbeddingGenerationStep
@@ -279,7 +276,6 @@ async def _sync_repository_async(task, repository_id: int):
                         event_subscriptions_count=metrics_data.get("event_subscriptions_count", 0),
                         dependencies_found=metrics_data.get("dependencies_found", 0),
                         configs_found=metrics_data.get("configs_found", 0),
-                        ef_entities_found=metrics_data.get("ef_entities_found", 0),
                         services_detected=metrics_data.get("services_detected", 0),
                         services_documented=metrics_data.get("services_documented", 0)
                     )
@@ -294,8 +290,6 @@ async def _sync_repository_async(task, repository_id: int):
                     # Define Pipeline Steps & Dependencies
                     steps = [
                         CloneStep(),
-                        DotnetRestoreStep(),
-                        RoslynInitStep(),
                         DiscoveryStep(),
                         ParsingStep(),
                         ApiExtractionStep(),
@@ -305,7 +299,6 @@ async def _sync_repository_async(task, repository_id: int):
                         CallGraphStep(),
                         DependencyExtractionStep(),
                         ConfigExtractionStep(),
-                        EfCoreExtractionStep(),
                         PatternDetectionStep(),
                         CombinedExtractionStep(),
                         EmbeddingGenerationStep(),
@@ -315,27 +308,24 @@ async def _sync_repository_async(task, repository_id: int):
                     
                     # Configure Dependencies (Fix 2: Dependency Validation)
                     # Core Build & Discovery
-                    steps[1].depends_on = ["CloneStep"]          # DotnetRestore
-                    steps[2].depends_on = ["DotnetRestoreStep"]   # RoslynInit
-                    steps[3].depends_on = ["CloneStep"]          # Discovery
-                    steps[4].depends_on = ["DiscoveryStep"]      # Parsing
+                    steps[1].depends_on = ["CloneStep"]          # Discovery
+                    steps[2].depends_on = ["DiscoveryStep"]      # Parsing
                     
                     # Basic Extraction (depends on Parsing)
-                    steps[5].depends_on = ["ParsingStep"]        # ApiExtraction
-                    steps[6].depends_on = ["ParsingStep"]        # ReferenceBuilding
-                    steps[7].depends_on = ["ParsingStep"]        # RelationshipBuilding
-                    steps[8].depends_on = ["ParsingStep"]        # ImportResolution
-                    steps[9].depends_on = ["ParsingStep"]        # CallGraph
-                    steps[10].depends_on = ["ParsingStep"]       # DependencyExtraction
-                    steps[11].depends_on = ["ParsingStep"]       # ConfigExtraction
-                    steps[12].depends_on = ["ParsingStep"]       # EfCoreExtraction
-                    steps[13].depends_on = ["ParsingStep"]       # PatternDetection
-                    steps[14].depends_on = ["ParsingStep"]       # CombinedExtraction (Outgoing/Events)
+                    steps[3].depends_on = ["ParsingStep"]        # ApiExtraction
+                    steps[4].depends_on = ["ParsingStep"]        # ReferenceBuilding
+                    steps[5].depends_on = ["ParsingStep"]        # RelationshipBuilding
+                    steps[6].depends_on = ["ParsingStep"]        # ImportResolution
+                    steps[7].depends_on = ["ParsingStep"]        # CallGraph
+                    steps[8].depends_on = ["ParsingStep"]        # DependencyExtraction
+                    steps[9].depends_on = ["ParsingStep"]        # ConfigExtraction
+                    steps[10].depends_on = ["ParsingStep"]       # PatternDetection
+                    steps[11].depends_on = ["ParsingStep"]       # CombinedExtraction (Outgoing/Events)
                     
                     # Advanced Analysis
-                    steps[15].depends_on = ["ParsingStep"]       # EmbeddingGeneration
-                    steps[16].depends_on = ["RelationshipBuildingStep"] # ServiceDetection (needs graph)
-                    steps[17].depends_on = ["ServiceDetectionStep"]     # ServiceDocumentation
+                    steps[12].depends_on = ["ParsingStep"]       # EmbeddingGeneration
+                    steps[13].depends_on = ["RelationshipBuildingStep"] # ServiceDetection (needs graph)
+                    steps[14].depends_on = ["ServiceDetectionStep"]     # ServiceDocumentation
 
                     # TRANSACTION MODEL: Fine-Grained Commits
                     # 
@@ -588,7 +578,7 @@ async def _sync_repository_async(task, repository_id: int):
                     raise
 
     finally:
-        # Critical: Clean up persistent processes (e.g., RoslynAnalyzer) before loop closes
+        # Critical: Clean up persistent parser resources before loop closes
         # This prevents "RuntimeError: Event loop is closed" in __del__ hooks
         try:
 

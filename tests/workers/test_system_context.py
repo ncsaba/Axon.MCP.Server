@@ -1,55 +1,61 @@
 import pytest
-import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from src.utils.system_context_generator import SystemContextGenerator
 from src.workers.system_context_worker import _generate_context_async
 from src.mcp_server.tools.system_map import get_system_map
+from src.config.enums import LanguageEnum, RepositoryStatusEnum, SymbolKindEnum
+from src.database.models import Repository, File, Symbol
 
 @pytest.mark.asyncio
-async def test_system_context_generator():
-    """Test the generator class."""
-    mock_session = AsyncMock()
-    mock_result = MagicMock()
-    mock_repo = MagicMock()
-    mock_repo.id = 1
-    mock_repo.name = "TestRepo"
-    mock_repo.description = "Test Desc"
-    mock_repo.primary_language = "Python"
-    
-    # Mock results
-    repo_result = MagicMock()
-    repo_result.scalars.return_value.all.return_value = [mock_repo]
+@pytest.mark.integration
+async def test_system_context_generator(async_session):
+    """Generate system context from real persisted repository/file/symbol rows."""
+    repo = Repository(
+        gitlab_project_id=2001,
+        name="TestRepo",
+        path_with_namespace="test/repo",
+        url="https://example.com/test/repo.git",
+        clone_url="https://example.com/test/repo.git",
+        default_branch="main",
+        description="Test Desc",
+        status=RepositoryStatusEnum.PENDING,
+    )
+    async_session.add(repo)
+    await async_session.flush()
 
-    lang_result = MagicMock()
-    lang_result.scalars.return_value.all.return_value = ["Python"]
+    file = File(
+        repository_id=repo.id,
+        path="src/test.py",
+        language=LanguageEnum.PYTHON,
+        size_bytes=128,
+    )
+    async_session.add(file)
+    await async_session.flush()
 
-    fw_result = MagicMock()
-    fw_result.scalars.return_value.all.return_value = ["net8.0"]
+    symbol = Symbol(
+        file_id=file.id,
+        language=LanguageEnum.PYTHON,
+        kind=SymbolKindEnum.CLASS,
+        name="TestClass",
+        fully_qualified_name="test.TestClass",
+        start_line=1,
+        end_line=10,
+        documentation="Docs",
+        ai_enrichment={"functional_summary": "Test Summary"},
+    )
+    async_session.add(symbol)
+    await async_session.flush()
 
-    symbol_result = MagicMock()
-    mock_symbol = MagicMock()
-    mock_symbol.name = "TestClass"
-    mock_symbol.kind = "class"
-    mock_symbol.file.path = "test.py"
-    mock_symbol.ai_enrichment = {"functional_summary": "Test Summary"}
-    mock_symbol.documentation = "Docs"
-    symbol_result.scalars.return_value.all.return_value = [mock_symbol]
-    
-    # Mock for repository language query (returns first row with language enum)
-    lang_per_repo_result = MagicMock()
-    mock_language_enum = MagicMock()
-    mock_language_enum.value = "Python"
-    lang_per_repo_result.first.return_value = (mock_language_enum,)
-    
-    # Sequence: Repos, Repo Language (per repo), Languages (distinct), Frameworks, Symbols
-    mock_session.execute.side_effect = [repo_result, lang_per_repo_result, lang_result, fw_result, symbol_result]
-    
-    generator = SystemContextGenerator(mock_session)
-    context = await generator.generate_system_map(repository_id=1)
+    generator = SystemContextGenerator(async_session)
+    context = await generator.generate_system_map(repository_id=repo.id)
     
     assert "generated_at" in context
     assert len(context["repositories"]) == 1
     assert context["repositories"][0]["name"] == "TestRepo"
+    assert context["repositories"][0]["language"] == "PYTHON"
+    assert len(context["key_modules"]) >= 1
+    assert context["key_modules"][0]["name"] == "TestClass"
+    assert context["key_modules"][0]["description"] == "Test Summary"
     # Ensure generated_at is an ISO format string (basic check)
     assert "T" in context["generated_at"]
 

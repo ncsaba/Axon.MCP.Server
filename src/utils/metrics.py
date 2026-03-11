@@ -92,13 +92,6 @@ memory_usage_bytes = Gauge("memory_usage_bytes", "Memory usage in bytes")
 cpu_usage_percent = Gauge("cpu_usage_percent", "CPU usage percentage")
 
 
-# Roslyn Metrics
-roslyn_uptime_seconds = Gauge("roslyn_process_uptime_seconds", "Roslyn Analyzer uptime")
-roslyn_failures_total = Counter("roslyn_failures_total", "Total Roslyn process failures")
-roslyn_requests_total = Counter("roslyn_requests_total", "Total Roslyn requests", ["operation"])
-roslyn_memory_mb = Gauge("roslyn_memory_mb", "Roslyn process memory usage in MB")
-
-
 def track_time(metric: Histogram, labels: dict | None = None) -> Callable:
     """
     Decorator to track execution time of functions.
@@ -187,5 +180,4 @@ def increment_counter(counter: Counter, labels: dict | None = None) -> Callable:
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
     return decorator
-
 

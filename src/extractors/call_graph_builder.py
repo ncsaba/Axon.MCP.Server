@@ -10,9 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import Symbol, File, Relation, Repository
 from src.database.session import AsyncSessionLocal
 from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum, SourceControlProviderEnum
-from src.extractors.call_analyzer import CSharpCallAnalyzer, JavaScriptCallAnalyzer, Call
+from src.extractors.call_analyzer import JavaScriptCallAnalyzer, Call
 from src.extractors.call_resolver import CallResolver
-from src.parsers.roslyn_integration import RoslynAnalyzer
 from src.gitlab.repository_manager import RepositoryManager
 from src.azuredevops.repository_manager import AzureDevOpsRepositoryManager
 from src.utils.logging_config import get_logger
@@ -31,11 +30,8 @@ class CallGraphBuilder:
             session: Database session
         """
         self.session = session
-        self.csharp_analyzer = CSharpCallAnalyzer()
         self.js_analyzer = JavaScriptCallAnalyzer()
         self.resolver = CallResolver(session)
-        # Don't create RoslynAnalyzer here - it must be created in the async context
-        # to avoid "Task attached to a different loop" errors
     
     async def build_call_relationships(
         self,
@@ -48,19 +44,6 @@ class CallGraphBuilder:
             repository_id: Repository ID
         """
         logger.info("building_call_relationships", repository_id=repository_id)
-        
-        # Create RoslynAnalyzer in the current async context to avoid loop errors
-        roslyn_analyzer = RoslynAnalyzer()
-        
-        # Warmup: Send a ping to ensure Roslyn process is fully initialized
-        # This eliminates the 7 startup transient errors that occur in files 2-8
-        if roslyn_analyzer.is_available():
-            try:
-                await roslyn_analyzer._send_request({"operation": "ping"}, timeout=5)
-                logger.debug("roslyn_warmup_successful")
-            except Exception as e:
-                logger.debug("roslyn_warmup_failed", error=str(e))
-                # Continue anyway - warmup failure is not critical
         
         # Get repository
         result = await self.session.execute(
@@ -88,25 +71,6 @@ class CallGraphBuilder:
             # GitLab uses path_with_namespace
             repo_manager = RepositoryManager()
             repo_path = repo_manager.cache_dir / repo.path_with_namespace.replace("/", "_")
-        
-        # Initialize Roslyn if possible
-        try:
-            # Find solution file
-            sln_files = list(repo_path.glob("*.sln"))
-            if sln_files:
-                logger.info("loading_roslyn_solution", solution=str(sln_files[0]))
-                await roslyn_analyzer.open_solution(str(sln_files[0]))
-            else:
-                # Find project files - simplified strategy: pick first or don't load
-                csproj_files = list(repo_path.glob("**/*.csproj"))
-                if csproj_files:
-                    # Loading random project might be weird. 
-                    # Ideally we load the one relevant for the file, but we have one global context.
-                    # Let's load the first one found in root or just log warning.
-                    logger.info("loading_roslyn_project", project=str(csproj_files[0]))
-                    await roslyn_analyzer.open_project(str(csproj_files[0]))
-        except Exception as e:
-            logger.warning("roslyn_initialization_failed", error=str(e))
         
         # Get all methods/functions in repository
         result = await self.session.execute(
@@ -156,8 +120,7 @@ class CallGraphBuilder:
                 semaphore,
                 file,
                 symbols,
-                repo_path,
-                roslyn_analyzer
+                repo_path
             )
             tasks.append(task)
         
@@ -204,19 +167,17 @@ class CallGraphBuilder:
         semaphore: asyncio.Semaphore,
         file: File,
         symbols: List[Symbol],
-        repo_path: Path,
-        roslyn_analyzer: RoslynAnalyzer
+        repo_path: Path
     ) -> List[Relation]:
         """Wrapper to process file with semaphore."""
         async with semaphore:
-            return await self._process_file(file, symbols, repo_path, roslyn_analyzer)
+            return await self._process_file(file, symbols, repo_path)
 
     async def _process_file(
         self,
         file: File,
         symbols: List[Symbol],
-        repo_path: Path,
-        roslyn_analyzer: RoslynAnalyzer
+        repo_path: Path
     ) -> List[Relation]:
         """
         Process a single file: parse once and analyze all symbols.
@@ -225,8 +186,6 @@ class CallGraphBuilder:
             file: File record
             symbols: List of symbols in this file
             repo_path: Repository root path
-            roslyn_analyzer: RoslynAnalyzer instance
-            
         Returns:
             List of Relation objects to create
         """
@@ -234,8 +193,7 @@ class CallGraphBuilder:
         
         # Create a new session for this task to avoid concurrent usage of the shared session
         async with AsyncSessionLocal() as session:
-            # Create a local resolver with the new session and roslyn analyzer
-            local_resolver = CallResolver(session, roslyn_analyzer)
+            local_resolver = CallResolver(session)
             
             try:
                 file_path = repo_path / file.path
@@ -256,16 +214,8 @@ class CallGraphBuilder:
                 from src.parsers import ParserFactory
                 parser = ParserFactory.get_parser(file.language)
                 
-                # Use tree-sitter directly for AST
-                # Handle different parser types:
-                # - HybridCSharpParser: has tree_sitter attribute (which is a CSharpParser with parser attribute)
-                # - CSharpParser/JavaScriptParser: has parser attribute directly
                 tree = None
-                if hasattr(parser, 'tree_sitter') and hasattr(parser.tree_sitter, 'parser'):
-                    # HybridCSharpParser
-                    tree = parser.tree_sitter.parser.parse(bytes(code, "utf8"))
-                elif hasattr(parser, 'parser'):
-                    # Regular parser (CSharpParser, JavaScriptParser, etc.)
+                if hasattr(parser, 'parser'):
                     tree = parser.parser.parse(bytes(code, "utf8"))
                 else:
                     logger.warning(
@@ -477,9 +427,7 @@ class CallGraphBuilder:
         language: LanguageEnum
     ) -> List[Call]:
         """Extract calls from symbol based on language."""
-        if language == LanguageEnum.CSHARP:
-            return self.csharp_analyzer.extract_calls(symbol_node, code)
-        elif language in [LanguageEnum.JAVASCRIPT, LanguageEnum.TYPESCRIPT]:
+        if language in [LanguageEnum.JAVASCRIPT, LanguageEnum.TYPESCRIPT]:
             return self.js_analyzer.extract_calls(symbol_node, code)
         else:
             return []
@@ -491,8 +439,5 @@ class CallGraphBuilder:
         language: LanguageEnum
     ) -> List[Call]:
         """Extract usages from symbol based on language."""
-        if language == LanguageEnum.CSHARP:
-            return self.csharp_analyzer.extract_usages(symbol_node, code)
-        else:
-            return []
+        return []
     

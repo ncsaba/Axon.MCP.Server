@@ -47,10 +47,6 @@ from src.mcp_server.tools.service_tools import (
     get_service_details,
     get_service_documentation,
 )
-from src.mcp_server.tools.ef_tools import (
-    list_ef_entities,
-    get_db_entity_mapping,
-)
 from src.mcp_server.tools.system_map import get_system_map
 
 logger = get_logger(__name__)
@@ -82,8 +78,6 @@ TOOL_HANDLERS = {
     MCPToolEnum.LIST_SERVICES.value: list_services,
     MCPToolEnum.GET_SERVICE_DETAILS.value: get_service_details,
     MCPToolEnum.GET_SERVICE_DOCUMENTATION.value: get_service_documentation,
-    MCPToolEnum.LIST_EF_ENTITIES.value: list_ef_entities,
-    MCPToolEnum.GET_DB_ENTITY_MAPPING.value: get_db_entity_mapping,
     MCPToolEnum.GET_SYSTEM_MAP.value: get_system_map,
 }
 

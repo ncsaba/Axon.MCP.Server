@@ -32,7 +32,7 @@ Search for code symbols across repositories using hybrid search.
 - `query` (string, required): Search query (function name, class name, or description)
 - `limit` (int, optional): Maximum number of results (default: 10, max: 50)
 - `repository_name` (string, optional): Filter by repository name
-- `language` (string, optional): Filter by programming language (csharp, javascript, typescript, vue, python)
+- `language` (string, optional): Filter by programming language (python, javascript, typescript, java, vue)
 - `symbol_kind` (string, optional): Filter by symbol kind (function, class, method, interface, etc.)
 
 **Example:**
@@ -40,7 +40,7 @@ Search for code symbols across repositories using hybrid search.
 {
   "query": "authenticate user",
   "limit": 10,
-  "language": "csharp",
+  "language": "python",
   "symbol_kind": "method"
 }
 ```
@@ -373,4 +373,3 @@ Follow the project's code style:
 ## License
 
 See main project LICENSE file.
-

@@ -4,7 +4,6 @@ from enum import Enum
 class LanguageEnum(str, Enum):
     """Programming language types."""
 
-    CSHARP = "CSHARP"
     JAVASCRIPT = "JAVASCRIPT"
     TYPESCRIPT = "TYPESCRIPT"
     VUE = "VUE"
@@ -132,6 +131,4 @@ class MCPToolEnum(str, Enum):
     LIST_SERVICES = "list_services"
     GET_SERVICE_DETAILS = "get_service_details"
     GET_SERVICE_DOCUMENTATION = "get_service_documentation"
-    GET_DB_ENTITY_MAPPING = "get_db_entity_mapping"
-    LIST_EF_ENTITIES = "list_ef_entities"
     GET_SYSTEM_MAP = "get_system_map"

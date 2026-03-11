@@ -10,7 +10,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from src.database.models import (
     Service, Symbol, OutgoingApiCall, PublishedEvent, 
-    EventSubscription, Dependency, ProjectReference
+    EventSubscription, Dependency
 )
 from src.utils.llm_summarizer import LLMSummarizer
 from src.config.enums import SymbolKindEnum
@@ -116,7 +116,7 @@ class ServiceDocGenerator:
         controllers = controllers_result.scalars().all()
         
         # Query 2: Get controller methods
-        # Note: Some methods have NULL parent_symbol_id but valid parent_name (Roslyn parser bug)
+        # Note: Some methods have NULL parent_symbol_id but valid parent_name due to legacy data.
         # We match by BOTH parent_symbol_id (FK) AND parent_name (FQN string) to capture all methods
         controller_ids = [c.id for c in controllers]
         controller_fqns = [c.fully_qualified_name for c in controllers]
@@ -159,16 +159,9 @@ class ServiceDocGenerator:
         )
         dependencies = deps_result.scalars().all()
         
-        # Query 4: Project References (for this service)
-        refs_result = await self.session.execute(
-            select(ProjectReference).filter(
-                ProjectReference.repository_id == service.repository_id,
-                ProjectReference.source_project_path.like(f"%{service.name}%")
-            )
-        )
-        project_references = refs_result.scalars().all()
-        
-        # Query 5: External calls, published events, subscribed events (one query with joins)
+        project_references: List[Any] = []
+
+        # Query 4: External calls, published events, subscribed events
         # Get all symbols for this service first
         service_symbols_result = await self.session.execute(
             select(Symbol.id).filter(Symbol.service_id == service.id)
@@ -476,15 +469,13 @@ Provide a 2-3 sentence description of this service's business responsibility."""
     def _generate_dependency_section(
         self, 
         dependencies: List[Dependency], 
-        project_refs: List[ProjectReference],
+        project_refs: List[Any],
         external_calls: List[OutgoingApiCall]
     ) -> str:
         """Generate dependencies section."""
         lines = []
         
-        # NuGet/NPM Packages
-        dep_type = "NuGet Packages" if dependencies and dependencies[0].dependency_type == "nuget" else "Package Dependencies"
-        lines.append(f"### {dep_type}")
+        lines.append("### Package Dependencies")
         
         if dependencies:
             for dep in dependencies[:MAX_DEPENDENCIES_DISPLAY]:
@@ -496,19 +487,7 @@ Provide a 2-3 sentence description of this service's business responsibility."""
                 lines.append(f"- *...and {remaining} more packages*")
         else:
             lines.append("_No package dependencies found._")
-        
-        # Project References
-        lines.append("\n### Project References")
-        if project_refs:
-            for ref in project_refs[:MAX_PROJECT_REFS_DISPLAY]:
-                target = Path(ref.target_project_path).stem
-                lines.append(f"- {target}")
-            if len(project_refs) > MAX_PROJECT_REFS_DISPLAY:
-                remaining = len(project_refs) - MAX_PROJECT_REFS_DISPLAY
-                lines.append(f"- *...and {remaining} more projects*")
-        else:
-            lines.append("_No project references found._")
-        
+
         # External Services
         lines.append("\n### External Services")
         if external_calls:

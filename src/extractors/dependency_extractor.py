@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
 from src.database.models import Dependency, Repository
-from src.parsers.nuget_parser import NuGetParser, NuGetPackage
 from src.parsers.npm_parser import NpmParser, NpmPackage
 from src.parsers.python_dependency_parser import PythonDependencyParser, PythonPackage
 from src.utils.logging_config import get_logger
@@ -20,7 +19,6 @@ class DependencyExtractor:
     
     # Dependency file patterns to search for
     DEPENDENCY_FILES = {
-        'nuget': ['.csproj', 'packages.config', 'Directory.Build.props', 'Directory.Packages.props'],
         'npm': ['package.json', 'package-lock.json'],
         'python': ['requirements.txt', 'pyproject.toml', 'Pipfile'],
     }
@@ -33,7 +31,6 @@ class DependencyExtractor:
             session: Database session
         """
         self.session = session
-        self.nuget_parser = NuGetParser()
         self.npm_parser = NpmParser()
         self.python_parser = PythonDependencyParser()
     
@@ -126,12 +123,6 @@ class DependencyExtractor:
         Returns:
             True if it's a dependency file
         """
-        # NuGet files
-        if file_name.endswith('.csproj') or file_name in {
-            'packages.config', 'directory.build.props', 'directory.packages.props'
-        }:
-            return True
-        
         # npm files
         if file_name in {'package.json', 'package-lock.json'}:
             return True
@@ -165,12 +156,7 @@ class DependencyExtractor:
             file_name = file_path.name.lower()
             packages = []
             
-            if file_name.endswith('.csproj') or file_name in {
-                'packages.config', 'directory.build.props', 'directory.packages.props'
-            }:
-                packages = self.nuget_parser.parse_file(file_path)
-                
-            elif file_name in {'package.json', 'package-lock.json'}:
+            if file_name in {'package.json', 'package-lock.json'}:
                 # Only parse package.json if package-lock.json doesn't exist
                 # to avoid duplicates
                 if file_name == 'package.json':

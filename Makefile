@@ -1,4 +1,4 @@
-.PHONY: help install dev-install test lint format clean docker-up docker-down docker-logs docker-rebuild docker-status docker-check migrate api-start api-dev api-test mcp-start mcp-dev ui-install ui-dev ui-build ui-test
+.PHONY: help install dev-install test test-integration lint format clean docker-up docker-down docker-logs docker-rebuild docker-status docker-check migrate api-start api-dev api-test mcp-start mcp-dev ui-install ui-dev ui-build ui-test
 
 help:
 	@echo "Available commands:"
@@ -7,6 +7,7 @@ help:
 	@echo "  make install       - Install production dependencies"
 	@echo "  make dev-install   - Install development dependencies"
 	@echo "  make test          - Run tests with coverage"
+	@echo "  make test-integration - Run integration tests only (real infra)"
 	@echo "  make lint          - Run linters"
 	@echo "  make format        - Format code"
 	@echo "  make migrate       - Run database migrations"
@@ -41,6 +42,9 @@ dev-install:
 
 test:
 	pytest tests/ -v --cov=src --cov-report=html --cov-report=term
+
+test-integration:
+	pytest tests/integration/ -m integration -v --cov=src --cov-report=html --cov-report=term
 
 lint:
 	flake8 src/ tests/
@@ -111,4 +115,3 @@ docker-status:
 docker-check:
 	@echo "Checking services health..."
 	@powershell -ExecutionPolicy Bypass -File scripts/check-services.ps1
-

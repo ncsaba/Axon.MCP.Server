@@ -14,9 +14,9 @@ gitpython==3.1.42
 
 # Code Parsing
 tree-sitter>=0.25.0
-tree-sitter-c-sharp>=0.23.0
 tree-sitter-javascript>=0.25.0
 tree-sitter-typescript>=0.23.0
+tree-sitter-java>=0.23.0
 
 # Database
 sqlalchemy==2.0.29
@@ -63,4 +63,3 @@ python-dateutil==2.8.2
 # Additional Dependencies
 circuitbreaker==1.4.0
 slowapi==0.1.9
-

@@ -4,7 +4,8 @@ Multi-language code parser framework using Tree-sitter for extracting symbols an
 
 ## Supported Languages
 
-- **C#** (.cs) - Classes, interfaces, structs, enums, methods, properties, fields
+- **Python** (.py) - Classes, functions, methods, variables
+- **Java** (.java) - Classes, interfaces, enums, methods, fields
 - **JavaScript** (.js, .jsx, .mjs) - Functions, classes, methods
 - **TypeScript** (.ts, .tsx) - All JavaScript features + interfaces, type aliases, enums
 - **Vue.js** (.vue) - Single File Components with JavaScript/TypeScript
@@ -17,13 +18,13 @@ from src.parsers import parse_file, ParserFactory
 from src.config.enums import LanguageEnum
 
 # Parse a file directly
-result = parse_file(Path("MyClass.cs"))
+result = parse_file(Path("service.py"))
 print(f"Found {len(result.symbols)} symbols")
 
 # Or get a parser for a specific language
-parser = ParserFactory.get_parser(LanguageEnum.CSHARP)
-code = "public class MyClass { }"
-result = parser.parse(code, "test.cs")
+parser = ParserFactory.get_parser(LanguageEnum.PYTHON)
+code = "class MyClass: pass"
+result = parser.parse(code, "test.py")
 
 # Access parsed symbols
 for symbol in result.symbols:
@@ -174,7 +175,7 @@ print(f"Extracted {len(result.symbols)} symbols despite errors")
 Parsers automatically record metrics:
 
 ```
-parsing_duration_seconds{language="csharp"} 0.0007
+parsing_duration_seconds{language="python"} 0.0005
 parsing_duration_seconds{language="javascript"} 0.0004
 ```
 
@@ -244,4 +245,3 @@ If symbol extraction accuracy is < 95%:
 - [Tree-sitter Playground](https://tree-sitter.github.io/tree-sitter/playground)
 - Task 05 Documentation: `docs/TASK_05_Code_Parsers.md`
 - Implementation Summary: `docs/TASK_05_IMPLEMENTATION_COMPLETE.md`
-

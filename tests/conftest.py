@@ -15,6 +15,7 @@ if str(_project_root) not in sys.path:
 # Set environment variables for testing BEFORE importing any app code
 # This ensures that src.database.session picks up the test database URL
 os.environ["ENVIRONMENT"] = "testing"
+os.environ["DEBUG"] = "false"
 
 # In CI environments, DATABASE_URL is often set to the correct test database service.
 # Locally, we prefer TEST_DATABASE_URL or the default axon_test.
@@ -106,26 +107,6 @@ async def async_session(async_engine) -> AsyncGenerator[AsyncSession, None]:
 def anyio_backend():
     """Configure anyio backend for async tests."""
     return "asyncio"
-
-
-@pytest.fixture
-def sample_code_csharp():
-    """Sample C# code for testing."""
-    return '''
-namespace TestNamespace
-{
-    /// <summary>
-    /// Test class documentation
-    /// </summary>
-    public class TestClass
-    {
-        public void TestMethod(string param)
-        {
-            Console.WriteLine(param);
-        }
-    }
-}
-'''
 
 
 @pytest.fixture

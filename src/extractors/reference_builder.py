@@ -4,8 +4,6 @@ from sqlalchemy import select
 from src.database.models import Symbol, Relation, File
 from src.config.enums import RelationTypeEnum, SymbolKindEnum
 from src.extractors.call_resolver import CallResolver
-from src.parsers.roslyn_integration import RoslynAnalyzer
-from src.parsers import ParserFactory
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -14,31 +12,13 @@ class ReferenceBuilder:
     """
     Builds reference relationships from extracted symbol references.
     
-    Uses hybrid resolution:
-    1. Try Tree-sitter CallResolver first (fast)
-    2. If unresolved or low confidence, use Roslyn (accurate)
+    Uses parser-based resolution via CallResolver.
     """
     
-    def __init__(self, session: AsyncSession, use_roslyn: bool = True, roslyn_analyzer: Optional[RoslynAnalyzer] = None):
+    def __init__(self, session: AsyncSession):
         self.session = session
         self.resolver = CallResolver(session)
-        
-        if use_roslyn:
-            if roslyn_analyzer:
-                # Use shared instance
-                self.roslyn = roslyn_analyzer
-            else:
-                # Create new instance (fallback)
-                self.roslyn = RoslynAnalyzer()
-        else:
-            self.roslyn = None
-            
-        self.use_roslyn = use_roslyn and (self.roslyn.is_available() if self.roslyn else False)
-        
-        if self.use_roslyn:
-            logger.info("reference_builder_initialized", mode="hybrid")
-        else:
-            logger.info("reference_builder_initialized", mode="tree_sitter_only")
+        logger.info("reference_builder_initialized", mode="tree_sitter_only")
     
     async def build_all_references(self, repository_id: int) -> int:
         """
@@ -192,17 +172,6 @@ class ReferenceBuilder:
         """
         relationships_created = 0
         
-        # Get file content for Roslyn if needed
-        file_content = None
-        if self.use_roslyn:
-            try:
-                absolute_file_path = repo_path / file.path
-                with open(absolute_file_path, 'r', encoding='utf-8') as f:
-                    file_content = f.read()
-            except Exception as e:
-                logger.warning("failed_to_read_file", file_path=file.path, error=str(e))
-                file_content = None
-        
         # Pre-fetch imports if possible (simplified for now)
         imports = []
         
@@ -229,16 +198,6 @@ class ReferenceBuilder:
                 target_id = await self._resolve_with_tree_sitter(
                     ref_name, db_symbol, file, imports, line, ref_type
                 )
-                resolved_by_roslyn = False
-                
-                # If unresolved and Roslyn available, try Roslyn (accurate)
-                roslyn_available = self.roslyn and self.roslyn.is_available()
-                if not target_id and roslyn_available and file_content:
-                    target_id = await self._resolve_with_roslyn(
-                        ref_name, file_content, file.path, line, column
-                    )
-                    resolved_by_roslyn = True if target_id else False
-                
                 if target_id:
                     # Create REFERENCES relationship
                     relation = Relation(
@@ -249,7 +208,7 @@ class ReferenceBuilder:
                             'line': line,
                             'column': column,
                             'ref_type': ref_type,
-                            'resolved_by': 'roslyn' if resolved_by_roslyn else 'tree_sitter'
+                            'resolved_by': 'tree_sitter'
                         }
                     )
                     self.session.add(relation)
@@ -277,17 +236,6 @@ class ReferenceBuilder:
             Number of relationships created
         """
         relationships_created = 0
-        
-        # Get file content for Roslyn if needed
-        file_content = None
-        if self.use_roslyn:
-            try:
-                absolute_file_path = repo_path / file.path
-                with open(absolute_file_path, 'r', encoding='utf-8') as f:
-                    file_content = f.read()
-            except Exception as e:
-                logger.warning("failed_to_read_file", file_path=file.path, error=str(e))
-                file_content = None
         
         # Pre-fetch imports if possible (simplified for now)
         imports = []
@@ -320,16 +268,6 @@ class ReferenceBuilder:
                 target_id = await self._resolve_with_tree_sitter(
                     ref_name, db_symbol, file, imports, line, ref_type
                 )
-                resolved_by_roslyn = False
-                
-                # If unresolved and Roslyn available, try Roslyn (accurate)
-                roslyn_available = self.roslyn and self.roslyn.is_available()
-                if not target_id and roslyn_available and file_content:
-                    target_id = await self._resolve_with_roslyn(
-                        ref_name, file_content, file.path, line, column
-                    )
-                    resolved_by_roslyn = True if target_id else False
-                
                 if target_id:
                     # Target is guaranteed to exist
                     # Create REFERENCES relationship
@@ -341,7 +279,7 @@ class ReferenceBuilder:
                             'line': line,
                             'column': column,
                             'ref_type': ref_type,
-                            'resolved_by': 'roslyn' if resolved_by_roslyn else 'tree_sitter'
+                            'resolved_by': 'tree_sitter'
                         }
                     )
                     self.session.add(relation)
@@ -429,66 +367,3 @@ class ReferenceBuilder:
         except Exception as e:
             logger.debug("tree_sitter_resolution_failed", ref_name=ref_name, error=str(e))
             return None
-
-    async def _resolve_with_roslyn(
-        self,
-        ref_name: str,
-        file_content: str,
-        file_path: str,
-        line: int,
-        column: int
-    ) -> Optional[int]:
-        """
-        Resolve reference using Roslyn semantic analysis.
-        
-        Args:
-            ref_name: Reference name
-            file_content: Full file content
-            file_path: Path to file
-            line: Line number
-            column: Column number
-            
-        Returns:
-            Symbol ID if resolved, None otherwise
-        """
-        try:
-            # Calculate character position from line/column
-            lines = file_content.split('\n')
-            position = sum(len(l) + 1 for l in lines[:line-1]) + column
-            
-            # Use Roslyn to resolve reference
-            result = await self.roslyn.resolve_reference(
-                file_content,
-                file_path,
-                position
-            )
-            
-            if not result:
-                return None
-            
-            # Look up symbol by fully qualified name
-            fqn = result.get('fully_qualified_name')
-            if not fqn:
-                return None
-            
-            # Query database for symbol with this FQN
-            query = select(Symbol).where(Symbol.fully_qualified_name == fqn)
-            db_result = await self.session.execute(query)
-            target_symbol = db_result.scalar_one_or_none()
-            
-            if target_symbol:
-                logger.debug(
-                    "roslyn_resolved_reference",
-                    ref_name=ref_name,
-                    fqn=fqn,
-                    target_id=target_symbol.id
-                )
-                return target_symbol.id
-            else:
-                logger.debug("roslyn_symbol_not_in_db", fqn=fqn)
-                return None
-                
-        except Exception as e:
-            logger.debug("roslyn_resolution_failed", ref_name=ref_name, error=str(e))
-            return None
-    

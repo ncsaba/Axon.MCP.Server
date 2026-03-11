@@ -426,12 +426,12 @@ class IncrementalSyncWorker:
         """Detect language from file extension."""
         suffix = file_path.suffix.lower()
         
-        if suffix == '.cs':
-            return LanguageEnum.CSHARP
-        elif suffix in ['.js', '.jsx', '.mjs']:
+        if suffix in ['.js', '.jsx', '.mjs']:
             return LanguageEnum.JAVASCRIPT
         elif suffix in ['.ts', '.tsx']:
             return LanguageEnum.TYPESCRIPT
+        elif suffix == '.java':
+            return LanguageEnum.JAVA
         elif suffix == '.vue':
             return LanguageEnum.VUE
         elif suffix == '.py':
@@ -440,16 +440,10 @@ class IncrementalSyncWorker:
             return LanguageEnum.MARKDOWN
         elif suffix in ['.sql', '.ddl']:
             return LanguageEnum.SQL
-        elif suffix == '.csproj':
-            return LanguageEnum.CSHARP  # .csproj files are C# project files
-        elif suffix == '.sln':
-            return LanguageEnum.CSHARP  # .sln files are C# solution files
         elif suffix == '.json':
             # Special handling for JSON files
             filename = file_path.name.lower()
-            if filename.startswith('appsettings'):
-                return LanguageEnum.CSHARP  # appsettings.json is C# config
-            elif filename == 'package.json':
+            if filename == 'package.json':
                 return LanguageEnum.JAVASCRIPT  # package.json is npm/JavaScript
             return LanguageEnum.JAVASCRIPT  # Default for other JSON files
         else:
@@ -500,4 +494,3 @@ class IncrementalSyncWorker:
             repository_id=repository_id,
             affected_symbols=len(affected_symbol_ids)
         )
-
