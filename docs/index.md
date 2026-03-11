@@ -1,6 +1,6 @@
 # Axon MCP Server Docs
 
-This fork targets Python + Java + docs/config indexing.
+This fork targets Python + Java + docs/config indexing with a graph-oriented code intelligence model.
 
 ## Runtime Stack
 
@@ -8,6 +8,12 @@ This fork targets Python + Java + docs/config indexing.
 - FastAPI + Celery workers
 - PostgreSQL 17 + pgvector
 - Redis
+
+## Current Status
+
+- C# / Roslyn runtime path removed
+- Java parser routing active
+- Integration-first validation using real local infrastructure
 
 ## Capabilities
 
@@ -20,6 +26,8 @@ This fork targets Python + Java + docs/config indexing.
 ## Key References
 
 - [Architecture Overview](architecture/overview.md)
+- [Parser Capability Matrix](architecture/parser_capability_matrix.md)
 - [Data Models](architecture/data_models.md)
 - [MCP Tools](api/mcp_tools.md)
 - [Setup Guide](guides/setup.md)
+- [Analysis and Roadmap](AXON_ANALYSIS_AND_ROADMAP.md)

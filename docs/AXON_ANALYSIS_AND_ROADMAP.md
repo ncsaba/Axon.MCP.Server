@@ -5,19 +5,66 @@
 This fork prioritizes:
 
 - Python + Java + documentation/config indexing
-- Integration-first validation with local infrastructure
-- Simplified Python-only container/runtime toolchain
+- Integration-first validation with real local infrastructure
+- Python-only runtime toolchain (no C# / Roslyn path)
 
-## Completed Foundation Work
+## Current Baseline (2026-03-11)
 
-- Removed the legacy hybrid semantic-analysis runtime pipeline
-- Added Java parser routing support
-- Reset schema to a clean baseline migration
-- Standardized local PostgreSQL/Redis development setup
+`✅` complete/available, `🚧` incomplete/partial.
 
-## Next Milestones
+| Baseline Area | Status | Notes |
+| --- | --- | --- |
+| C# runtime path removal | `✅` | Removed from this fork runtime. |
+| Java parser routing | `✅` | Active and functioning in parser factory. |
+| Schema baseline reset | `✅` | Clean baseline established for current development track. |
+| Local infra alignment | `✅` | PostgreSQL 17 + pgvector, Redis, manual Celery worker. |
+| Java semantic relation depth | `🚧` | Not yet at target for imports/calls/endpoints/dependencies. |
 
-1. Improve documentation/config parser fidelity.
-2. Expand Java relation extraction quality.
-3. Harden end-to-end sync/index integration flows.
-4. Improve architecture and module summary outputs.
+## Capability Snapshot
+
+### Strong Areas
+
+- Graph-oriented persistence model (symbols, relations, chunks, dependencies).
+- MCP query surface and repository exploration tooling.
+- Integration-ready dev setup for real infrastructure testing.
+
+### Gaps
+
+- Java semantic extractors are incomplete relative to target:
+- import relationship resolution
+- call graph extraction
+- endpoint extraction
+- dependency semantics for Java ecosystem
+
+- Parser/query depth for docs/config formats is uneven by type.
+
+## kilocode-Inspired Improvements
+
+Adopt selectively from `external-inspiration/kilocode`:
+
+1. Centralized extension registry and parser capability signaling.
+2. Rich query-pack approach for language definitions (including Java).
+3. Explicit fallback chunking policy for parser-weak file types.
+4. Broader parser/query regression coverage across languages.
+
+## Strategic Plan: Build the Best Combined Indexer
+
+`✅` completed, `🧭` next action, `🔥` risk.
+
+| Phase | Status | Focus | Risk |
+| --- | --- | --- | --- |
+| Phase 1: Parser platform consolidation | `🧭` | Capability matrix integration, strategy interfaces, fallback policy. | `🔥` temporary extractor regressions during refactor. |
+| Phase 2: Java semantic expansion | `🧭` | Java import/call/endpoint/dependency strategies + graph edges. | `🔥` initial precision depends on parser metadata depth. |
+| Phase 3: Ranking and retrieval quality | `🧭` | Confidence/ranking and summary quality improvements. | `🔥` quality tuning requires representative real repos. |
+| Phase 4: Integration validation at scale | `🧭` | Repeated end-to-end runs on real Java repositories. | `🔥` infra/runtime variance can mask parser issues. |
+
+## Near-Term Execution Queue
+
+`✅` completed, `🧭` next action.
+
+| Item | Status |
+| --- | --- |
+| Parser capability matrix document at `docs/architecture/parser_capability_matrix.md` | `✅` |
+| Introduce interfaces for import/call/dependency extraction by language | `🧭` |
+| Implement first Java semantic extractor set | `🧭` |
+| Add integration checks focused on relation creation quality | `🧭` |
