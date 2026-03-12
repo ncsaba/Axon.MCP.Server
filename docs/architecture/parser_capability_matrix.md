@@ -105,3 +105,12 @@
 | Java endpoint extraction supports common controller/router patterns in target repos | `🚧` |
 | Java dependency manifests (`pom.xml`, `build.gradle*`) are parsed and stored | `🚧` |
 | Integration tests validate end-to-end indexing on real Java repositories in dev-container | `🚧` |
+
+## Benchmark Gates: Match Then Surpass
+
+`✅` required.
+
+| Gate | Goal | Pass Condition |
+| --- | --- | --- |
+| Parity Gate (kilocode-equivalent) | Match at least the Java capability breadth demonstrated by kilocode reference patterns. | Java imports/calls/endpoints/dependencies all meet parity checklist on shared benchmark repos. |
+| Surpass Gate (Axon-native) | Exceed parity using Axon graph model and MCP retrieval strengths. | Improved relation/traversal usefulness over parity baseline with explicit benchmark evidence. |

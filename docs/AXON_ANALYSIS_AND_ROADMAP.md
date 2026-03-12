@@ -54,8 +54,8 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Phase | Status | Focus | Risk |
 | --- | --- | --- | --- |
 | Phase 1: Parser platform consolidation | `🧭` | Capability matrix integration, strategy interfaces, fallback policy. | `🔥` temporary extractor regressions during refactor. |
-| Phase 2: Java semantic expansion | `🧭` | Java import/call/endpoint/dependency strategies + graph edges. | `🔥` initial precision depends on parser metadata depth. |
-| Phase 3: Ranking and retrieval quality | `🧭` | Confidence/ranking and summary quality improvements. | `🔥` quality tuning requires representative real repos. |
+| Phase 2: Java semantic completeness (parity gate) | `🧭` | Reach at least kilocode-equivalent Java capability coverage for imports/calls/endpoints/dependencies. | `🔥` feature surface parity can expose parser/query gaps. |
+| Phase 3: Axon differentiation (surpass gate) | `🧭` | Exceed kilocode baseline via graph-native relations, richer traversal context, and MCP retrieval quality. | `🔥` requires representative benchmark repos and stable scoring criteria. |
 | Phase 4: Integration validation at scale | `🧭` | Repeated end-to-end runs on real Java repositories. | `🔥` infra/runtime variance can mask parser issues. |
 
 ## Near-Term Execution Queue
@@ -65,6 +65,8 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Item | Status |
 | --- | --- |
 | Parser capability matrix document at `docs/architecture/parser_capability_matrix.md` | `✅` |
+| Complete Java feature coverage to kilocode-equivalent baseline (parity gate) | `🧭` |
 | Introduce interfaces for import/call/dependency extraction by language | `🚧` |
 | Implement first Java semantic extractor set | `🚧` |
 | Add integration checks focused on relation creation quality | `🚧` |
+| Define and track Axon-surpass metrics after parity gate completion | `🧭` |
