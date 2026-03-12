@@ -66,6 +66,9 @@ Adopt selectively from `external-inspiration/kilocode`:
 | --- | --- |
 | Parser capability matrix document at `docs/architecture/parser_capability_matrix.md` | `✅` |
 | Complete Java feature coverage to kilocode-equivalent baseline (parity gate) | `🧭` |
+| Java import parity expansion (package wildcard + static wildcard/member imports) | `✅` |
+| Java call parity expansion (qualified static calls + overload arity resolution) | `✅` |
+| Java endpoint parity expansion (JAX-RS `@Path` + Spring multi-method `@RequestMapping`) | `✅` |
 | Introduce interfaces for import/call/dependency extraction by language | `🚧` |
 | Implement first Java semantic extractor set | `🚧` |
 | Add integration checks focused on relation creation quality | `🚧` |

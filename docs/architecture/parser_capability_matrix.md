@@ -114,3 +114,18 @@
 | --- | --- | --- |
 | Parity Gate (kilocode-equivalent) | Match at least the Java capability breadth demonstrated by kilocode reference patterns. | Java imports/calls/endpoints/dependencies all meet parity checklist on shared benchmark repos. |
 | Surpass Gate (Axon-native) | Exceed parity using Axon graph model and MCP retrieval strengths. | Improved relation/traversal usefulness over parity baseline with explicit benchmark evidence. |
+
+## Java Parity Checklist (kilocode-equivalent baseline)
+
+`✅` complete in this fork, `🚧` in progress.
+
+| Area | Checklist Item | Status |
+| --- | --- | --- |
+| Imports | Direct class import relations (`import a.b.C`) | `✅` |
+| Imports | Package wildcard import relations (`import a.b.*`) | `✅` |
+| Imports | Static wildcard/member import relations (`import static a.b.C.*`, `import static a.b.C.X`) | `✅` |
+| Calls | Receiver-aware instance call resolution | `✅` |
+| Calls | Static call resolution and overloaded method handling | `✅` |
+| Endpoints | Spring + JAX-RS annotation coverage for common controller patterns | `✅` |
+| Dependencies | Maven/Gradle coverage including variable/property/BOM-heavy declarations | `🚧` |
+| Validation | Run parity checklist on shared benchmark Java repositories | `🚧` |

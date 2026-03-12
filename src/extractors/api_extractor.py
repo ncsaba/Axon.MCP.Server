@@ -530,9 +530,8 @@ class ApiEndpointExtractor:
             if method_match and class_name:
                 if class_is_controller:
                     method_name = method_match.group(1)
-                    endpoint_info = self._extract_java_method_endpoint_info(pending_annotations)
-                    if endpoint_info:
-                        http_method, method_route = endpoint_info
+                    endpoint_infos = self._extract_java_method_endpoint_infos(pending_annotations)
+                    for http_method, method_route in endpoint_infos:
                         full_route = self._combine_routes(class_route, method_route)
                         endpoints.append(
                             ApiEndpoint(
@@ -575,10 +574,10 @@ class ApiEndpointExtractor:
                     return route
         return ""
 
-    def _extract_java_method_endpoint_info(
+    def _extract_java_method_endpoint_infos(
         self, annotations: List[str]
-    ) -> Optional[Tuple[str, str]]:
-        """Extract (HTTP method, route) from Java method annotations."""
+    ) -> List[Tuple[str, str]]:
+        """Extract one or more (HTTP method, route) entries from Java method annotations."""
         mapping_map = {
             "GetMapping": "GET",
             "PostMapping": "POST",
@@ -592,24 +591,31 @@ class ApiEndpointExtractor:
             "PATCH": "PATCH",
         }
 
-        request_method = None
+        request_methods: List[str] = []
         route = ""
         for annotation in annotations:
             name = self._java_annotation_name(annotation)
             if name in mapping_map:
-                request_method = mapping_map[name]
+                request_methods.append(mapping_map[name])
+                route = self._java_annotation_route(annotation) or route
+            elif name == "Path":
                 route = self._java_annotation_route(annotation) or route
             elif name == "RequestMapping":
                 route = self._java_annotation_route(annotation) or route
-                method_match = re.search(
+                method_matches = re.findall(
                     r"RequestMethod\.(GET|POST|PUT|DELETE|PATCH)", annotation
                 )
-                if method_match:
-                    request_method = method_match.group(1)
+                request_methods.extend(method_matches)
 
-        if not request_method:
-            return None
-        return request_method, route
+        # Preserve declaration order while de-duplicating.
+        seen = set()
+        ordered_methods: List[str] = []
+        for method in request_methods:
+            if method not in seen:
+                seen.add(method)
+                ordered_methods.append(method)
+
+        return [(method, route) for method in ordered_methods]
 
     def _java_annotation_name(self, annotation: str) -> str:
         """Extract simple annotation name from Java annotation line."""

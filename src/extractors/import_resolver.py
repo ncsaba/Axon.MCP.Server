@@ -1,6 +1,6 @@
 """Import resolution for building accurate import relationships."""
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 import asyncio
 import re
 from pathlib import Path
@@ -199,9 +199,33 @@ class JavaImportExtractionStrategy:
         imports: List[Dict[str, Any]] = []
         parser = ParserFactory.get_parser(file.language)
         parse_result = parser.parse(code, file.path)
+        wildcard_map = self._extract_java_wildcard_imports(code)
 
         for import_path in parse_result.imports:
             if not import_path:
+                continue
+
+            wildcard_info = wildcard_map.get(import_path)
+            if wildcard_info and wildcard_info["is_static"]:
+                target_file_id, symbol_ids = await self._resolve_java_static_wildcard_import(import_path, file, file_path)
+                imports.append(
+                    {
+                        "import_path": import_path,
+                        "file_id": target_file_id,
+                        "symbols": symbol_ids,
+                    }
+                )
+                continue
+
+            if wildcard_info and not wildcard_info["is_static"]:
+                symbol_ids = await self._resolve_java_package_wildcard_import(import_path, file.repository_id)
+                imports.append(
+                    {
+                        "import_path": import_path,
+                        "file_id": None,
+                        "symbols": symbol_ids,
+                    }
+                )
                 continue
 
             target_file_id = await self.resolver.resolve_import(import_path, file, file_path)
@@ -227,6 +251,92 @@ class JavaImportExtractionStrategy:
             })
 
         return imports
+
+    def _extract_java_wildcard_imports(self, code: str) -> Dict[str, Dict[str, bool]]:
+        """Return import_path -> wildcard metadata for Java imports that end with .*."""
+        wildcard_map: Dict[str, Dict[str, bool]] = {}
+        for raw_line in code.splitlines():
+            line = raw_line.strip()
+            match = re.match(r"import\s+(static\s+)?([A-Za-z_][\w\.]*)\.\*\s*;", line)
+            if not match:
+                continue
+            import_path = match.group(2)
+            wildcard_map[import_path] = {"is_static": bool(match.group(1))}
+        return wildcard_map
+
+    async def _resolve_java_package_wildcard_import(
+        self,
+        package_path: str,
+        repository_id: int,
+    ) -> List[int]:
+        """Resolve package wildcard imports (e.g. com.example.services.*) to top-level type symbols."""
+        normalized = package_path.replace(".", "/").strip("/")
+        if not normalized:
+            return []
+
+        java_prefixes = [
+            f"src/main/java/{normalized}/",
+            f"src/test/java/{normalized}/",
+            f"{normalized}/",
+        ]
+
+        file_result = await self.resolver.session.execute(
+            select(File).where(File.repository_id == repository_id, File.language == LanguageEnum.JAVA)
+        )
+        java_files = file_result.scalars().all()
+
+        package_file_ids: List[int] = []
+        for db_file in java_files:
+            for prefix in java_prefixes:
+                if db_file.path.startswith(prefix):
+                    remainder = db_file.path[len(prefix):]
+                    # Java wildcard imports only cover direct package members, not subpackages.
+                    if "/" in remainder:
+                        continue
+                    if db_file.path.endswith(".java"):
+                        package_file_ids.append(db_file.id)
+                    break
+
+        if not package_file_ids:
+            return []
+
+        symbol_result = await self.resolver.session.execute(
+            select(Symbol.id).where(
+                Symbol.file_id.in_(package_file_ids),
+                Symbol.kind.in_([SymbolKindEnum.CLASS, SymbolKindEnum.INTERFACE, SymbolKindEnum.ENUM]),
+            )
+        )
+        return [row[0] for row in symbol_result.all()]
+
+    async def _resolve_java_static_wildcard_import(
+        self,
+        import_path: str,
+        file: File,
+        file_path: Path,
+    ) -> Tuple[Optional[int], List[int]]:
+        """Resolve static wildcard imports (e.g. import static a.b.Constants.*)."""
+        target_file_id = await self.resolver.resolve_import(import_path, file, file_path)
+        if not target_file_id:
+            return None, []
+
+        class_fqn = import_path
+        symbol_result = await self.resolver.session.execute(
+            select(Symbol.id).where(
+                Symbol.file_id == target_file_id,
+                Symbol.parent_name == class_fqn,
+                Symbol.kind.in_(
+                    [
+                        SymbolKindEnum.METHOD,
+                        SymbolKindEnum.FUNCTION,
+                        SymbolKindEnum.VARIABLE,
+                        SymbolKindEnum.CONSTANT,
+                        SymbolKindEnum.PROPERTY,
+                    ]
+                ),
+            )
+        )
+        symbol_ids = [row[0] for row in symbol_result.all()]
+        return target_file_id, symbol_ids
 
 
 class ImportRelationshipBuilder:
@@ -296,8 +406,9 @@ class ImportRelationshipBuilder:
                 for import_info in imports:
                     target_file_id = import_info.get('file_id')
                     imported_symbols = import_info.get('symbols', [])
-                    
-                    if target_file_id and source_symbol:
+
+                    # Some Java wildcard imports resolve to symbols without a single target file.
+                    if source_symbol and imported_symbols:
                         # Create import relationships from file's first symbol to imported symbols
                         # This represents that the file imports these symbols
                         for symbol_id in imported_symbols:

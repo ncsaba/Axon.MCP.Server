@@ -207,9 +207,12 @@ class JavaCallAnalyzer:
         if not method_name:
             return None
 
+        arguments = self._extract_java_call_arguments(node, code)
+
         return Call(
             method_name=method_name,
             receiver=receiver,
+            arguments=arguments,
             line_number=node.start_point[0] + 1,
             end_line=node.end_point[0] + 1,
             start_column=node.start_point[1] + 1,
@@ -217,6 +220,19 @@ class JavaCallAnalyzer:
             is_async=False,
             is_static=bool(receiver and receiver[:1].isupper()),
         )
+
+    def _extract_java_call_arguments(self, node: tree_sitter.Node, code: str) -> List[str]:
+        """Extract argument expressions from Java method_invocation nodes."""
+        for child in node.children:
+            if child.type != "argument_list":
+                continue
+            args: List[str] = []
+            for arg_node in child.named_children:
+                arg_text = self._get_node_text(arg_node, code).strip()
+                if arg_text:
+                    args.append(arg_text)
+            return args
+        return []
 
     def _get_node_text(self, node: Optional[tree_sitter.Node], code: str) -> str:
         if not node:

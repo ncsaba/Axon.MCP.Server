@@ -78,7 +78,8 @@ class CallResolver:
             target = await self._find_local_method(
                 call.method_name,
                 file.id,
-                calling_symbol.parent_name
+                calling_symbol.parent_name,
+                len(call.arguments) if call.arguments else None,
             )
             if target:
                 logger.debug("resolved_local", method=call.method_name, target_id=target.id)
@@ -89,7 +90,8 @@ class CallResolver:
             target = await self._find_in_parent_class(
                 call.method_name,
                 calling_symbol.parent_name,
-                file.repository_id
+                file.repository_id,
+                len(call.arguments) if call.arguments else None,
             )
             if target:
                 logger.debug("resolved_parent_class", method=call.method_name, target_id=target.id)
@@ -105,7 +107,8 @@ class CallResolver:
                 call.method_name,
                 target_class_name,
                 file.repository_id,
-                imports
+                imports,
+                len(call.arguments) if call.arguments else None,
             )
             if target:
                 logger.debug("resolved_qualified", method=call.method_name, target_id=target.id)
@@ -114,7 +117,8 @@ class CallResolver:
         # Strategy 4: Fuzzy match by name across repository
         target = await self._fuzzy_match_by_name(
             call.method_name,
-            file.repository_id
+            file.repository_id,
+            len(call.arguments) if call.arguments else None,
         )
         if target:
             logger.debug("resolved_fuzzy", method=call.method_name, target_id=target.id)
@@ -376,7 +380,8 @@ class CallResolver:
         self,
         method_name: str,
         file_id: int,
-        parent_class: Optional[str]
+        parent_class: Optional[str],
+        arg_count: Optional[int] = None,
     ) -> Optional[Symbol]:
         """Find method in the same file."""
         filters = [
@@ -388,16 +393,15 @@ class CallResolver:
         if parent_class:
             filters.append(Symbol.parent_name == parent_class)
         
-        result = await self.session.execute(
-            select(Symbol).where(*filters).limit(1)
-        )
-        return result.scalar_one_or_none()
+        result = await self.session.execute(select(Symbol).where(*filters))
+        return self._select_best_overload(result.scalars().all(), arg_count)
     
     async def _find_in_parent_class(
         self,
         method_name: str,
         parent_class_fqn: str,
-        repository_id: int
+        repository_id: int,
+        arg_count: Optional[int] = None,
     ) -> Optional[Symbol]:
         """Find method in parent class."""
         # First, get the parent class symbol
@@ -420,22 +424,21 @@ class CallResolver:
         
         # Find method in this class
         result = await self.session.execute(
-            select(Symbol)
-            .where(
+            select(Symbol).where(
                 Symbol.parent_name == parent_class.fully_qualified_name,
                 Symbol.name == method_name,
-                Symbol.kind == SymbolKindEnum.METHOD
+                Symbol.kind == SymbolKindEnum.METHOD,
             )
-            .limit(1)
         )
-        return result.scalar_one_or_none()
+        return self._select_best_overload(result.scalars().all(), arg_count)
     
     async def _find_qualified_call(
         self,
         method_name: str,
         receiver: str,
         repository_id: int,
-        imports: List[str] = None
+        imports: List[str] = None,
+        arg_count: Optional[int] = None,
     ) -> Optional[Symbol]:
         """
         Find method by qualified name.
@@ -489,15 +492,13 @@ class CallResolver:
         for class_symbol in class_symbols:
             # Find method in this class
             result = await self.session.execute(
-                select(Symbol)
-                .where(
+                select(Symbol).where(
                     Symbol.parent_name == class_symbol.fully_qualified_name,
                     Symbol.name == method_name,
-                    Symbol.kind == SymbolKindEnum.METHOD
+                    Symbol.kind == SymbolKindEnum.METHOD,
                 )
-                .limit(1)
             )
-            method_symbol = result.scalar_one_or_none()
+            method_symbol = self._select_best_overload(result.scalars().all(), arg_count)
             if method_symbol:
                 return method_symbol
                 
@@ -506,7 +507,8 @@ class CallResolver:
     async def _fuzzy_match_by_name(
         self,
         method_name: str,
-        repository_id: int
+        repository_id: int,
+        arg_count: Optional[int] = None,
     ) -> Optional[Symbol]:
         """
         Fuzzy match by name across repository.
@@ -514,14 +516,46 @@ class CallResolver:
         Falls back to finding any method with matching name.
         """
         result = await self.session.execute(
-            select(Symbol, File)
+            select(Symbol)
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 Symbol.name == method_name,
-                Symbol.kind.in_([SymbolKindEnum.METHOD, SymbolKindEnum.FUNCTION])
+                Symbol.kind.in_([SymbolKindEnum.METHOD, SymbolKindEnum.FUNCTION]),
             )
-            .limit(1)  # Take first match
         )
-        row = result.first()
-        return row[0] if row else None
+        return self._select_best_overload(result.scalars().all(), arg_count)
+
+    def _select_best_overload(
+        self,
+        candidates: List[Symbol],
+        arg_count: Optional[int],
+    ) -> Optional[Symbol]:
+        """Select the best overload candidate, preferring argument-count matches."""
+        if not candidates:
+            return None
+        if arg_count is None:
+            return candidates[0]
+
+        exact = [symbol for symbol in candidates if self._parameter_count(symbol) == arg_count]
+        if exact:
+            return exact[0]
+
+        return candidates[0]
+
+    def _parameter_count(self, symbol: Symbol) -> Optional[int]:
+        """Best-effort parameter count extraction from symbol.parameters JSON payload."""
+        params = symbol.parameters
+        if params is None:
+            return 0
+        if isinstance(params, (list, tuple)):
+            return len(params)
+        if isinstance(params, dict):
+            if "params" in params and isinstance(params["params"], (list, tuple)):
+                return len(params["params"])
+            # Legacy normalized shape in API responses: param_0, param_1, ...
+            keyed_params = [k for k in params if str(k).startswith("param_")]
+            if keyed_params:
+                return len(keyed_params)
+            return len(params)
+        return None
