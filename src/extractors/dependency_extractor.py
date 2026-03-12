@@ -3,9 +3,10 @@
 from pathlib import Path
 import os
 import re
+import tomllib
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from typing import List, Set, Optional
+from typing import Dict, List, Set, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
@@ -301,21 +302,39 @@ class DependencyExtractor:
             ns = {"m": ns_match.group(1)} if ns_match else {}
             prefix = "m:" if ns else ""
 
+            properties = self._extract_maven_properties(root, prefix, ns)
+            dependency_management_versions = self._extract_maven_dependency_management_versions(
+                root, prefix, ns, properties
+            )
+
             dependency_nodes = root.findall(f".//{prefix}dependency", ns)
             for dep in dependency_nodes:
                 group_id = dep.findtext(f"{prefix}groupId", default="", namespaces=ns).strip()
                 artifact_id = dep.findtext(f"{prefix}artifactId", default="", namespaces=ns).strip()
                 version = dep.findtext(f"{prefix}version", default="", namespaces=ns).strip()
                 scope = dep.findtext(f"{prefix}scope", default="", namespaces=ns).strip().lower()
+                dep_type = dep.findtext(f"{prefix}type", default="", namespaces=ns).strip().lower()
 
                 if not group_id or not artifact_id:
                     continue
 
+                resolved_group = self._resolve_maven_value(group_id, properties)
+                resolved_artifact = self._resolve_maven_value(artifact_id, properties)
+                resolved_version = self._resolve_maven_value(version, properties)
+                if not resolved_version:
+                    resolved_version = dependency_management_versions.get(
+                        f"{resolved_group}:{resolved_artifact}", ""
+                    )
+
+                # Ignore BOM import entries; they are metadata, not runtime deps.
+                if scope == "import" and dep_type == "pom":
+                    continue
+
                 packages.append(
                     JavaPackage(
-                        package_name=f"{group_id}:{artifact_id}",
-                        version=version or None,
-                        version_constraint=version or None,
+                        package_name=f"{resolved_group}:{resolved_artifact}",
+                        version=resolved_version or None,
+                        version_constraint=resolved_version or None,
                         is_dev_dependency=scope in {"test", "provided"},
                         is_transitive=False,
                         file_path=str(file_path),
@@ -333,18 +352,20 @@ class DependencyExtractor:
         packages: List[JavaPackage] = []
         try:
             text = file_path.read_text(encoding="utf-8", errors="ignore")
+            gradle_vars = self._extract_gradle_variables(text)
+            version_catalog = self._load_gradle_version_catalog(file_path)
 
             # Matches:
             # implementation 'group:artifact:version'
             # testImplementation("group:artifact:version")
             # api("group:artifact")
-            pattern = re.compile(
+            string_pattern = re.compile(
                 r"\b(implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly|annotationProcessor|kapt)\b"
-                r"\s*(?:\(\s*)?[\"']([^\"']+)[\"']"
+                r"\s*(?:\(\s*)?(?:platform\s*\(\s*)?[\"']([^\"']+)[\"']"
             )
-            for match in pattern.finditer(text):
+            for match in string_pattern.finditer(text):
                 config = match.group(1)
-                notation = match.group(2).strip()
+                notation = self._resolve_gradle_value(match.group(2).strip(), gradle_vars)
 
                 parts = notation.split(":")
                 if len(parts) < 2:
@@ -368,10 +389,237 @@ class DependencyExtractor:
                     )
                 )
 
+            # Matches simple version-catalog usage:
+            # implementation(libs.junit.jupiter)
+            # implementation libs.junit.jupiter
+            # implementation(platform(libs.spring.boot.bom))
+            catalog_pattern = re.compile(
+                r"\b(implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly|annotationProcessor|kapt)\b"
+                r"\s*(?:\(\s*)?(?:platform\s*\(\s*)?(libs\.[A-Za-z0-9_.-]+)"
+            )
+            for match in catalog_pattern.finditer(text):
+                config = match.group(1)
+                alias = match.group(2)
+                module_and_version = self._resolve_gradle_catalog_alias(alias, version_catalog)
+                if not module_and_version:
+                    continue
+                package_name, version = module_and_version
+                packages.append(
+                    JavaPackage(
+                        package_name=package_name,
+                        version=version,
+                        version_constraint=version,
+                        is_dev_dependency=config.lower().startswith("test"),
+                        is_transitive=False,
+                        file_path=str(file_path),
+                        dependency_type="gradle",
+                    )
+                )
+
+            # Matches map-style dependency notation:
+            # implementation group: 'g', name: 'a', version: 'v'
+            # implementation(group = "g", name = "a", version = "v")
+            map_pattern = re.compile(
+                r"\b(implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly|annotationProcessor|kapt)\b"
+                r"[^\n]*?(?:group\s*[:=]\s*[\"']([^\"']+)[\"'])"
+                r"[^\n]*?(?:name\s*[:=]\s*[\"']([^\"']+)[\"'])"
+                r"[^\n]*?(?:version\s*[:=]\s*[\"']([^\"']+)[\"'])?"
+            )
+            for match in map_pattern.finditer(text):
+                config = match.group(1)
+                group_id = self._resolve_gradle_value((match.group(2) or "").strip(), gradle_vars)
+                artifact_id = self._resolve_gradle_value((match.group(3) or "").strip(), gradle_vars)
+                version = self._resolve_gradle_value((match.group(4) or "").strip(), gradle_vars) or None
+                if not group_id or not artifact_id:
+                    continue
+                packages.append(
+                    JavaPackage(
+                        package_name=f"{group_id}:{artifact_id}",
+                        version=version,
+                        version_constraint=version,
+                        is_dev_dependency=config.lower().startswith("test"),
+                        is_transitive=False,
+                        file_path=str(file_path),
+                        dependency_type="gradle",
+                    )
+                )
+
             logger.debug("parsed_gradle_build_file", file_path=str(file_path), packages_found=len(packages))
         except Exception as e:
             logger.error("error_parsing_gradle_build_file", file_path=str(file_path), error=str(e))
         return packages
+
+    def _extract_maven_properties(
+        self,
+        root: ET.Element,
+        prefix: str,
+        ns: Dict[str, str],
+    ) -> Dict[str, str]:
+        """Extract Maven property values and common project aliases."""
+        properties: Dict[str, str] = {}
+
+        def _text(path: str) -> str:
+            return (root.findtext(path, default="", namespaces=ns) or "").strip()
+
+        project_group = _text(f"{prefix}groupId")
+        project_version = _text(f"{prefix}version")
+        parent_group = _text(f"{prefix}parent/{prefix}groupId")
+        parent_version = _text(f"{prefix}parent/{prefix}version")
+
+        if not project_group:
+            project_group = parent_group
+        if not project_version:
+            project_version = parent_version
+
+        properties["project.groupId"] = project_group
+        properties["project.version"] = project_version
+        properties["pom.groupId"] = project_group
+        properties["pom.version"] = project_version
+
+        properties_node = root.find(f"{prefix}properties", ns)
+        if properties_node is not None:
+            for child in list(properties_node):
+                key = child.tag.split("}", 1)[-1]
+                properties[key] = (child.text or "").strip()
+
+        return properties
+
+    def _extract_maven_dependency_management_versions(
+        self,
+        root: ET.Element,
+        prefix: str,
+        ns: Dict[str, str],
+        properties: Dict[str, str],
+    ) -> Dict[str, str]:
+        """Extract version defaults from `<dependencyManagement>`."""
+        versions: Dict[str, str] = {}
+        dm_nodes = root.findall(f"{prefix}dependencyManagement/{prefix}dependencies/{prefix}dependency", ns)
+        for dep in dm_nodes:
+            group_id = (dep.findtext(f"{prefix}groupId", default="", namespaces=ns) or "").strip()
+            artifact_id = (dep.findtext(f"{prefix}artifactId", default="", namespaces=ns) or "").strip()
+            version = (dep.findtext(f"{prefix}version", default="", namespaces=ns) or "").strip()
+            dep_scope = (dep.findtext(f"{prefix}scope", default="", namespaces=ns) or "").strip().lower()
+            dep_type = (dep.findtext(f"{prefix}type", default="", namespaces=ns) or "").strip().lower()
+            resolved_group = self._resolve_maven_value(group_id, properties)
+            resolved_artifact = self._resolve_maven_value(artifact_id, properties)
+            resolved_version = self._resolve_maven_value(version, properties)
+            if not resolved_group or not resolved_artifact or not resolved_version:
+                continue
+            # Ignore BOM imports in fallback version map.
+            if dep_scope == "import" and dep_type == "pom":
+                continue
+            versions[f"{resolved_group}:{resolved_artifact}"] = resolved_version
+        return versions
+
+    def _resolve_maven_value(self, value: str, properties: Dict[str, str]) -> str:
+        """Resolve Maven `${...}` placeholders using known properties."""
+        result = value or ""
+        for _ in range(5):
+            match = re.search(r"\$\{([^}]+)\}", result)
+            if not match:
+                break
+            key = match.group(1).strip()
+            replacement = properties.get(key)
+            if replacement is None:
+                break
+            result = result.replace(f"${{{key}}}", replacement)
+        return result.strip()
+
+    def _extract_gradle_variables(self, text: str) -> Dict[str, str]:
+        """Extract simple Gradle variable assignments for version interpolation."""
+        variables: Dict[str, str] = {}
+
+        patterns = [
+            # def foo = "1.2.3" / val foo = "1.2.3"
+            re.compile(r"\b(?:def|val)\s+([A-Za-z_]\w*)\s*=\s*[\"']([^\"']+)[\"']"),
+            # fooVersion = "1.2.3" (inside ext {})
+            re.compile(r"\b([A-Za-z_]\w*)\s*=\s*[\"']([^\"']+)[\"']"),
+        ]
+        for pattern in patterns:
+            for match in pattern.finditer(text):
+                variables[match.group(1)] = match.group(2).strip()
+        return variables
+
+    def _resolve_gradle_value(self, value: str, variables: Dict[str, str]) -> str:
+        """Resolve Gradle `$var` and `${var}` placeholders."""
+        resolved = value or ""
+        for _ in range(5):
+            changed = False
+            for key, replacement in variables.items():
+                token_a = f"${{{key}}}"
+                token_b = f"${key}"
+                if token_a in resolved:
+                    resolved = resolved.replace(token_a, replacement)
+                    changed = True
+                if token_b in resolved:
+                    resolved = resolved.replace(token_b, replacement)
+                    changed = True
+            if not changed:
+                break
+        return resolved.strip()
+
+    def _load_gradle_version_catalog(self, build_file_path: Path) -> Dict[str, Tuple[str, Optional[str]]]:
+        """Load `libs.versions.toml` mappings for Gradle version catalog aliases."""
+        candidates = []
+        current = build_file_path.parent
+        for _ in range(4):
+            candidates.append(current / "gradle" / "libs.versions.toml")
+            candidates.append(current / "libs.versions.toml")
+            if current.parent == current:
+                break
+            current = current.parent
+
+        catalog_path = next((path for path in candidates if path.exists()), None)
+        if not catalog_path:
+            return {}
+
+        try:
+            data = tomllib.loads(catalog_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+        versions = data.get("versions", {}) if isinstance(data, dict) else {}
+        libraries = data.get("libraries", {}) if isinstance(data, dict) else {}
+        resolved: Dict[str, Tuple[str, Optional[str]]] = {}
+        for alias, entry in libraries.items():
+            if not isinstance(entry, dict):
+                continue
+            module = entry.get("module")
+            group = entry.get("group")
+            name = entry.get("name")
+            version = entry.get("version")
+            version_ref = entry.get("version.ref") or entry.get("version_ref")
+            if isinstance(version, dict):
+                version_ref = version.get("ref")
+                version = version.get("require")
+            if version_ref and isinstance(versions, dict):
+                version = versions.get(version_ref, version)
+            if not module and group and name:
+                module = f"{group}:{name}"
+            if not module or ":" not in module:
+                continue
+            resolved[alias] = (module, str(version).strip() if version else None)
+
+        return resolved
+
+    def _resolve_gradle_catalog_alias(
+        self,
+        alias: str,
+        catalog: Dict[str, Tuple[str, Optional[str]]],
+    ) -> Optional[Tuple[str, Optional[str]]]:
+        """Resolve `libs.foo.bar` alias to module coordinates from version catalog."""
+        if not alias.startswith("libs."):
+            return None
+        token = alias[len("libs."):].strip()
+        candidates = {
+            token,
+            token.replace(".", "-"),
+            token.replace(".", "_"),
+        }
+        for candidate in candidates:
+            if candidate in catalog:
+                return catalog[candidate]
+        return None
     
     async def _clear_existing_dependencies(self, repository_id: int):
         """

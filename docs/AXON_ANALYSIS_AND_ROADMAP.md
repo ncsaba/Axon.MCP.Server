@@ -69,6 +69,7 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Java import parity expansion (package wildcard + static wildcard/member imports) | `✅` |
 | Java call parity expansion (qualified static calls + overload arity resolution) | `✅` |
 | Java endpoint parity expansion (JAX-RS `@Path` + Spring multi-method `@RequestMapping`) | `✅` |
+| Java dependency parity expansion (Maven properties/dependencyManagement + Gradle platform/catalog patterns) | `✅` |
 | Introduce interfaces for import/call/dependency extraction by language | `🚧` |
 | Implement first Java semantic extractor set | `🚧` |
 | Add integration checks focused on relation creation quality | `🚧` |

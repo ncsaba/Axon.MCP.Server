@@ -127,5 +127,5 @@
 | Calls | Receiver-aware instance call resolution | `✅` |
 | Calls | Static call resolution and overloaded method handling | `✅` |
 | Endpoints | Spring + JAX-RS annotation coverage for common controller patterns | `✅` |
-| Dependencies | Maven/Gradle coverage including variable/property/BOM-heavy declarations | `🚧` |
+| Dependencies | Maven/Gradle coverage including variable/property/BOM-heavy declarations | `✅` |
 | Validation | Run parity checklist on shared benchmark Java repositories | `🚧` |
