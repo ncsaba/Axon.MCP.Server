@@ -11,6 +11,11 @@ Implement the async streaming indexing architecture end-to-end with:
 
 This plan follows the approved constraints in `incremental_indexing_spec.md`.
 
+Note:
+- Dedup architecture (`file instance` vs `file content`) is tracked separately and deferred.
+- See `docs/architecture/file_instance_content_dedup_proposal.md`.
+- No interface changes for dedup are introduced during this streaming implementation plan.
+
 ## Current Baseline
 
 `✅` present, `🚧` partial, `🛑` missing.
@@ -54,9 +59,10 @@ Implement in slices, each independently testable and reversible.
 
 ### Code changes
 
-1. Introduce batch-emitting discovery producer task.
-2. Emit `paths[]` with `repository_id`, `batch_id`, `observed_at`.
-3. Bound batch size by config.
+1. Introduce `FileInventoryProvider` abstraction and batch-emitting discovery producer task.
+2. Emit batch schema (`repository_id`, `run_id`, `batch_seq`, `observed_at`, `files[]`).
+3. Support OS-native provider backends plus portable fallback.
+4. Bound batch size and in-flight batches by config with backpressure.
 
 ### Target files
 
@@ -64,12 +70,17 @@ Implement in slices, each independently testable and reversible.
 - `src/workers/celery_app.py` (queue routing for discovery/metadata gate)
 - `src/workers/pipeline/steps/discovery_step.py` (producer mode)
 - `src/config/settings.py` (batch-size/tuning knobs)
+- `src/workers/file_inventory/*` (new provider module family)
 
 ### Acceptance criteria
 
 1. Discovery emits multiple batches for large repos.
-2. Batch schema validated in logs/tests.
+2. Batch schema validated in logs/tests and supports idempotency keys.
 3. No requirement to hold full file list in memory.
+4. Native backend strategy documented and pluggable.
+
+Reference design:
+- `docs/architecture/streaming_file_inventory_design.md`
 
 ## Slice 3: Metadata Gate Workers
 
