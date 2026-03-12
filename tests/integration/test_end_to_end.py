@@ -152,47 +152,149 @@ async def test_repository_list_with_filters():
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_symbols_list():
-    """Test symbols listing endpoint - currently not implemented."""
+async def test_symbols_list(async_session):
+    """Test symbols listing endpoint."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        # Note: /api/v1/symbols list endpoint doesn't exist yet
-        # Only individual symbol endpoints exist: /api/v1/symbols/{symbol_id}
-        # This test is expected to fail until the list endpoint is implemented
-        response = await client.get(
-            "/api/v1/symbols",
-            params={"limit": 10}
-        )
-        
-        # Currently returns 404 - skip this test for now
-        pytest.skip("Symbols list endpoint not yet implemented")
-
-
-@pytest.mark.integration
-@pytest.mark.asyncio
-async def test_symbols_by_repository():
-    """Test symbols filtered by repository."""
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        # First create a repository
         create_response = await client.post(
             "/api/v1/repositories",
             json={
-                "gitlab_project_id": 1000,
-                "name": "symbols-test-repo",
-                "path_with_namespace": "test/symbols-repo",
-                "url": "https://example.com/symbols-repo.git",
-                "clone_url": "https://example.com/symbols-repo.git",
+                "gitlab_project_id": 1001,
+                "name": "symbols-list-repo",
+                "path_with_namespace": "test/symbols-list-repo",
+                "url": "https://example.com/symbols-list-repo.git",
+                "clone_url": "https://example.com/symbols-list-repo.git",
                 "default_branch": "main",
                 "provider": "GITLAB"
             }
         )
-        
-        if create_response.status_code in [200, 201]:
-            repo_data = create_response.json()
-            repo_id = repo_data["id"]
-            
-            # Get symbols for this repository
-            # Note: /api/v1/symbols list endpoint doesn't exist yet
-            pytest.skip("Symbols list endpoint not yet implemented")
+        assert create_response.status_code in [200, 201]
+        repo_id = create_response.json()["id"]
+
+        from src.database.models import File, Symbol
+
+        file_record = File(
+            repository_id=repo_id,
+            path="src/app.py",
+            language=LanguageEnum.PYTHON,
+            size_bytes=120,
+            line_count=20,
+        )
+        async_session.add(file_record)
+        await async_session.flush()
+
+        symbol = Symbol(
+            file_id=file_record.id,
+            language=LanguageEnum.PYTHON,
+            kind=SymbolKindEnum.FUNCTION,
+            name="process_order",
+            start_line=3,
+            end_line=12,
+            signature="def process_order(order_id: int) -> None",
+        )
+        async_session.add(symbol)
+        await async_session.commit()
+
+        response = await client.get(
+            "/api/v1/symbols",
+            params={"limit": 10}
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert "items" in payload
+        assert "total" in payload
+        assert payload["limit"] == 10
+        assert isinstance(payload["items"], list)
+        assert any(item["id"] == symbol.id for item in payload["items"])
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_symbols_by_repository(async_session):
+    """Test symbols filtered by repository."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # First repository
+        create_response_1 = await client.post(
+            "/api/v1/repositories",
+            json={
+                "gitlab_project_id": 1000,
+                "name": "symbols-test-repo-a",
+                "path_with_namespace": "test/symbols-repo-a",
+                "url": "https://example.com/symbols-repo-a.git",
+                "clone_url": "https://example.com/symbols-repo-a.git",
+                "default_branch": "main",
+                "provider": "GITLAB"
+            }
+        )
+        assert create_response_1.status_code in [200, 201]
+        repo_id_1 = create_response_1.json()["id"]
+
+        # Second repository
+        create_response_2 = await client.post(
+            "/api/v1/repositories",
+            json={
+                "gitlab_project_id": 1002,
+                "name": "symbols-test-repo-b",
+                "path_with_namespace": "test/symbols-repo-b",
+                "url": "https://example.com/symbols-repo-b.git",
+                "clone_url": "https://example.com/symbols-repo-b.git",
+                "default_branch": "main",
+                "provider": "GITLAB"
+            }
+        )
+        assert create_response_2.status_code in [200, 201]
+        repo_id_2 = create_response_2.json()["id"]
+
+        from src.database.models import File, Symbol
+
+        file_1 = File(
+            repository_id=repo_id_1,
+            path="src/repo_a.py",
+            language=LanguageEnum.PYTHON,
+            size_bytes=100,
+            line_count=12,
+        )
+        file_2 = File(
+            repository_id=repo_id_2,
+            path="src/repo_b.py",
+            language=LanguageEnum.PYTHON,
+            size_bytes=110,
+            line_count=15,
+        )
+        async_session.add_all([file_1, file_2])
+        await async_session.flush()
+
+        symbol_1 = Symbol(
+            file_id=file_1.id,
+            language=LanguageEnum.PYTHON,
+            kind=SymbolKindEnum.FUNCTION,
+            name="repo_a_func",
+            start_line=1,
+            end_line=3,
+        )
+        symbol_2 = Symbol(
+            file_id=file_2.id,
+            language=LanguageEnum.PYTHON,
+            kind=SymbolKindEnum.FUNCTION,
+            name="repo_b_func",
+            start_line=1,
+            end_line=3,
+        )
+        async_session.add_all([symbol_1, symbol_2])
+        await async_session.commit()
+
+        response = await client.get(
+            "/api/v1/symbols",
+            params={"repository_id": repo_id_1, "limit": 10},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["total"] >= 1
+        assert len(payload["items"]) >= 1
+        assert all(item["repository_id"] == repo_id_1 for item in payload["items"])
+        assert any(item["id"] == symbol_1.id for item in payload["items"])
+        assert all(item["id"] != symbol_2.id for item in payload["items"])
 
 
 @pytest.mark.integration
@@ -349,4 +451,3 @@ async def test_full_workflow():
         assert search_response.status_code == 200
         search_results = search_response.json()
         assert isinstance(search_results, list)
-

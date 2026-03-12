@@ -70,14 +70,24 @@ Get the file tree structure of a repository.
 
 ### 🧩 Symbols
 
-#### `GET /symbols/{id}`
-Get detailed metadata for a symbol (signature, complexity, docstring).
+#### `GET /symbols`
+List symbols with pagination and optional filters.
 
-#### `GET /symbols/{id}/call path`
-Calculate the call path between two symbols.
+**Common query params:**
+- `skip` (int, default: 0)
+- `limit` (int, default: 20, max: 100)
+- `repository_id` (int, optional)
+- `language` (enum, optional)
+- `symbol_kind` (enum, optional)
+
+#### `GET /symbols/{symbol_id}`
+Get detailed metadata for a symbol.
+
+#### `GET /symbols/{symbol_id}/relationships`
+Get a symbol with its outgoing relation edges.
 
 #### `GET /files/{file_id}/symbols`
-List all symbols defined in a specific file.
+List symbols defined in a specific file (with pagination and optional `symbol_kind` filter).
 
 ---
 

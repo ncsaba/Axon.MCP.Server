@@ -43,27 +43,34 @@ Passing targeted DB-backed integration tests (Postgres `indexer`):
 
 Latest explicit targeted run: `7 passed`.
 
-## Full original suite status
+## Follow-up implementation status (2026-03-12 later session)
 
-A full `make test` run was started on 2026-03-12 and then intentionally stopped at user request to close session.
+Completed after this handover:
+- Added symbols listing APIs:
+  - `GET /api/v1/symbols`
+  - `GET /api/v1/files/{file_id}/symbols`
+- Updated and unskipped:
+  - `tests/integration/test_end_to_end.py::test_symbols_list`
+  - `tests/integration/test_end_to_end.py::test_symbols_by_repository`
+- Updated REST API docs for symbol endpoints and removed stale `/symbols/{id}/call path` reference.
+- Removed warning-producing test patterns on our side (migrated route unit tests from `TestClient` to `httpx.AsyncClient` with `ASGITransport`).
+- Upgraded framework pins to remove remaining dependency warning:
+  - `fastapi==0.115.14`
+  - `starlette==0.46.2`
 
-Early observed failures before stopping:
-- `tests/integration/test_embedding_pipeline.py::test_end_to_end_embedding_generation`
-- `tests/integration/test_embedding_pipeline.py::test_local_embedding_generation`
-- `tests/integration/test_embedding_pipeline.py::test_cache_hit_rate`
-- `tests/integration/test_embedding_pipeline.py::test_batch_processing_performance`
-
-Observed skips in early end-to-end API integration paths are consistent with existing baseline for not-yet-implemented symbol/search behaviors.
+Validation:
+- Targeted symbol/API tests: passed.
+- Full suite: `396 passed` (no skips/failures in end-to-end symbols coverage).
 
 ## Next step for next session
 
-1. Re-run full suite from clean state and capture complete failure summary:
+1. Continue Java semantic quality improvements (precision/coverage) using the strategy interfaces already introduced.
+2. Optionally evaluate moving FastAPI/Starlette further forward (beyond 0.115/0.46) after compatibility review.
+3. Keep running full suite with:
    - `source /home/vscode/.venv-axon-mcp/bin/activate`
    - `export DATABASE_URL='postgresql+asyncpg://indexer:indexer@localhost:5432/indexer'`
    - `export TEST_DATABASE_URL='postgresql+asyncpg://indexer:indexer@localhost:5432/indexer'`
    - `make test`
-2. Triage embedding pipeline integration failures first (environment/config vs. regression).
-3. If failures are unrelated to Java extractor changes, document as existing instability and proceed with next Java semantic quality increment.
 
 ## Notes
 

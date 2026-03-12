@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.schemas.symbols import RelationEdge, SymbolResponse, SymbolWithRelations
+from src.config.enums import LanguageEnum, SymbolKindEnum
 from src.database.models import File, Relation, Repository, Symbol
 
 
@@ -34,20 +35,8 @@ class SymbolService:
         # Unknown/invalid payload shape should not break API responses.
         return None
 
-    async def get_symbol(self, symbol_id: int) -> Optional[SymbolResponse]:
-        stmt: Select = (
-            select(Symbol, File, Repository)
-            .join(File, Symbol.file_id == File.id)
-            .join(Repository, File.repository_id == Repository.id)
-            .where(Symbol.id == symbol_id)
-        )
-        result = await self._session.execute(stmt)
-        row = result.first()
-        if row is None:
-            return None
-
-        symbol, file, repository = row
-
+    def _to_symbol_response(self, symbol: Symbol, file: File, repository: Repository) -> SymbolResponse:
+        """Convert DB rows to response schema."""
         return SymbolResponse(
             id=symbol.id,
             file_id=file.id,
@@ -66,6 +55,63 @@ class SymbolService:
             parent_symbol_id=symbol.parent_symbol_id,
             created_at=symbol.created_at,
         )
+
+    async def get_symbol(self, symbol_id: int) -> Optional[SymbolResponse]:
+        stmt: Select = (
+            select(Symbol, File, Repository)
+            .join(File, Symbol.file_id == File.id)
+            .join(Repository, File.repository_id == Repository.id)
+            .where(Symbol.id == symbol_id)
+        )
+        result = await self._session.execute(stmt)
+        row = result.first()
+        if row is None:
+            return None
+
+        symbol, file, repository = row
+        return self._to_symbol_response(symbol, file, repository)
+
+    async def list_symbols(
+        self,
+        offset: int,
+        limit: int,
+        repository_id: Optional[int] = None,
+        file_id: Optional[int] = None,
+        language: Optional[LanguageEnum] = None,
+        symbol_kind: Optional[SymbolKindEnum] = None,
+    ) -> tuple[list[SymbolResponse], int]:
+        """Return paginated symbols with optional filters."""
+        filters = []
+        if repository_id is not None:
+            filters.append(File.repository_id == repository_id)
+        if file_id is not None:
+            filters.append(Symbol.file_id == file_id)
+        if language is not None:
+            filters.append(Symbol.language == language)
+        if symbol_kind is not None:
+            filters.append(Symbol.kind == symbol_kind)
+
+        stmt: Select = (
+            select(Symbol, File, Repository)
+            .join(File, Symbol.file_id == File.id)
+            .join(Repository, File.repository_id == Repository.id)
+            .order_by(Symbol.id.asc())
+            .offset(offset)
+            .limit(limit)
+        )
+        count_stmt: Select = (
+            select(func.count(Symbol.id))
+            .join(File, Symbol.file_id == File.id)
+        )
+
+        if filters:
+            stmt = stmt.where(*filters)
+            count_stmt = count_stmt.where(*filters)
+
+        rows = (await self._session.execute(stmt)).all()
+        items = [self._to_symbol_response(symbol, file, repository) for symbol, file, repository in rows]
+        total = int((await self._session.execute(count_stmt)).scalar_one())
+        return items, total
 
     async def get_symbol_with_relations(self, symbol_id: int) -> Optional[SymbolWithRelations]:
         symbol = await self.get_symbol(symbol_id)
@@ -92,5 +138,4 @@ class SymbolService:
             )
 
         return SymbolWithRelations(**symbol.model_dump(), relations=edges)
-
 

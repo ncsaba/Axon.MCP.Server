@@ -1,7 +1,8 @@
+import asyncio
 from datetime import UTC, datetime
 
 from fastapi import FastAPI
-from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 
 from src.api.auth import get_current_user
 from src.api.dependencies import get_db_session
@@ -25,6 +26,14 @@ def _build_app(*routers):
 
     app.dependency_overrides[get_db_session] = _fake_db_session
     return app
+
+
+def _request(app: FastAPI, method: str, path: str, **kwargs):
+    async def _send():
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            return await client.request(method, path, **kwargs)
+
+    return asyncio.run(_send())
 
 
 def _repository_payload(repository_id: int = 1) -> dict:
@@ -58,7 +67,6 @@ def _repository_payload(repository_id: int = 1) -> dict:
 
 def test_list_repositories_returns_paginated_results(monkeypatch):
     app = _build_app((repositories_router, "/api/v1"))
-    client = TestClient(app)
 
     import src.api.routes.repositories as repositories_module
 
@@ -69,7 +77,7 @@ def test_list_repositories_returns_paginated_results(monkeypatch):
 
     monkeypatch.setattr(repositories_module.RepositoryService, "list", _fake_list)
 
-    response = client.get("/api/v1/repositories")
+    response = _request(app, "GET", "/api/v1/repositories")
 
     assert response.status_code == 200
     payload = response.json()
@@ -79,7 +87,6 @@ def test_list_repositories_returns_paginated_results(monkeypatch):
 
 def test_get_repository_sync_history_returns_404_for_missing_repository(monkeypatch):
     app = _build_app((repositories_router, "/api/v1"))
-    client = TestClient(app)
 
     import src.api.routes.repositories as repositories_module
 
@@ -89,7 +96,7 @@ def test_get_repository_sync_history_returns_404_for_missing_repository(monkeypa
 
     monkeypatch.setattr(repositories_module.RepositoryService, "get", _fake_get)
 
-    response = client.get("/api/v1/repositories/999/sync-history")
+    response = _request(app, "GET", "/api/v1/repositories/999/sync-history")
 
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
@@ -97,7 +104,6 @@ def test_get_repository_sync_history_returns_404_for_missing_repository(monkeypa
 
 def test_get_repository_sync_history_returns_jobs(monkeypatch):
     app = _build_app((repositories_router, "/api/v1"))
-    client = TestClient(app)
 
     import src.api.routes.repositories as repositories_module
 
@@ -125,7 +131,7 @@ def test_get_repository_sync_history_returns_jobs(monkeypatch):
     monkeypatch.setattr(repositories_module.RepositoryService, "get", _fake_get)
     monkeypatch.setattr(repositories_module.JobService, "list", _fake_job_list)
 
-    response = client.get("/api/v1/repositories/7/sync-history")
+    response = _request(app, "GET", "/api/v1/repositories/7/sync-history")
 
     assert response.status_code == 200
     payload = response.json()
@@ -135,7 +141,6 @@ def test_get_repository_sync_history_returns_jobs(monkeypatch):
 
 def test_trigger_repository_sync_returns_404_when_repository_is_missing(monkeypatch):
     app = _build_app((repositories_router, "/api/v1"))
-    client = TestClient(app)
 
     import src.api.routes.repositories as repositories_module
 
@@ -144,7 +149,7 @@ def test_trigger_repository_sync_returns_404_when_repository_is_missing(monkeypa
 
     monkeypatch.setattr(repositories_module.RepositoryService, "trigger_sync", _fake_trigger_sync)
 
-    response = client.post("/api/v1/repositories/123/sync")
+    response = _request(app, "POST", "/api/v1/repositories/123/sync")
 
     assert response.status_code == 404
     assert "failed to sync repository" in response.json()["detail"].lower()
@@ -152,7 +157,6 @@ def test_trigger_repository_sync_returns_404_when_repository_is_missing(monkeypa
 
 def test_get_overview_statistics_returns_service_payload(monkeypatch):
     app = _build_app((statistics_router, "/api/v1"))
-    client = TestClient(app)
 
     import src.api.routes.statistics as statistics_module
 
@@ -172,7 +176,7 @@ def test_get_overview_statistics_returns_service_payload(monkeypatch):
 
     monkeypatch.setattr(statistics_module.StatisticsService, "get_overview_stats", _fake_overview)
 
-    response = client.get("/api/v1/statistics/overview")
+    response = _request(app, "GET", "/api/v1/statistics/overview")
 
     assert response.status_code == 200
     assert response.json()["total_repositories"] == 2
@@ -180,7 +184,6 @@ def test_get_overview_statistics_returns_service_payload(monkeypatch):
 
 def test_get_repository_statistics_returns_404_on_missing_repository(monkeypatch):
     app = _build_app((statistics_router, "/api/v1"))
-    client = TestClient(app)
 
     import src.api.routes.statistics as statistics_module
 
@@ -189,7 +192,7 @@ def test_get_repository_statistics_returns_404_on_missing_repository(monkeypatch
 
     monkeypatch.setattr(statistics_module.StatisticsService, "get_repository_stats", _fake_repo_stats)
 
-    response = client.get("/api/v1/statistics/repository/99")
+    response = _request(app, "GET", "/api/v1/statistics/repository/99")
 
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
@@ -197,7 +200,6 @@ def test_get_repository_statistics_returns_404_on_missing_repository(monkeypatch
 
 def test_get_repository_stats_route_returns_404_on_missing_repository(monkeypatch):
     app = _build_app((repositories_router, "/api/v1"))
-    client = TestClient(app)
 
     import src.api.routes.repositories as repositories_module
 
@@ -206,7 +208,7 @@ def test_get_repository_stats_route_returns_404_on_missing_repository(monkeypatc
 
     monkeypatch.setattr(repositories_module.StatisticsService, "get_repository_stats", _fake_repo_stats)
 
-    response = client.get("/api/v1/repositories/77/stats")
+    response = _request(app, "GET", "/api/v1/repositories/77/stats")
 
     assert response.status_code == 404
     assert "not found" in response.json()["detail"].lower()
@@ -214,7 +216,6 @@ def test_get_repository_stats_route_returns_404_on_missing_repository(monkeypatc
 
 def test_list_workers_returns_worker_payload(monkeypatch):
     app = _build_app((workers_router, "/api/v1"))
-    client = TestClient(app)
 
     import src.api.routes.workers as workers_module
 
@@ -233,7 +234,7 @@ def test_list_workers_returns_worker_payload(monkeypatch):
 
     monkeypatch.setattr(workers_module.WorkerService, "list", _fake_workers)
 
-    response = client.get("/api/v1/workers")
+    response = _request(app, "GET", "/api/v1/workers")
 
     assert response.status_code == 200
     payload = response.json()
