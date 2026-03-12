@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import (
     Column,
     Integer,
@@ -36,6 +36,11 @@ def value_enum(enum_class):
 Base = declarative_base()
 
 
+def utcnow() -> datetime:
+    """Return timezone-aware UTC datetime for default/update columns."""
+    return datetime.now(UTC)
+
+
 class Repository(Base):
     """Repository metadata for multiple source control providers."""
 
@@ -55,13 +60,13 @@ class Repository(Base):
     default_branch = Column(String(100), default="main")
     description = Column(Text)
     status = Column(value_enum(RepositoryStatusEnum), default=RepositoryStatusEnum.PENDING, index=True)
-    last_synced_at = Column(DateTime)
+    last_synced_at = Column(DateTime(timezone=True))
     last_commit_sha = Column(String(40))
     total_files = Column(Integer, default=0)
     total_symbols = Column(Integer, default=0)
     size_bytes = Column(BigInteger, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
     
     # Repository Aggregation (Axon v3.4)
     manifesto = Column(Text)  # REPOSITORY_MANIFESTO.md content
@@ -100,10 +105,10 @@ class Service(Base):
     
     # Documentation
     documentation_path = Column(String(1000))
-    last_documented_at = Column(DateTime)
+    last_documented_at = Column(DateTime(timezone=True))
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
     
     # Relationships
     repository = relationship("Repository", back_populates="services")
@@ -121,9 +126,9 @@ class Commit(Base):
     message = Column(Text)
     author_name = Column(String(255))
     author_email = Column(String(255))
-    committed_date = Column(DateTime)
+    committed_date = Column(DateTime(timezone=True))
     parent_sha = Column(String(40))
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
     repository = relationship("Repository", back_populates="commits")
@@ -144,9 +149,9 @@ class File(Base):
     size_bytes = Column(Integer, default=0)
     content_hash = Column(String(64), index=True)
     line_count = Column(Integer, default=0)
-    last_modified = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    last_modified = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
     repository = relationship("Repository", back_populates="files")
@@ -215,7 +220,7 @@ class Symbol(Base):
     closure_variables = Column(JSON)  # List of captured variable names
     linq_pattern = Column(String(100))  # "Select", "Where", "Aggregate", etc.
         
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
     file = relationship("File", back_populates="symbols")
@@ -259,7 +264,7 @@ class Relation(Base):
     start_column = Column(Integer)
     end_column = Column(Integer)
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
     from_symbol = relationship("Symbol", foreign_keys=[from_symbol_id], back_populates="relations_from")
@@ -288,7 +293,7 @@ class Chunk(Base):
     content_hash = Column(String(64), index=True)
     parent_chunk_id = Column(Integer, ForeignKey("chunks.id", ondelete="SET NULL"), index=True)  # For related chunks
     context_metadata = Column(JSON)  # Store file context, imports, namespace, etc.
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
     file = relationship("File", back_populates="chunks")
@@ -310,8 +315,8 @@ class Document(Base):
     sections = Column(JSON)  # List of sections with headings and content
     code_examples = Column(JSON)  # List of code blocks extracted
     doc_metadata = Column(JSON)  # Additional metadata like author, date, etc.
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
     
     __table_args__ = (
         Index("idx_document_repo_type", "repository_id", "doc_type"),
@@ -334,8 +339,8 @@ class ConfigurationEntry(Base):
     is_secret = Column(Integer, default=0)  # Boolean stored as integer (0 or 1)
     file_path = Column(String(1000))
     line_number = Column(Integer)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
     
     __table_args__ = (
         Index("idx_config_key", "config_key"),
@@ -360,8 +365,8 @@ class Dependency(Base):
     is_transitive = Column(Integer, default=0)  # Boolean stored as integer
     license = Column(String(100))
     file_path = Column(String(1000))
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
     
     __table_args__ = (
         Index("idx_dep_package", "package_name"),
@@ -381,7 +386,7 @@ class Embedding(Base):
     model_version = Column(String(50))
     dimension = Column(Integer, nullable=False)
     vector = Column(Vector(), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
     chunk = relationship("Chunk", back_populates="embeddings")
@@ -403,16 +408,16 @@ class Job(Base):
     job_type = Column(String(50), nullable=False, index=True)
     status = Column(value_enum(JobStatusEnum), default=JobStatusEnum.PENDING, nullable=False, index=True)
     celery_task_id = Column(String(255), unique=True, index=True)
-    started_at = Column(DateTime)
-    completed_at = Column(DateTime)
+    started_at = Column(DateTime(timezone=True))
+    completed_at = Column(DateTime(timezone=True))
     duration_seconds = Column(Integer)
     error_message = Column(Text)
     error_traceback = Column(Text)
     retry_count = Column(Integer, default=0)
     max_retries = Column(Integer, default=3)
     job_metadata = Column(JSON)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
     repository = relationship("Repository", back_populates="jobs")
@@ -432,11 +437,11 @@ class Worker(Base):
     hostname = Column(String(255), nullable=False)
     status = Column(value_enum(WorkerStatusEnum), default=WorkerStatusEnum.UNKNOWN, nullable=False, index=True)
     current_job_id = Column(Integer, ForeignKey("jobs.id", ondelete="SET NULL"), index=True)
-    last_heartbeat_at = Column(DateTime)
+    last_heartbeat_at = Column(DateTime(timezone=True))
     queues = Column(JSON)
-    started_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    started_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
     __table_args__ = (
         Index("idx_worker_status_heartbeat", "status", "last_heartbeat_at"),
@@ -473,8 +478,8 @@ class ModuleSummary(Base):
     # Metadata
     generated_by = Column(String(100))  # "openai:gpt-4", "anthropic:claude-3", etc.
     content_hash = Column(String(64))  # Hash of module content to detect changes
-    generated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    generated_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    last_updated = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
     version = Column(Integer, default=1)  # Incremented when regenerated
     
     # Relationships
@@ -501,7 +506,7 @@ class AuditLog(Base):
     details = Column(JSON)
     ip_address = Column(String(45))
     user_agent = Column(String(500))
-    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
 
     __table_args__ = (
         Index("idx_audit_event_timestamp", "event_type", "timestamp"),
@@ -530,7 +535,7 @@ class OutgoingApiCall(Base):
     is_dynamic_url = Column(Integer, default=0)  # Boolean: 1 if URL contains variables
     context_metadata = Column(JSON)  # headers, body structure, query params, etc.
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     
     __table_args__ = (
         Index("idx_api_call_repo", "repository_id"),
@@ -564,7 +569,7 @@ class PublishedEvent(Base):
     line_number = Column(Integer)
     event_metadata = Column(JSON)  # Message structure, correlation ID patterns, etc.
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     
     __table_args__ = (
         Index("idx_published_event_repo", "repository_id"),
@@ -595,7 +600,7 @@ class EventSubscription(Base):
     handler_class_name = Column(String(500))  # Class implementing the handler
     handler_metadata = Column(JSON)  # Retry policies, error handling, etc.
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     
     __table_args__ = (
         Index("idx_event_sub_repo", "repository_id"),
@@ -630,8 +635,8 @@ class ApiEndpointLink(Base):
     gateway_repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="SET NULL"))
     gateway_route_pattern = Column(String(2000))  # Ocelot/Nginx route that was used
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
     
     __table_args__ = (
         Index("idx_api_link_outgoing", "outgoing_call_id"),
@@ -663,7 +668,7 @@ class EventLink(Base):
     match_method = Column(String(50), nullable=False, index=True)  # 'exact_type', 'topic_match', 'routing_key'
     match_metadata = Column(JSON)
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     
     __table_args__ = (
         Index("idx_event_link_publisher", "published_event_id"),
@@ -700,8 +705,8 @@ class GatewayRoute(Base):
     priority = Column(Integer)
     route_metadata = Column(JSON)  # Rate limits, auth, transforms, etc.
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
     
     __table_args__ = (
         Index("idx_gateway_route_repo", "repository_id"),
@@ -762,8 +767,8 @@ class DockerService(Base):
     
     # Metadata
     service_metadata = Column(JSON)  # Additional metadata (extra_hosts, etc.)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
     
     __table_args__ = (
         Index("idx_docker_service_repo", "repository_id"),
@@ -799,8 +804,8 @@ class ServiceRepositoryMapping(Base):
     # Manual override
     is_manual = Column(Integer, default=0)  # Boolean: 1 if manually set, 0 if auto-detected
     
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
     
     __table_args__ = (
         Index("idx_service_mapping_docker_service", "docker_service_id"),

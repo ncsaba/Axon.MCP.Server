@@ -71,6 +71,10 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Java endpoint parity expansion (JAX-RS `@Path` + Spring multi-method `@RequestMapping`) | `✅` |
 | Java dependency parity expansion (Maven properties/dependencyManagement + Gradle platform/catalog patterns) | `✅` |
 | Repository source abstraction (Git + Local directory) with single-provider runtime cleanup | `✅` |
+| Incremental indexing spec (file metadata gate + optional hash fallback + batch DB strategy) | `✅` |
+| Streaming indexing implementation plan (slice-by-slice execution) | `✅` |
+| Approve incremental indexing implementation contract | `🧭` |
+| Execute streaming indexing slices (metadata contract -> gate -> parse fanout -> embed -> aggregate) | `🧭` |
 | Introduce interfaces for import/call/dependency extraction by language | `🚧` |
 | Implement first Java semantic extractor set | `🚧` |
 | Add integration checks focused on relation creation quality | `🚧` |

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import List, Optional, Tuple
 
 from sqlalchemy import Select, func, select
@@ -139,7 +139,7 @@ class RepositoryService:
             raise ValueError(f"Failed to trigger sync: Repository with ID {repository_id} not found")
 
         repository.status = RepositoryStatusEnum.PENDING
-        repository.last_synced_at = datetime.utcnow()
+        repository.last_synced_at = datetime.now(UTC)
         await self._session.flush()
 
         # Trigger Celery task for background sync
@@ -426,7 +426,7 @@ class RepositoryService:
 
                 # Update repository status and last_synced_at
                 repository.status = RepositoryStatusEnum.PENDING
-                repository.last_synced_at = datetime.utcnow()
+                repository.last_synced_at = datetime.now(UTC)
                 await self._session.flush()
 
                 # Trigger Celery task for background sync

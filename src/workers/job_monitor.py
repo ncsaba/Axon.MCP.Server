@@ -16,9 +16,18 @@ from src.utils.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-def utcnow_naive() -> datetime:
-    """Return a UTC timestamp compatible with naive DB DateTime columns."""
-    return datetime.now(UTC).replace(tzinfo=None)
+def utcnow() -> datetime:
+    """Return a timezone-aware UTC timestamp."""
+    return datetime.now(UTC)
+
+
+def _duration_seconds(completed_at: datetime, started_at: datetime) -> int:
+    """Compute duration across mixed naive/aware datetime values safely."""
+    if started_at.tzinfo is None and completed_at.tzinfo is not None:
+        completed_at = completed_at.replace(tzinfo=None)
+    elif started_at.tzinfo is not None and completed_at.tzinfo is None:
+        completed_at = completed_at.replace(tzinfo=UTC)
+    return int((completed_at - started_at).total_seconds())
 
 
 class JobMonitor:
@@ -96,7 +105,7 @@ class JobMonitor:
         Returns:
             List of stuck Job objects
         """
-        cutoff = utcnow_naive() - timedelta(minutes=timeout_minutes)
+        cutoff = utcnow() - timedelta(minutes=timeout_minutes)
         
         result = await self.session.execute(
             select(Job).where(
@@ -135,12 +144,11 @@ class JobMonitor:
             return False
         
         job.status = JobStatusEnum.FAILED
-        job.completed_at = utcnow_naive()
+        job.completed_at = utcnow()
         job.error_message = "Job exceeded maximum execution time and was marked as stuck"
         
         if job.started_at:
-            duration = (job.completed_at - job.started_at).total_seconds()
-            job.duration_seconds = int(duration)
+            job.duration_seconds = _duration_seconds(job.completed_at, job.started_at)
         
         # Also update repository status if applicable
         if job.repository_id:
@@ -375,12 +383,11 @@ class JobMonitor:
         
         # Update job status
         job.status = JobStatusEnum.CANCELLED
-        job.completed_at = utcnow_naive()
+        job.completed_at = utcnow()
         job.error_message = reason
         
         if job.started_at:
-            duration = (job.completed_at - job.started_at).total_seconds()
-            job.duration_seconds = int(duration)
+            job.duration_seconds = _duration_seconds(job.completed_at, job.started_at)
         
         await self.session.commit()
         
@@ -437,7 +444,7 @@ class JobMonitor:
         Returns:
             Number of jobs deleted
         """
-        cutoff = utcnow_naive() - timedelta(days=days)
+        cutoff = utcnow() - timedelta(days=days)
         
         result = await self.session.execute(
             select(Job).where(
@@ -494,12 +501,11 @@ class JobMonitor:
             
             # Mark job as failed
             job.status = JobStatusEnum.FAILED
-            job.completed_at = utcnow_naive()
+            job.completed_at = utcnow()
             job.error_message = "Job interrupted by system restart"
             
             if job.started_at:
-                duration = (job.completed_at - job.started_at).total_seconds()
-                job.duration_seconds = int(duration)
+                job.duration_seconds = _duration_seconds(job.completed_at, job.started_at)
                 
             # Also update repository status if it's in an active state
             if job.repository_id:
@@ -526,4 +532,3 @@ class JobMonitor:
         await self.session.commit()
         logger.info("startup_job_cleanup_completed", reset_count=reset_count)
         return reset_count
-

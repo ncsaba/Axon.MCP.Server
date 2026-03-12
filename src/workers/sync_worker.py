@@ -3,7 +3,7 @@ Celery tasks for repository synchronization.
 """
 
 from celery import shared_task
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 import asyncio
 import traceback
 
@@ -354,6 +354,18 @@ async def _sync_repository_async(task, repository_id: int):
                         checkpoints = current_metadata.get("checkpoints", {})
                         
                         if checkpoints.get(step.name) == "completed":
+                            # Clone/discovery build transient runtime context (repo_path/files).
+                            # On retry/resume we must rehydrate that context even if checkpointed.
+                            if step.name in {"CloneStep", "DiscoveryStep"}:
+                                logger.info(
+                                    "replaying_checkpointed_step_for_context_hydration",
+                                    step=step.name,
+                                    repository_id=repository_id,
+                                )
+                                await step.execute(pipeline_ctx)
+                                pipeline_ctx.completed_steps.add(step.name)
+                                continue
+
                             logger.info(f"Skipping completed step: {step.name}")
                             pipeline_ctx.completed_steps.add(step.name)
                             continue

@@ -108,30 +108,29 @@ class DistributedLock:
                 nx=True,  # Only set if not exists
                 ex=timeout  # Expiration time
             )
-
-            if lock_acquired:
-                self._set_active_token(resource, token)
-                logger.debug("lock_acquired", resource=resource, timeout=timeout)
-            else:
-                logger.warning(
-                    "lock_not_acquired",
-                    resource=resource,
-                    message="Resource is currently locked by another worker"
-                )
-
-            # Always yield the result, even if False
-            yield lock_acquired
-
         except Exception as e:
             logger.error(
                 "lock_acquisition_error",
                 resource=resource,
                 error=str(e)
             )
-            # Yield True if we want to "fail open" and proceed without lock on error
-            # Or False if we want to be safe. Tests expect True.
+            # Fail open on acquisition errors to avoid hard blocking worker flows.
             yield True
+            return
 
+        if lock_acquired:
+            self._set_active_token(resource, token)
+            logger.debug("lock_acquired", resource=resource, timeout=timeout)
+        else:
+            logger.warning(
+                "lock_not_acquired",
+                resource=resource,
+                message="Resource is currently locked by another worker"
+            )
+
+        try:
+            # Always yield acquisition result (including False when lock is held elsewhere).
+            yield lock_acquired
         finally:
             if lock_acquired:
                 try:
