@@ -31,8 +31,8 @@ async def test_clone_step_extracts_commit_info():
     ctx = PipelineContext(repository_id=1, session=mock_session, metrics=MagicMock())
     ctx.repository = repository
     
-    # Mock Managers
-    with patch("src.workers.pipeline.steps.clone_step.RepositoryManager") as MockGitLabManager, \
+    # Mock source registry and publisher
+    with patch("src.workers.pipeline.steps.clone_step.get_repository_source_registry") as mock_registry_factory, \
          patch("src.workers.pipeline.steps.clone_step.RedisLogPublisher") as MockPublisher, \
          patch("src.workers.pipeline.steps.clone_step.logger") as mock_logger:
         
@@ -42,10 +42,12 @@ async def test_clone_step_extracts_commit_info():
         mock_publisher.connect = AsyncMock()
         mock_publisher.close = AsyncMock()
         
-        mock_manager = MockGitLabManager.return_value
-        
-        # Mock cloning
-        mock_manager.clone_or_update.return_value = "/tmp/repo"
+        mock_source = MagicMock()
+        mock_source.source_kind = "git"
+        mock_source.sync.return_value = "/tmp/repo"
+        registry = MagicMock()
+        registry.resolve.return_value = mock_source
+        mock_registry_factory.return_value = registry
         
         # Mock commit info
         now = datetime.now(UTC).replace(tzinfo=None)
@@ -57,7 +59,7 @@ async def test_clone_step_extracts_commit_info():
             "committed_date": now,
             "parent_sha": None
         }
-        mock_manager.get_head_commit.return_value = commit_info
+        mock_source.get_head_commit.return_value = commit_info
         
         # Execute Step
         step = CloneStep()
@@ -67,9 +69,9 @@ async def test_clone_step_extracts_commit_info():
         if mock_logger.error.called:
             print(f"Logger error called: {mock_logger.error.call_args}")
         
-        # Verify Manager Calls
-        mock_manager.clone_or_update.assert_called_once()
-        mock_manager.get_head_commit.assert_called_once_with("/tmp/repo")
+        # Verify source calls
+        mock_source.sync.assert_called_once_with(repository)
+        mock_source.get_head_commit.assert_called_once_with("/tmp/repo")
         
         # Verify Repository Update
         assert ctx.repository.last_commit_sha == "test_sha_123"
@@ -108,7 +110,7 @@ async def test_clone_step_handles_existing_commit():
     ctx = PipelineContext(repository_id=1, session=mock_session, metrics=MagicMock())
     ctx.repository = repository
     
-    with patch("src.workers.pipeline.steps.clone_step.RepositoryManager") as MockGitLabManager, \
+    with patch("src.workers.pipeline.steps.clone_step.get_repository_source_registry") as mock_registry_factory, \
          patch("src.workers.pipeline.steps.clone_step.RedisLogPublisher") as MockPublisher:
         
         # Setup Publisher Mock
@@ -117,8 +119,12 @@ async def test_clone_step_handles_existing_commit():
         mock_publisher.connect = AsyncMock()
         mock_publisher.close = AsyncMock()
 
-        mock_manager = MockGitLabManager.return_value
-        mock_manager.clone_or_update.return_value = "/tmp/repo"
+        mock_source = MagicMock()
+        mock_source.source_kind = "git"
+        mock_source.sync.return_value = "/tmp/repo"
+        registry = MagicMock()
+        registry.resolve.return_value = mock_source
+        mock_registry_factory.return_value = registry
         
         commit_info = {
             "sha": "existing_sha",
@@ -128,7 +134,7 @@ async def test_clone_step_handles_existing_commit():
             "committed_date": datetime.now(UTC).replace(tzinfo=None),
             "parent_sha": None
         }
-        mock_manager.get_head_commit.return_value = commit_info
+        mock_source.get_head_commit.return_value = commit_info
         
         # Execute
         step = CloneStep()

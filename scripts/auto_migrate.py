@@ -183,171 +183,6 @@ async def migrate_symbol_field_sizes() -> bool:
         return False
 
 
-async def migrate_azuredevops_support() -> bool:
-    """
-    Migrate repositories table to support Azure DevOps.
-    
-    Returns:
-        True if migration was applied or not needed, False on error
-    """
-    try:
-        # Check if repositories table exists
-        if not await check_table_exists("repositories"):
-            logger.info(
-                "migration_skipped",
-                reason="repositories table does not exist yet",
-                migration="add_azuredevops_support"
-            )
-            return True
-        
-        # Check if provider column already exists
-        provider_info = await get_column_info("repositories", "provider")
-        if provider_info:
-            logger.info(
-                "migration_not_needed",
-                migration="add_azuredevops_support",
-                message="Provider column already exists"
-            )
-            return True
-        
-        logger.info(
-            "auto_migration_started",
-            migration="add_azuredevops_support"
-        )
-        
-        # Step 1: Handle enum type creation/update in a separate transaction
-        # PostgreSQL requires enum values to be committed before use
-        async with engine.begin() as conn:
-            # Check if the enum type exists and what values it has
-            enum_check = await conn.execute(text("""
-                SELECT EXISTS (
-                    SELECT 1 FROM pg_type WHERE typname = 'sourcecontrolproviderenum'
-                );
-            """))
-            enum_exists = enum_check.scalar()
-            
-            if enum_exists:
-                # Enum exists, check if it has the values we need
-                enum_values = await conn.execute(text("""
-                    SELECT e.enumlabel 
-                    FROM pg_enum e
-                    JOIN pg_type t ON e.enumtypid = t.oid
-                    WHERE t.typname = 'sourcecontrolproviderenum'
-                    ORDER BY e.enumsortorder;
-                """))
-                existing_values = [row[0] for row in enum_values.fetchall()]
-                
-                # Add missing enum values (uppercase)
-                for value in ['GITLAB', 'AZUREDEVOPS']:
-                    if value not in existing_values:
-                        logger.info(
-                            "adding_enum_value",
-                            enum_type="sourcecontrolproviderenum",
-                            value=value
-                        )
-                        await conn.execute(text(f"""
-                            ALTER TYPE sourcecontrolproviderenum ADD VALUE IF NOT EXISTS '{value}';
-                        """))
-            else:
-                # Create the enum type (uppercase)
-                logger.info(
-                    "creating_enum_type",
-                    enum_type="sourcecontrolproviderenum"
-                )
-                await conn.execute(text("""
-                    CREATE TYPE sourcecontrolproviderenum AS ENUM ('GITLAB', 'AZUREDEVOPS');
-                """))
-        
-        # Step 2: Add columns in a new transaction (after enum values are committed)
-        async with engine.begin() as conn:
-            # Add provider column with default 'GITLAB' (uppercase)
-            await conn.execute(text("""
-                ALTER TABLE repositories 
-                ADD COLUMN provider sourcecontrolproviderenum NOT NULL DEFAULT 'GITLAB';
-            """))
-            
-            # Add Azure DevOps specific fields
-            await conn.execute(text("""
-                ALTER TABLE repositories 
-                ADD COLUMN azuredevops_project_name VARCHAR(255),
-                ADD COLUMN azuredevops_repo_id VARCHAR(255);
-            """))
-            
-            # Add clone_url field
-            await conn.execute(text("""
-                ALTER TABLE repositories 
-                ADD COLUMN clone_url VARCHAR(500);
-            """))
-            
-            # Update existing repositories to populate clone_url from url field
-            await conn.execute(text("""
-                UPDATE repositories SET clone_url = url WHERE clone_url IS NULL;
-            """))
-            
-            # Make clone_url non-nullable
-            await conn.execute(text("""
-                ALTER TABLE repositories 
-                ALTER COLUMN clone_url SET NOT NULL;
-            """))
-            
-            # Make gitlab_project_id nullable
-            await conn.execute(text("""
-                ALTER TABLE repositories 
-                ALTER COLUMN gitlab_project_id DROP NOT NULL;
-            """))
-            
-            # Drop unique constraint on gitlab_project_id if it exists
-            await conn.execute(text("""
-                DO $$ BEGIN
-                    ALTER TABLE repositories DROP CONSTRAINT IF EXISTS repositories_gitlab_project_id_key;
-                EXCEPTION
-                    WHEN undefined_object THEN null;
-                END $$;
-            """))
-            
-            # Create new indexes
-            await conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_repo_provider_path 
-                ON repositories (provider, path_with_namespace);
-            """))
-            
-            await conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_repo_gitlab_project 
-                ON repositories (gitlab_project_id);
-            """))
-            
-            await conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_repo_azuredevops_project_repo 
-                ON repositories (azuredevops_project_name, azuredevops_repo_id);
-            """))
-            
-            # Update the status index
-            await conn.execute(text("""
-                DROP INDEX IF EXISTS idx_repo_status_updated;
-            """))
-            
-            await conn.execute(text("""
-                CREATE INDEX IF NOT EXISTS idx_repo_provider_status_updated 
-                ON repositories (provider, status, updated_at);
-            """))
-        
-        logger.info(
-            "auto_migration_completed",
-            migration="add_azuredevops_support"
-        )
-        
-        return True
-        
-    except Exception as e:
-        logger.error(
-            "auto_migration_failed",
-            migration="add_azuredevops_support",
-            error=str(e),
-            error_type=type(e).__name__
-        )
-        return False
-
-
 async def migrate_enhanced_features() -> bool:
     """
     Migrate database to add enhanced features (003_add_enhanced_features).
@@ -698,8 +533,7 @@ async def fix_enum_case_mismatch() -> bool:
     """
     Fix case mismatch in enum values.
     
-    The database enum may have uppercase values (GITLAB, AZUREDEVOPS) while
-    Python expects lowercase (gitlab, azuredevops). This migration fixes that.
+    The database enum may contain legacy provider casing; this migration normalizes values.
     
     Returns:
         True if migration was applied or not needed, False on error
@@ -744,8 +578,8 @@ async def fix_enum_case_mismatch() -> bool:
                 return True
             
             # Check if we have uppercase values (which are correct)
-            has_uppercase = 'GITLAB' in existing_values or 'AZUREDEVOPS' in existing_values
-            has_lowercase = 'gitlab' in existing_values or 'azuredevops' in existing_values
+            has_uppercase = 'GITLAB' in existing_values
+            has_lowercase = 'gitlab' in existing_values
             
             # If we already have uppercase values and no lowercase, we're good
             if has_uppercase and not has_lowercase:
@@ -779,7 +613,7 @@ async def fix_enum_case_mismatch() -> bool:
                 DROP TYPE IF EXISTS sourcecontrolproviderenum_new CASCADE;
             """))
             await conn.execute(text("""
-                CREATE TYPE sourcecontrolproviderenum_new AS ENUM ('GITLAB', 'AZUREDEVOPS');
+                CREATE TYPE sourcecontrolproviderenum_new AS ENUM ('GITLAB');
             """))
             
             # Step 2: Check if repositories table has data
@@ -798,7 +632,6 @@ async def fix_enum_case_mismatch() -> bool:
                     UPDATE repositories 
                     SET provider_new = CASE 
                         WHEN UPPER(provider::text) = 'GITLAB' THEN 'GITLAB'::sourcecontrolproviderenum_new
-                        WHEN UPPER(provider::text) = 'AZUREDEVOPS' THEN 'AZUREDEVOPS'::sourcecontrolproviderenum_new
                         ELSE 'GITLAB'::sourcecontrolproviderenum_new
                     END;
                 """))
@@ -1163,7 +996,7 @@ async def verify_enum_values() -> bool:
             # Define expected uppercase enum values
             enum_definitions = {
                 'languageenum': ['CSHARP', 'JAVASCRIPT', 'TYPESCRIPT', 'VUE', 'PYTHON', 'GO', 'JAVA', 'MARKDOWN', 'SQL', 'UNKNOWN'],
-                'sourcecontrolproviderenum': ['GITLAB', 'AZUREDEVOPS'],
+                'sourcecontrolproviderenum': ['GITLAB'],
                 'symbolkindenum': ['FUNCTION', 'METHOD', 'CLASS', 'INTERFACE', 'STRUCT', 'ENUM', 'VARIABLE', 'CONSTANT', 'PROPERTY', 'NAMESPACE', 'MODULE', 'TYPE_ALIAS', 'DOCUMENT_SECTION', 'CODE_EXAMPLE', 'ENDPOINT'],
                 'accessmodifierenum': ['PUBLIC', 'PRIVATE', 'PROTECTED', 'INTERNAL', 'PROTECTED_INTERNAL', 'PRIVATE_PROTECTED'],
                 'relationtypeenum': ['CALLS', 'IMPORTS', 'EXPORTS', 'INHERITS', 'IMPLEMENTS', 'USES', 'CONTAINS', 'OVERRIDES', 'REFERENCES'],
@@ -2798,7 +2631,6 @@ async def run_all_migrations() -> bool:
         # Add all migrations here
         migrations = [
             ("increase_symbol_field_sizes", migrate_symbol_field_sizes),
-            ("add_azuredevops_support", migrate_azuredevops_support),
             ("add_enhanced_features", migrate_enhanced_features),
             ("add_missing_relation_types", migrate_add_missing_relation_types),
             ("verify_enum_values", verify_enum_values),

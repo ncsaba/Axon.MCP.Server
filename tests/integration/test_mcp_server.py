@@ -193,8 +193,6 @@ class TestMCPServer:
         repo.created_at = datetime.now(timezone.utc)
         repo.last_commit_sha = "abc"
         repo.gitlab_project_id = 123
-        repo.azuredevops_project_name = None
-        repo.azuredevops_repo_id = None
         
         mock_result = MagicMock()
         mock_result.scalars.return_value.all.return_value = [repo]

@@ -28,8 +28,6 @@ async def test_enrich_repository_response():
         created_at = datetime.now()
         updated_at = datetime.now()
         gitlab_project_id = 123
-        azuredevops_project_name = None
-        azuredevops_repo_id = None
         last_synced_at = datetime.now()
         last_commit_sha = "abc"
 

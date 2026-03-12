@@ -43,10 +43,8 @@ def upgrade() -> None:
     op.create_table(
         "repositories",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("provider", sa.Enum("GITLAB", "AZUREDEVOPS", name="sourcecontrolproviderenum"), nullable=False),
+        sa.Column("provider", sa.Enum("GITLAB", name="sourcecontrolproviderenum"), nullable=False),
         sa.Column("gitlab_project_id", sa.Integer(), nullable=True),
-        sa.Column("azuredevops_project_name", sa.String(length=255), nullable=True),
-        sa.Column("azuredevops_repo_id", sa.String(length=255), nullable=True),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("path_with_namespace", sa.String(length=500), nullable=False),
         sa.Column("url", sa.String(length=500), nullable=False),
@@ -78,19 +76,9 @@ def upgrade() -> None:
         sa.Column("ai_summary", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(
-        "idx_repo_azuredevops_project_repo",
-        "repositories",
-        ["azuredevops_project_name", "azuredevops_repo_id"],
-        unique=False,
-    )
     op.create_index("idx_repo_gitlab_project", "repositories", ["gitlab_project_id"], unique=False)
     op.create_index("idx_repo_provider_path", "repositories", ["provider", "path_with_namespace"], unique=False)
     op.create_index("idx_repo_status_updated", "repositories", ["status", "updated_at"], unique=False)
-    op.create_index(
-        op.f("ix_repositories_azuredevops_project_name"), "repositories", ["azuredevops_project_name"], unique=False
-    )
-    op.create_index(op.f("ix_repositories_azuredevops_repo_id"), "repositories", ["azuredevops_repo_id"], unique=False)
     op.create_index(op.f("ix_repositories_gitlab_project_id"), "repositories", ["gitlab_project_id"], unique=False)
     op.create_index(op.f("ix_repositories_provider"), "repositories", ["provider"], unique=False)
     op.create_index(op.f("ix_repositories_status"), "repositories", ["status"], unique=False)
@@ -972,12 +960,9 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_repositories_status"), table_name="repositories")
     op.drop_index(op.f("ix_repositories_provider"), table_name="repositories")
     op.drop_index(op.f("ix_repositories_gitlab_project_id"), table_name="repositories")
-    op.drop_index(op.f("ix_repositories_azuredevops_repo_id"), table_name="repositories")
-    op.drop_index(op.f("ix_repositories_azuredevops_project_name"), table_name="repositories")
     op.drop_index("idx_repo_status_updated", table_name="repositories")
     op.drop_index("idx_repo_provider_path", table_name="repositories")
     op.drop_index("idx_repo_gitlab_project", table_name="repositories")
-    op.drop_index("idx_repo_azuredevops_project_repo", table_name="repositories")
     op.drop_table("repositories")
     op.drop_index(op.f("ix_audit_logs_user_id"), table_name="audit_logs")
     op.drop_index(op.f("ix_audit_logs_timestamp"), table_name="audit_logs")

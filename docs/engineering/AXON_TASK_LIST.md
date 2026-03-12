@@ -83,7 +83,7 @@
   - links=`src/api/auth.py, tests/unit/test_auth.py`
 
 - [x] `AX-029` | `P3` | owner=`cron` | summary=`Run dedicated React lint-hardening sweep across pre-existing UI lint debt.` | completed_at=`2026-02-27T03:09:10Z`
-  - links=`ui/src/components/azuredevops_discovery/AzureDevOpsDiscoveryModal.tsx, ui/src/components/gitlab_discovery/GitLabDiscoveryModal.tsx, ui/src/pages/jobs/JobsPage.tsx, ui/src/pages/login/LoginPage.tsx, ui/src/pages/mcp_test/MCPTestPage.tsx, ui/src/pages/repository_detail/RepositoryDetailPage.tsx, ui/src/components/Repository/AnalysisResults.tsx, ui/src/pages/repositories/RepositoriesPage.tsx`
+  - links=`ui/src/components/gitlab_discovery/GitLabDiscoveryModal.tsx, ui/src/pages/jobs/JobsPage.tsx, ui/src/pages/login/LoginPage.tsx, ui/src/pages/mcp_test/MCPTestPage.tsx, ui/src/pages/repository_detail/RepositoryDetailPage.tsx, ui/src/components/Repository/AnalysisResults.tsx, ui/src/pages/repositories/RepositoriesPage.tsx`
 
 - [x] `AX-033` | `P1` | owner=`subagent-242a9ff2` | summary=`Stabilization pass: harden Python data validation and React modal runtime accessibility with regression coverage.` | completed_at=`2026-02-27T02:37:40Z`
   - links=`src/utils/data_validation.py, tests/unit/test_data_validation.py, ui/src/components/confirmation_modal/ConfirmationModal.tsx, ui/src/components/confirmation_modal/ConfirmationModal.module.css, ui/src/components/confirmation_modal/ConfirmationModal.test.tsx`

@@ -1,12 +1,10 @@
 import asyncio
 import time
-from typing import Optional
 from sqlalchemy import select
 
-from src.config.enums import SourceControlProviderEnum, RepositoryStatusEnum
+from src.config.enums import RepositoryStatusEnum
 from src.database.models import Repository, Commit
-from src.gitlab.repository_manager import RepositoryManager
-from src.azuredevops.repository_manager import AzureDevOpsRepositoryManager
+from src.repository_sources import get_repository_source_registry
 from src.utils.redis_logger import RedisLogPublisher
 from src.utils.logging_config import get_logger
 from ..step import PipelineStep
@@ -43,31 +41,12 @@ class CloneStep(PipelineStep):
         await publisher.publish_log(ctx.repository_id, f"Cloning repository from {repo.provider}...", details={"provider": repo.provider})
         
         try:
-            repo_path = None
-            
-            # Select appropriate repository manager
-            if repo.provider == SourceControlProviderEnum.GITLAB:
-                repo_manager = RepositoryManager()
-                repo_path = await asyncio.to_thread(
-                    repo_manager.clone_or_update,
-                    repo.url,
-                    repo.path_with_namespace,
-                    repo.default_branch
-                )
-            elif repo.provider == SourceControlProviderEnum.AZUREDEVOPS:
-                repo_manager = AzureDevOpsRepositoryManager()
-                repo_path = await asyncio.to_thread(
-                    repo_manager.clone_or_update_repository,
-                    repo.azuredevops_project_name,
-                    repo.name,
-                    repo.clone_url,
-                    repo.default_branch
-                )
-            else:
-                raise ValueError(f"Unsupported provider: {repo.provider}")
+            source = get_repository_source_registry().resolve(repo)
+            repo_path = await asyncio.to_thread(source.sync, repo)
                 
             # Store in context
             ctx.repo_path = repo_path
+            ctx.metadata["repository_source"] = source.source_kind
             
             logger.info(
                 "repository_cloned",
@@ -78,7 +57,7 @@ class CloneStep(PipelineStep):
             
             # Extract last commit info
             try:
-                commit_info = repo_manager.get_head_commit(repo_path)
+                commit_info = source.get_head_commit(repo_path)
                 if commit_info:
                     # Update Repository
                     repo.last_commit_sha = commit_info["sha"]

@@ -14,11 +14,6 @@ This release hardens default runtime settings for safer out-of-the-box behavior.
    - **Now:** `true`
    - **Why:** Prevent accidental unauthenticated MCP HTTP deployments.
 
-3. `AZUREDEVOPS_SSL_VERIFY`
-   - **Before:** `false`
-   - **Now:** `true`
-   - **Why:** TLS verification should be secure by default to reduce MITM risk.
-
 ## Runtime behavior changes
 
 - CORS middleware now automatically disables credentialed CORS when `API_CORS_ORIGINS` contains `"*"`.
@@ -37,12 +32,7 @@ If your deployment depends on previous behavior, set explicit overrides:
 - Unauthenticated MCP HTTP for local/trusted use only:
   - `MCP_AUTH_ENABLED=false`
 
-- Self-signed Azure DevOps instance with no trusted CA chain:
-  - `AZUREDEVOPS_SSL_VERIFY=false`
-  - Prefer importing your internal CA cert to restore verification.
-
 ## Safe onboarding checklist
 
 1. Keep `MCP_AUTH_ENABLED=true` for any non-local environment.
 2. Configure `API_CORS_ORIGINS` to exact frontend origins (scheme + host + port).
-3. Keep `AZUREDEVOPS_SSL_VERIFY=true`; only disable as an explicit, temporary exception.

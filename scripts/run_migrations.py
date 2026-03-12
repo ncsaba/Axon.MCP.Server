@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Standalone migration runner for Docker containers.
-This script applies all necessary database migrations including Azure DevOps support.
+This script applies all necessary database migrations.
 """
 
 import asyncio

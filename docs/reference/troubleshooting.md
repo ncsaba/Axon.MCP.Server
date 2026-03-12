@@ -25,35 +25,6 @@
 3. Review query complexity
 4. Consider adding more workers
 
-## Azure DevOps Authentication
-
-### Issue: "No credentials were supplied" for Negotiate
-**Cause**: System doesn't have Kerberos credentials.
-**Fix**: Use PAT or Basic auth (disable NTLM configuration).
-
-### Issue: "Authentication failed"
-**Causes**:
-- Wrong username/password
-- Account locked or disabled
-- Insufficient permissions
-- PAT expired
-**Fix**: Verify credentials, check account status, create new PAT.
-
-### Issue: "SSL certificate problem"
-**Cause**: Self-signed certificate.
-**Fix**: Set `AZUREDEVOPS_SSL_VERIFY=false` (only for trusted networks!).
-
-### Recommended Configuration for Azure DevOps
-
-```bash
-# Using Personal Access Token (RECOMMENDED)
-AZUREDEVOPS_URL=https://dev.azure.com/your-organization/
-AZUREDEVOPS_USERNAME=pat
-AZUREDEVOPS_PASSWORD=your_personal_access_token_here
-AZUREDEVOPS_USE_NTLM=false
-AZUREDEVOPS_SSL_VERIFY=false
-```
-
 ## Debug Mode
 
 Enable debug logging:

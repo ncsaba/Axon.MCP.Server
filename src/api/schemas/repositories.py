@@ -31,8 +31,6 @@ class RepositoryBase(BaseModel):
     
     # Provider-specific fields (optional)
     gitlab_project_id: Optional[int] = None
-    azuredevops_project_name: Optional[str] = None
-    azuredevops_repo_id: Optional[str] = None
 
 
 class RepositoryCreate(BaseModel):
@@ -47,8 +45,6 @@ class RepositoryCreate(BaseModel):
     
     # Provider-specific fields (optional)
     gitlab_project_id: Optional[int] = None
-    azuredevops_project_name: Optional[str] = None
-    azuredevops_repo_id: Optional[str] = None
 
 
 class RepositoryResponse(BaseModel):
@@ -88,8 +84,6 @@ class RepositoryResponse(BaseModel):
     
     # Provider-specific fields (optional)
     gitlab_project_id: Optional[int] = None
-    azuredevops_project_name: Optional[str] = None
-    azuredevops_repo_id: Optional[str] = None
     
     # Helpful URLs for related operations (computed)
     search_url: Optional[str] = None  # URL to search this repository
@@ -138,33 +132,6 @@ class GitLabDiscoveryResponse(BaseModel):
     projects: list[GitLabProjectDiscovery]
 
 
-class AzureDevOpsRepositoryDiscovery(BaseModel):
-    """Azure DevOps repository from discovery with tracking status."""
-
-    azuredevops_project_name: str
-    azuredevops_repo_id: str
-    name: str
-    path_with_namespace: str
-    url: str
-    clone_url: str
-    default_branch: str
-    size: int
-    is_fork: bool
-    is_disabled: bool
-    is_tracked: bool
-    tracked_repository_id: Optional[int] = None
-
-
-class AzureDevOpsDiscoveryResponse(BaseModel):
-    """Response for Azure DevOps project discovery."""
-
-    project_name: str
-    total_repositories: int
-    tracked_count: int
-    untracked_count: int
-    repositories: list[AzureDevOpsRepositoryDiscovery]
-
-
 class BulkRepositoryAddRequest(BaseModel):
     """Request to add multiple repositories."""
 
@@ -208,5 +175,4 @@ class BulkRepositorySyncResponse(BaseModel):
     job_ids: list[str]
     failed_count: int
     errors: list[str]
-
 

@@ -57,8 +57,8 @@ curl -H "X-API-Key: $KEY" "http://localhost:8080/api/v1/search?query=User&limit=
 #### `GET /repositories`
 List all indexed repositories.
 
-#### `POST /repositories/discover`
-Trigger a scan of configured source control providers (GitLab/Azure DevOps) to find new repositories.
+#### `GET /repositories/discover/{group_id}`
+Discover GitLab repositories for a group and identify tracked/untracked entries.
 
 #### `POST /repositories/{id}/sync`
 Manually trigger a full synchronization (pull, parse, analyze) for a repository.

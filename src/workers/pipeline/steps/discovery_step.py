@@ -1,12 +1,7 @@
 import asyncio
 import time
-from typing import List, Optional
-from pathlib import Path
-from sqlalchemy.ext.asyncio import AsyncSession
-from src.database.models import Repository
-from src.config.enums import RepositoryStatusEnum, SourceControlProviderEnum
-from src.gitlab.repository_manager import RepositoryManager
-from src.azuredevops.repository_manager import AzureDevOpsRepositoryManager
+from src.config.enums import RepositoryStatusEnum
+from src.repository_sources import get_repository_source_registry
 from src.utils.file_exclusion import FileExclusionRules
 from src.utils.redis_logger import RedisLogPublisher
 from src.utils.logging_config import get_logger
@@ -29,18 +24,11 @@ class DiscoveryStep(PipelineStep):
         start_time = time.time()
         repo = ctx.repository
         
-        # Instantiate correct manager
-        # Note: In a cleaner design, we might pass the manager in context or factory
-        if repo.provider == SourceControlProviderEnum.GITLAB:
-            repo_manager = RepositoryManager()
-        elif repo.provider == SourceControlProviderEnum.AZUREDEVOPS:
-            repo_manager = AzureDevOpsRepositoryManager()
-        else:
-            raise ValueError(f"Unsupported provider: {repo.provider}")
+        source = get_repository_source_registry().resolve(repo)
 
         # Get file tree
         files = await asyncio.to_thread(
-            repo_manager.get_file_tree,
+            source.get_file_tree,
             ctx.repo_path
         )
         

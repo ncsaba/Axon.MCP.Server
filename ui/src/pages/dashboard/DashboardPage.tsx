@@ -129,7 +129,7 @@ export default function DashboardPage() {
       <div className={styles.architecture_section}>
         <h2 className={styles.section_title}>System Architecture</h2>
         <p className={styles.section_description}>
-          Axon MCP Server acts as the central intelligence hub, connecting raw repositories from GitLab and Azure DevOps
+          Axon MCP Server acts as the central intelligence hub, connecting raw repositories from GitLab
           with AI agent consumers through the Model Context Protocol (MCP).
         </p>
         <div className={styles.architecture_image_container}>
@@ -159,5 +159,4 @@ export default function DashboardPage() {
     </div>
   );
 }
-
 

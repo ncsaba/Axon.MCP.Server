@@ -4,6 +4,7 @@ from sqlalchemy import select
 from src.database.models import Symbol, Relation, File
 from src.config.enums import RelationTypeEnum, SymbolKindEnum
 from src.extractors.call_resolver import CallResolver
+from src.repository_sources import get_repository_source_registry
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -33,9 +34,6 @@ class ReferenceBuilder:
             
             # 1. Get repository and construct repository path
             from src.database.models import Repository
-            from pathlib import Path
-            from src.config.settings import get_settings
-            from src.config.enums import SourceControlProviderEnum
             
             repo_result = await self.session.execute(
                 select(Repository).where(Repository.id == repository_id)
@@ -45,11 +43,7 @@ class ReferenceBuilder:
                 logger.warning("repository_not_found", repository_id=repository_id)
                 return 0
             
-            # Construct repository path
-            if repo.provider == SourceControlProviderEnum.AZUREDEVOPS:
-                repo_path = Path(get_settings().repo_cache_dir).resolve() / "azuredevops" / repo.azuredevops_project_name / repo.name
-            else:
-                repo_path = Path(get_settings().repo_cache_dir).resolve() / repo.path_with_namespace.replace('/', '_').replace('\\', '_')
+            repo_path = get_repository_source_registry().resolve_repository_path(repo)
             
             # 2. Get all files for this repository  
             result = await self.session.execute(

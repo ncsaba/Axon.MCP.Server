@@ -134,8 +134,6 @@ class SecurityValidator:
             r'^https://gitlab\.com/',
             r'^git@github\.com:',
             r'^git@gitlab\.com:',
-            r'^https://.*\.visualstudio\.com/',
-            r'^https://dev\.azure\.com/',
         ]
         
         for pattern in allowed_patterns:

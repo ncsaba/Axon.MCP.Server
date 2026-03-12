@@ -69,14 +69,6 @@ class Settings(BaseSettings):
     gitlab_group_id: Optional[str] = None
     gitlab_webhook_secret: Optional[str] = None
 
-    # Azure DevOps
-    azuredevops_url: str = "https://devops.example.org/"
-    azuredevops_username: Optional[str] = None  # For NTLM: use DOMAIN\\username or just username
-    azuredevops_password: Optional[str] = None  # Password or Personal Access Token (PAT)
-    azuredevops_project: Optional[str] = None  # Optional: Only for test scripts, repositories store their own project names
-    azuredevops_use_ntlm: bool = True  # Enable NTLM authentication for Azure DevOps
-    azuredevops_ssl_verify: bool = True  # Keep TLS verification on by default; disable only for trusted self-signed environments
-
     # Database
     database_url: str
     database_pool_size: int = 20
@@ -183,7 +175,6 @@ class Settings(BaseSettings):
             self.api_secret_key = ""
             self.jwt_secret_key = ""
             self.mcp_auth_enabled = True
-            self.azuredevops_ssl_verify = True
             self.api_cors_origins = [
                 "http://localhost:3000",
                 "http://127.0.0.1:3000",

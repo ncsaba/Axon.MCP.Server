@@ -18,7 +18,6 @@ def test_secure_defaults_enabled():
     settings = _make_settings()
 
     assert settings.mcp_auth_enabled is True
-    assert settings.azuredevops_ssl_verify is True
 
 
 def test_default_cors_origins_are_explicit_not_wildcard():

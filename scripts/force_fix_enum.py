@@ -50,7 +50,7 @@ async def force_fix_enum():
             """))
             
             await conn.execute(text("""
-                CREATE TYPE sourcecontrolproviderenum_uppercase AS ENUM ('GITLAB', 'AZUREDEVOPS');
+                CREATE TYPE sourcecontrolproviderenum_uppercase AS ENUM ('GITLAB');
             """))
             
             # Step 4: Add temporary column
@@ -71,7 +71,6 @@ async def force_fix_enum():
                 UPDATE repositories 
                 SET provider_uppercase = CASE 
                     WHEN LOWER(provider::text) = 'gitlab' THEN 'GITLAB'::sourcecontrolproviderenum_uppercase
-                    WHEN LOWER(provider::text) = 'azuredevops' THEN 'AZUREDEVOPS'::sourcecontrolproviderenum_uppercase
                     ELSE 'GITLAB'::sourcecontrolproviderenum_uppercase
                 END;
             """))
@@ -165,4 +164,3 @@ async def force_fix_enum():
 if __name__ == "__main__":
     success = asyncio.run(force_fix_enum())
     sys.exit(0 if success else 1)
-

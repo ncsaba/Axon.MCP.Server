@@ -166,12 +166,6 @@
   border: 1px solid rgba(252, 109, 38, 0.3);
 }
 
-.provider_azuredevops {
-  background: rgba(0, 120, 212, 0.15);
-  color: #0078d4;
-  border: 1px solid rgba(0, 120, 212, 0.3);
-}
-
 .status_pill {
   display: inline-flex;
   align-items: center;

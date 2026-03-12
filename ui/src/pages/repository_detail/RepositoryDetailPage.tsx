@@ -9,7 +9,7 @@ import {
   type RepositoryResponse,
   type RepositorySyncAttempt,
 } from "../../services/api";
-import { JobStatusEnum, RepositoryStatusEnum, SourceControlProviderEnum } from "../../types/enums";
+import { JobStatusEnum, RepositoryStatusEnum } from "../../types/enums";
 import { RepositoryStats } from "../../components/Statistics/RepositoryStats";
 import SampleDataTabs from "../../components/Repository/SampleDataTabs";
 import { AnalysisResults } from "../../components/Repository/AnalysisResults";
@@ -269,7 +269,7 @@ export default function RepositoryDetailPage() {
           <article className={styles.summary_card}>
             <span className={styles.summary_label}>URL</span>
             <a className={styles.summary_link} href={repository.url} target="_blank" rel="noreferrer">
-              {repository.provider === SourceControlProviderEnum.azuredevops ? "Open in Azure DevOps" : "Open in GitLab"}
+              Open in GitLab
             </a>
           </article>
         </div>
@@ -333,5 +333,3 @@ export default function RepositoryDetailPage() {
     </div>
   );
 }
-
-

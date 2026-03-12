@@ -13,7 +13,6 @@ from src.api.schemas.repositories import (
     RepositoryResponse,
     RepositorySyncResponse,
     GitLabDiscoveryResponse,
-    AzureDevOpsDiscoveryResponse,
     BulkRepositoryAddRequest,
     BulkRepositoryAddResponse,
     BulkRepositoryRemoveRequest,
@@ -218,31 +217,6 @@ async def discover_gitlab_projects(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to discover GitLab projects: {str(exc)}",
-        ) from exc
-
-
-@router.get("/repositories/discover/azuredevops/{project_name}", response_model=AzureDevOpsDiscoveryResponse)
-async def discover_azuredevops_repositories(
-    project_name: str,
-    session: AsyncSession = Depends(get_db_session),
-) -> AzureDevOpsDiscoveryResponse:
-    """
-    Discover all repositories in an Azure DevOps project and check which are already tracked.
-    
-    Args:
-        project_name: Azure DevOps project name
-    
-    Returns:
-        List of all repositories with tracking status
-    """
-    service = RepositoryService(session)
-    try:
-        response = await service.discover_azuredevops_repositories(project_name)
-        return response
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to discover Azure DevOps repositories: {str(exc)}",
         ) from exc
 
 

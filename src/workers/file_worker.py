@@ -11,12 +11,11 @@ from sqlalchemy import select
 from src.workers.celery_app import celery_app
 from src.workers.utils import _run_with_engine_cleanup, _calculate_content_hash
 from src.gitlab.repository_manager import RepositoryManager
-from src.azuredevops.repository_manager import AzureDevOpsRepositoryManager
 from src.parsers import parse_file
 from src.extractors.knowledge_extractor import KnowledgeExtractor
 from src.database.session import AsyncSessionLocal
 from src.database.models import Repository, File
-from src.config.enums import SourceControlProviderEnum
+from src.repository_sources import get_repository_source_registry
 from src.utils.logging_config import get_logger
 from src.utils.async_compat import maybe_await
 
@@ -155,19 +154,7 @@ async def _parse_file_async(file_id: int):
             )
             repo = result.scalar_one()
             
-            # Reconstruct file path based on provider
-            if repo.provider == SourceControlProviderEnum.AZUREDEVOPS:
-                # Azure DevOps uses a different cache structure
-                if not repo.azuredevops_project_name:
-                    error_msg = f"Azure DevOps project name not set for repository {repo.id}"
-                    logger.error("azuredevops_project_name_missing", repository_id=repo.id, repo_name=repo.name)
-                    return {"status": "error", "error": error_msg}
-                repo_manager = AzureDevOpsRepositoryManager()
-                repo_path = repo_manager.get_repository_path(repo.azuredevops_project_name, repo.name)
-            else:
-                # GitLab uses path_with_namespace
-                repo_manager = RepositoryManager()
-                repo_path = repo_manager.cache_dir / repo.path_with_namespace.replace("/", "_")
+            repo_path = get_repository_source_registry().resolve_repository_path(repo)
             file_path = repo_path / file_record.path
             
             if not file_path.exists():

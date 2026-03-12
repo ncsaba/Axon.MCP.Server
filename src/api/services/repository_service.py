@@ -15,8 +15,6 @@ from src.api.schemas.repositories import (
     RepositorySyncResponse,
     GitLabProjectDiscovery,
     GitLabDiscoveryResponse,
-    AzureDevOpsRepositoryDiscovery,
-    AzureDevOpsDiscoveryResponse,
     BulkRepositoryAddResponse,
     BulkRepositoryRemoveResponse,
     BulkRepositorySyncResponse,
@@ -25,7 +23,6 @@ from src.api.schemas.repositories import (
 from src.config.enums import RepositoryStatusEnum, SourceControlProviderEnum
 from src.database.models import Repository, File, Commit
 from src.gitlab.client import GitLabClient
-from src.azuredevops.client import AzureDevOpsClient
 from src.utils.logging_config import get_logger
 from src.workers.tasks import sync_repository
 
@@ -111,8 +108,6 @@ class RepositoryService:
         repository = Repository(
             provider=payload.provider,
             gitlab_project_id=payload.gitlab_project_id,
-            azuredevops_project_name=payload.azuredevops_project_name,
-            azuredevops_repo_id=payload.azuredevops_repo_id,
             name=payload.name,
             path_with_namespace=payload.path_with_namespace,
             url=payload.url,
@@ -131,8 +126,6 @@ class RepositoryService:
                 "repository_create_conflict",
                 provider=payload.provider,
                 gitlab_project_id=payload.gitlab_project_id,
-                azuredevops_project_name=payload.azuredevops_project_name,
-                azuredevops_repo_id=payload.azuredevops_repo_id,
                 path_with_namespace=payload.path_with_namespace,
                 error=error_msg,
             )
@@ -224,76 +217,6 @@ class RepositoryService:
             projects=projects,
         )
 
-    async def discover_azuredevops_repositories(self, project_name: str) -> AzureDevOpsDiscoveryResponse:
-        """
-        Discover all repositories in an Azure DevOps project and check tracking status.
-
-        Args:
-            project_name: Azure DevOps project name
-
-        Returns:
-            Discovery response with repositories and tracking status
-        """
-        # Get all repositories from Azure DevOps
-        azuredevops_client = AzureDevOpsClient()
-        azuredevops_repos = azuredevops_client.list_project_repositories(project_name)
-
-        # Get all tracked Azure DevOps repositories
-        stmt = select(Repository).where(Repository.provider == SourceControlProviderEnum.AZUREDEVOPS)
-        result = await self._session.execute(stmt)
-        tracked_repos = {
-            (repo.azuredevops_project_name, repo.azuredevops_repo_id): repo 
-            for repo in result.scalars().all()
-        }
-
-        # Build discovery response
-        repositories: List[AzureDevOpsRepositoryDiscovery] = []
-        tracked_count = 0
-        untracked_count = 0
-
-        for repo in azuredevops_repos:
-            repo_key = (project_name, repo["id"])
-            is_tracked = repo_key in tracked_repos
-            tracked_repo = tracked_repos.get(repo_key)
-
-            if is_tracked:
-                tracked_count += 1
-            else:
-                untracked_count += 1
-
-            repositories.append(
-                AzureDevOpsRepositoryDiscovery(
-                    azuredevops_project_name=project_name,
-                    azuredevops_repo_id=repo["id"],
-                    name=repo["name"],
-                    path_with_namespace=repo["path_with_namespace"],
-                    url=repo["url"],
-                    clone_url=repo["clone_url"],
-                    default_branch=repo["default_branch"],
-                    size=repo["size"],
-                    is_fork=repo["is_fork"],
-                    is_disabled=repo["is_disabled"],
-                    is_tracked=is_tracked,
-                    tracked_repository_id=tracked_repo.id if tracked_repo else None,
-                )
-            )
-
-        logger.info(
-            "azuredevops_repositories_discovered",
-            project_name=project_name,
-            total=len(repositories),
-            tracked=tracked_count,
-            untracked=untracked_count,
-        )
-
-        return AzureDevOpsDiscoveryResponse(
-            project_name=project_name,
-            total_repositories=len(repositories),
-            tracked_count=tracked_count,
-            untracked_count=untracked_count,
-            repositories=repositories,
-        )
-
     async def bulk_add_repositories(
         self, repositories: List[RepositoryCreate]
     ) -> BulkRepositoryAddResponse:
@@ -314,20 +237,20 @@ class RepositoryService:
 
         for repo_data in repositories:
             try:
-                # Check if already exists based on provider
-                if repo_data.provider == SourceControlProviderEnum.GITLAB:
+                if repo_data.provider != SourceControlProviderEnum.GITLAB:
+                    raise ValueError(f"Unsupported provider: {repo_data.provider}")
+
+                if repo_data.gitlab_project_id is not None:
                     stmt = select(Repository).where(
                         Repository.provider == SourceControlProviderEnum.GITLAB,
                         Repository.gitlab_project_id == repo_data.gitlab_project_id
                     )
-                elif repo_data.provider == SourceControlProviderEnum.AZUREDEVOPS:
-                    stmt = select(Repository).where(
-                        Repository.provider == SourceControlProviderEnum.AZUREDEVOPS,
-                        Repository.azuredevops_project_name == repo_data.azuredevops_project_name,
-                        Repository.azuredevops_repo_id == repo_data.azuredevops_repo_id
-                    )
                 else:
-                    raise ValueError(f"Unsupported provider: {repo_data.provider}")
+                    # Local-directory and generic git entries may not have GitLab project IDs.
+                    stmt = select(Repository).where(
+                        Repository.provider == SourceControlProviderEnum.GITLAB,
+                        Repository.path_with_namespace == repo_data.path_with_namespace
+                    )
 
                 result = await self._session.execute(stmt)
                 existing = result.scalar_one_or_none()
@@ -338,34 +261,21 @@ class RepositoryService:
                         "repository_already_exists",
                         provider=repo_data.provider,
                         gitlab_project_id=repo_data.gitlab_project_id,
-                        azuredevops_project_name=repo_data.azuredevops_project_name,
-                        azuredevops_repo_id=repo_data.azuredevops_repo_id,
                         repository_id=existing.id,
                     )
                     continue
 
                 # Determine optimal branch using priority rules
                 try:
-                    if repo_data.provider == SourceControlProviderEnum.GITLAB:
-                        gitlab_client = GitLabClient()
-                        optimal_branch = gitlab_client.get_optimal_branch_for_project(
-                            repo_data.gitlab_project_id
-                        )
-                    elif repo_data.provider == SourceControlProviderEnum.AZUREDEVOPS:
-                        azuredevops_client = AzureDevOpsClient()
-                        optimal_branch = azuredevops_client.get_optimal_branch_for_repository(
-                            repo_data.azuredevops_project_name, 
-                            repo_data.name
-                        )
-                    else:
-                        optimal_branch = repo_data.default_branch
+                    gitlab_client = GitLabClient()
+                    optimal_branch = gitlab_client.get_optimal_branch_for_project(
+                        repo_data.gitlab_project_id
+                    )
                         
                     logger.info(
                         "optimal_branch_determined",
                         provider=repo_data.provider,
                         gitlab_project_id=repo_data.gitlab_project_id,
-                        azuredevops_project_name=repo_data.azuredevops_project_name,
-                        azuredevops_repo_id=repo_data.azuredevops_repo_id,
                         optimal_branch=optimal_branch,
                         provided_branch=repo_data.default_branch
                     )
@@ -376,8 +286,6 @@ class RepositoryService:
                         "optimal_branch_fallback",
                         provider=repo_data.provider,
                         gitlab_project_id=repo_data.gitlab_project_id,
-                        azuredevops_project_name=repo_data.azuredevops_project_name,
-                        azuredevops_repo_id=repo_data.azuredevops_repo_id,
                         error=str(e)
                     )
 
@@ -385,8 +293,6 @@ class RepositoryService:
                 repository = Repository(
                     provider=repo_data.provider,
                     gitlab_project_id=repo_data.gitlab_project_id,
-                    azuredevops_project_name=repo_data.azuredevops_project_name,
-                    azuredevops_repo_id=repo_data.azuredevops_repo_id,
                     name=repo_data.name,
                     path_with_namespace=repo_data.path_with_namespace,
                     url=repo_data.url,
@@ -407,8 +313,6 @@ class RepositoryService:
                     repository_id=repository.id,
                     provider=repo_data.provider,
                     gitlab_project_id=repo_data.gitlab_project_id,
-                    azuredevops_project_name=repo_data.azuredevops_project_name,
-                    azuredevops_repo_id=repo_data.azuredevops_repo_id,
                 )
 
             except Exception as e:
@@ -550,5 +454,3 @@ class RepositoryService:
             failed_count=failed_count,
             errors=errors,
         )
-
-

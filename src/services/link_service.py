@@ -165,17 +165,10 @@ class LinkService:
     
     async def _read_file_content(self, file: File, repo: Repository) -> Optional[str]:
         """Read file content from the cloned repository."""
-        from pathlib import Path
-        from src.config.settings import get_settings
-        from src.config.enums import SourceControlProviderEnum
+        from src.repository_sources import get_repository_source_registry
         
         try:
-            # Construct path based on provider
-            if repo.provider == SourceControlProviderEnum.AZUREDEVOPS:
-                repo_path = Path(get_settings().repo_cache_dir).resolve() / "azuredevops" / repo.azuredevops_project_name / repo.name
-            else:
-                repo_path = Path(get_settings().repo_cache_dir).resolve() / repo.path_with_namespace.replace("/", "_")
-            
+            repo_path = get_repository_source_registry().resolve_repository_path(repo)
             file_path = repo_path / file.path
             
             if file_path.exists():

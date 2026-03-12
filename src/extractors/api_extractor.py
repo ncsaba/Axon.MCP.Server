@@ -7,10 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Symbol, File, Repository
-from src.config.enums import SymbolKindEnum, LanguageEnum, AccessModifierEnum, SourceControlProviderEnum
-from src.config.settings import get_settings
-from src.gitlab.repository_manager import RepositoryManager
-from src.azuredevops.repository_manager import AzureDevOpsRepositoryManager
+from src.config.enums import SymbolKindEnum, LanguageEnum, AccessModifierEnum
+from src.repository_sources import get_repository_source_registry
 from src.extractors.strategy_interfaces import EndpointExtractionStrategy
 
 
@@ -487,14 +485,7 @@ class ApiEndpointExtractor:
 
     def _resolve_repository_path(self, repo: Repository) -> Optional[Path]:
         """Resolve repository disk path from provider metadata."""
-        if repo.provider == SourceControlProviderEnum.AZUREDEVOPS:
-            if not repo.azuredevops_project_name:
-                return None
-            repo_manager = AzureDevOpsRepositoryManager(get_settings().repo_cache_dir)
-            return repo_manager.get_repository_path(repo.azuredevops_project_name, repo.name)
-
-        repo_manager = RepositoryManager(get_settings().repo_cache_dir)
-        return repo_manager.cache_dir / repo.path_with_namespace.replace("/", "_")
+        return get_repository_source_registry().resolve_repository_path(repo)
 
     def _extract_java_endpoints_from_code(self, code: str, file: File) -> List[ApiEndpoint]:
         """Extract endpoints from Java source code annotations."""

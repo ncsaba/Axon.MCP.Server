@@ -90,7 +90,6 @@ class ProjectMapper:
         "vector_store": "Vector Storage",
         "mcp_server": "MCP Server Integration",
         "gitlab": "GitLab Integration",
-        "azuredevops": "Azure DevOps Integration",
         "scripts": "Utility Scripts",
         "docs": "Documentation",
         "documentation": "Documentation",
@@ -468,4 +467,3 @@ class ProjectMapper:
                 return f"{size_bytes:.1f} {unit}"
             size_bytes /= 1024.0
         return f"{size_bytes:.1f} PB"
-

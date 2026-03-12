@@ -58,8 +58,6 @@ def _repository_payload(repository_id: int = 1) -> dict:
         "created_at": now,
         "updated_at": now,
         "gitlab_project_id": 101,
-        "azuredevops_project_name": None,
-        "azuredevops_repo_id": None,
         "search_url": None,
         "sync_url": None,
     }

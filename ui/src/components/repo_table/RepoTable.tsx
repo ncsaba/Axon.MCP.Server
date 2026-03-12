@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 
 import { RepositoryResponse } from "../../services/api";
-import { RepositoryStatusEnum, SourceControlProviderEnum } from "../../types/enums";
+import { RepositoryStatusEnum } from "../../types/enums";
 import styles from "./RepoTable.module.css";
 
 export type RepoTableProps = {
@@ -92,7 +92,7 @@ export default function RepoTable({
               <td>{repo.id}</td>
               <td>
                 <span className={`${styles.provider_badge} ${styles[`provider_${repo.provider.toLowerCase()}`]}`}>
-                  {repo.provider === SourceControlProviderEnum.gitlab ? 'GitLab' : 'Azure DevOps'}
+                  GitLab
                 </span>
               </td>
               <td>
@@ -165,5 +165,4 @@ export default function RepoTable({
     </div>
   );
 }
-
 

@@ -3,9 +3,10 @@ from sqlalchemy import select, func, and_
 
 from mcp.types import TextContent
 
-from src.config.enums import SourceControlProviderEnum, SymbolKindEnum
+from src.config.enums import SymbolKindEnum
 from src.database.models import File, Repository, Symbol
 from src.database.session import get_async_session
+from src.repository_sources import get_repository_source_registry
 from src.utils.logging_config import get_logger
 from src.mcp_server.formatters.repository import format_repository_list
 
@@ -53,8 +54,6 @@ async def list_repositories(limit: int = 20) -> List[TextContent]:
                         "created_at": repo.created_at.isoformat() if repo.created_at else None,
                         # Provider-specific (ENHANCED)
                         "gitlab_project_id": repo.gitlab_project_id,
-                        "azuredevops_project_name": repo.azuredevops_project_name,
-                        "azuredevops_repo_id": repo.azuredevops_repo_id,
                     }
                 )
 
@@ -239,21 +238,7 @@ async def get_file_content(
                 return [TextContent(type="text", text=f"File '{file_path}' not found in repository")]
             
             # Try to read file content from disk
-            # Construct file path from repository cache
-            from src.gitlab.repository_manager import RepositoryManager
-            from src.azuredevops.repository_manager import AzureDevOpsRepositoryManager
-            
-            # Select appropriate repository manager based on provider
-            if repo.provider == SourceControlProviderEnum.GITLAB:
-                repo_manager = RepositoryManager()
-                repo_path = repo_manager.cache_dir / repo.path_with_namespace.replace("/", "_")
-            elif repo.provider == SourceControlProviderEnum.AZUREDEVOPS:
-                repo_manager = AzureDevOpsRepositoryManager()
-                if not repo.azuredevops_project_name:
-                    return [TextContent(type="text", text=f"Azure DevOps project name not set for repository {repository_id}")]
-                repo_path = repo_manager.get_repository_path(repo.azuredevops_project_name, repo.name)
-            else:
-                return [TextContent(type="text", text=f"Unsupported provider: {repo.provider}")]
+            repo_path = get_repository_source_registry().resolve_repository_path(repo)
             
             full_file_path = repo_path / file_path
             

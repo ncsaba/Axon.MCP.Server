@@ -90,16 +90,5 @@ def setup_worker_credentials(**kwargs):
     This ensures credentials are configured in each worker process
     before any git operations are performed.
     """
-    try:
-        from src.azuredevops.repository_manager import setup_git_credentials
-        setup_git_credentials()
-    except Exception as exc:
-        # Use Celery's logger if available, otherwise import
-        try:
-            from celery.utils.log import get_logger
-            logger = get_logger(__name__)
-            logger.warning(f"Worker git credentials setup failed: {exc}")
-        except ImportError:
-            pass  # Silently fail if logging not available 
-
+    return None
 

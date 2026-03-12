@@ -14,7 +14,7 @@ from src.workers.utils import _run_with_engine_cleanup, _count_symbols
 from src.workers.summary_worker import _generate_module_summaries
 from src.database.session import AsyncSessionLocal
 from src.database.models import Repository, Job, File
-from src.config.enums import RepositoryStatusEnum, JobStatusEnum, SourceControlProviderEnum
+from src.config.enums import RepositoryStatusEnum, JobStatusEnum
 from src.utils.logging_config import get_logger
 from src.utils.redis_logger import RedisLogPublisher
 from src.workers.distributed_lock import get_distributed_lock

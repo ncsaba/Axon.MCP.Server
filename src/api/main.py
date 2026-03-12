@@ -70,13 +70,6 @@ async def _lifespan(_: FastAPI):
         )
         raise RuntimeError("JWT_SECRET_KEY not configured")
 
-    # Setup Azure DevOps git credentials on startup
-    try:
-        from src.azuredevops.repository_manager import setup_git_credentials
-        setup_git_credentials()
-    except Exception as exc:
-        logger.warning("startup_git_credentials_setup_failed", error=str(exc))
-
     # Initialize database tables on first startup
     try:
         async with engine.begin() as conn:
@@ -199,5 +192,4 @@ if settings.mcp_transport == "http":
     from src.api.routes.mcp_http import router as mcp_http_router
 
     app.include_router(mcp_http_router, tags=["MCP HTTP Transport"])
-
 

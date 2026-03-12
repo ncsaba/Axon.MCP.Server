@@ -9,12 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Symbol, File, Relation, Repository
 from src.database.session import AsyncSessionLocal
-from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum, SourceControlProviderEnum
+from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum
 from src.extractors.call_analyzer import JavaScriptCallAnalyzer, JavaCallAnalyzer, Call
 from src.extractors.call_resolver import CallResolver
 from src.extractors.strategy_interfaces import CallExtractionStrategy, NullCallStrategy, language_strategy
-from src.gitlab.repository_manager import RepositoryManager
-from src.azuredevops.repository_manager import AzureDevOpsRepositoryManager
+from src.repository_sources import get_repository_source_registry
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -61,22 +60,8 @@ class CallGraphBuilder:
             logger.error("repository_not_found", repository_id=repository_id)
             return 0
         
-        # Get repository path on disk based on provider
-        if repo.provider == SourceControlProviderEnum.AZUREDEVOPS:
-            # Azure DevOps uses a different cache structure
-            if not repo.azuredevops_project_name:
-                logger.error(
-                    "azuredevops_project_name_missing",
-                    repository_id=repository_id,
-                    repo_name=repo.name
-                )
-                return 0
-            repo_manager = AzureDevOpsRepositoryManager()
-            repo_path = repo_manager.get_repository_path(repo.azuredevops_project_name, repo.name)
-        else:
-            # GitLab uses path_with_namespace
-            repo_manager = RepositoryManager()
-            repo_path = repo_manager.cache_dir / repo.path_with_namespace.replace("/", "_")
+        source = get_repository_source_registry().resolve(repo)
+        repo_path = source.get_repository_path(repo)
         
         # Get all methods/functions in repository
         result = await self.session.execute(

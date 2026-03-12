@@ -1,7 +1,7 @@
 # Migration script for Docker containers (PowerShell)
-# This script applies Azure DevOps database migrations
+# This script applies database migrations
 
-Write-Host "🔄 Running Azure DevOps database migrations..." -ForegroundColor Cyan
+Write-Host "🔄 Running database migrations..." -ForegroundColor Cyan
 
 try {
     # Run the migration script

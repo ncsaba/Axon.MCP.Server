@@ -47,10 +47,6 @@ class Repository(Base):
     # GitLab specific fields
     gitlab_project_id = Column(Integer, index=True)
     
-    # Azure DevOps specific fields
-    azuredevops_project_name = Column(String(255), index=True)
-    azuredevops_repo_id = Column(String(255), index=True)
-    
     # Common fields
     name = Column(String(255), nullable=False)
     path_with_namespace = Column(String(500), nullable=False)
@@ -82,7 +78,6 @@ class Repository(Base):
         Index("idx_repo_status_updated", "status", "updated_at"),
         Index("idx_repo_provider_path", "provider", "path_with_namespace"),
         Index("idx_repo_gitlab_project", "gitlab_project_id"),
-        Index("idx_repo_azuredevops_project_repo", "azuredevops_project_name", "azuredevops_repo_id"),
     )
 
 
