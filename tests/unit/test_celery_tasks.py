@@ -6,7 +6,7 @@ Pipeline orchestration is tested in tests/integration/test_worker_pipeline.py.
 
 import pytest
 from unittest.mock import patch, AsyncMock, MagicMock, Mock
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from src.database.models import Repository, File, Chunk, Job
@@ -76,6 +76,7 @@ async def test_create_or_update_file_new_file(mock_repository):
     test_file.read_text.return_value = "test content\nline 2"
     test_file.relative_to.return_value = Path("test_temp_file.txt")
     test_file.stat.return_value.st_size = 100
+    test_file.stat.return_value.st_mtime = 1710000000.0
     
     repo_path = Path(".")
     
@@ -94,6 +95,11 @@ async def test_create_or_update_file_new_file(mock_repository):
         # Verify file was added to session
         assert session.add.called
         assert session.flush.called
+        assert file_record.size_bytes == 100
+        assert file_record.last_modified == datetime.fromtimestamp(
+            test_file.stat.return_value.st_mtime,
+            tz=UTC,
+        )
 
 
 @pytest.mark.asyncio
@@ -110,6 +116,7 @@ async def test_create_or_update_file_existing_file(mock_file):
     test_file.read_text.return_value = "updated content\nline 2\nline 3"
     test_file.relative_to.return_value = Path("test_temp_file.txt")
     test_file.stat.return_value.st_size = 150
+    test_file.stat.return_value.st_mtime = 1710001234.0
     
     repo_path = Path(".")
     
@@ -122,6 +129,42 @@ async def test_create_or_update_file_existing_file(mock_file):
     
     # Verify file was updated (using object Identity mock_file)
     assert file_record is mock_file
+    assert file_record.size_bytes == 150
+    assert file_record.last_modified == datetime.fromtimestamp(
+        test_file.stat.return_value.st_mtime,
+        tz=UTC,
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_or_update_file_stat_failure_fallback():
+    """Stat failures should not crash file upsert and should fallback metadata."""
+    session = AsyncMock()
+
+    result_mock = MagicMock()
+    result_mock.scalar_one_or_none.return_value = None
+    session.execute = AsyncMock(return_value=result_mock)
+    session.flush = AsyncMock()
+
+    test_file = MagicMock(spec=Path)
+    test_file.read_text.return_value = "content"
+    test_file.relative_to.return_value = Path("failed_stat.txt")
+    test_file.stat.side_effect = OSError("stat failed")
+
+    with patch("src.workers.file_worker.RepositoryManager") as mock_repo_manager:
+        mock_manager = MagicMock()
+        mock_manager.detect_language.return_value = LanguageEnum.PYTHON
+        mock_repo_manager.return_value = mock_manager
+
+        file_record = await _create_or_update_file(
+            session,
+            1,
+            test_file,
+            Path("."),
+        )
+
+    assert file_record.size_bytes == 0
+    assert file_record.last_modified is None
 
 
 @pytest.mark.asyncio

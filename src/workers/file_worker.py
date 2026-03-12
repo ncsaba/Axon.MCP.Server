@@ -6,6 +6,7 @@ from celery import shared_task
 from pathlib import Path
 import asyncio
 import traceback
+from datetime import UTC, datetime
 from sqlalchemy import select
 
 from src.workers.celery_app import celery_app
@@ -20,6 +21,18 @@ from src.utils.logging_config import get_logger
 from src.utils.async_compat import maybe_await
 
 logger = get_logger(__name__)
+
+
+def _read_file_stat(file_path: Path) -> tuple[int, datetime | None]:
+    """Return `(size_bytes, last_modified_utc)` with resilient fallback."""
+    try:
+        stat_result = file_path.stat()
+        size_bytes = int(stat_result.st_size)
+        last_modified = datetime.fromtimestamp(stat_result.st_mtime, tz=UTC)
+        return size_bytes, last_modified
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("file_stat_failed", file_path=str(file_path), error=str(exc))
+        return 0, None
 
 
 async def create_or_update_file(
@@ -41,6 +54,7 @@ async def create_or_update_file(
         File record
     """
     relative_path = file_path.relative_to(repo_path)
+    size_bytes, last_modified = _read_file_stat(file_path)
     
     # Check if file exists
     result = await session.execute(
@@ -75,7 +89,8 @@ async def create_or_update_file(
             repository_id=repository_id,
             path=str(relative_path),
             language=language,
-            size_bytes=file_path.stat().st_size,
+            size_bytes=size_bytes,
+            last_modified=last_modified,
             line_count=line_count,
             content_hash=content_hash
         )
@@ -83,7 +98,8 @@ async def create_or_update_file(
         await session.flush()
     else:
         # Update existing file record
-        file_record.size_bytes = file_path.stat().st_size
+        file_record.size_bytes = size_bytes
+        file_record.last_modified = last_modified
         try:
             content = file_path.read_text(errors='ignore')
             file_record.line_count = len(content.splitlines())
