@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import Symbol, File, Relation, Repository
 from src.database.session import AsyncSessionLocal
 from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum, SourceControlProviderEnum
-from src.extractors.call_analyzer import JavaScriptCallAnalyzer, Call
+from src.extractors.call_analyzer import JavaScriptCallAnalyzer, JavaCallAnalyzer, Call
 from src.extractors.call_resolver import CallResolver
+from src.extractors.strategy_interfaces import CallExtractionStrategy, NullCallStrategy, language_strategy
 from src.gitlab.repository_manager import RepositoryManager
 from src.azuredevops.repository_manager import AzureDevOpsRepositoryManager
 from src.utils.logging_config import get_logger
@@ -30,7 +31,12 @@ class CallGraphBuilder:
             session: Database session
         """
         self.session = session
-        self.js_analyzer = JavaScriptCallAnalyzer()
+        self.call_strategies: Dict[LanguageEnum, CallExtractionStrategy] = {
+            LanguageEnum.JAVASCRIPT: JavaScriptCallAnalyzer(),
+            LanguageEnum.TYPESCRIPT: JavaScriptCallAnalyzer(),
+            LanguageEnum.JAVA: JavaCallAnalyzer(),
+        }
+        self._null_call_strategy = NullCallStrategy()
         self.resolver = CallResolver(session)
     
     async def build_call_relationships(
@@ -427,10 +433,8 @@ class CallGraphBuilder:
         language: LanguageEnum
     ) -> List[Call]:
         """Extract calls from symbol based on language."""
-        if language in [LanguageEnum.JAVASCRIPT, LanguageEnum.TYPESCRIPT]:
-            return self.js_analyzer.extract_calls(symbol_node, code)
-        else:
-            return []
+        strategy = language_strategy(self.call_strategies, language, self._null_call_strategy)
+        return strategy.extract_calls(symbol_node, code)
 
     async def _extract_usages_for_symbol(
         self,
@@ -439,5 +443,6 @@ class CallGraphBuilder:
         language: LanguageEnum
     ) -> List[Call]:
         """Extract usages from symbol based on language."""
-        return []
+        strategy = language_strategy(self.call_strategies, language, self._null_call_strategy)
+        return strategy.extract_usages(symbol_node, code)
     

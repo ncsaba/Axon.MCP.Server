@@ -2,16 +2,97 @@
 
 from pathlib import Path
 import os
-from typing import List, Set
+import re
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass
+from typing import List, Set, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
 from src.database.models import Dependency, Repository
 from src.parsers.npm_parser import NpmParser, NpmPackage
 from src.parsers.python_dependency_parser import PythonDependencyParser, PythonPackage
+from src.extractors.strategy_interfaces import DependencyManifestStrategy
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class JavaPackage:
+    """Represents a Java dependency (Maven/Gradle)."""
+    package_name: str
+    version: Optional[str] = None
+    version_constraint: Optional[str] = None
+    is_dev_dependency: bool = False
+    is_transitive: bool = False
+    file_path: str = ""
+    dependency_type: str = "maven"
+
+
+class NpmDependencyStrategy:
+    """Dependency strategy for npm manifests."""
+
+    dependency_type = "npm"
+
+    def __init__(self, npm_parser: NpmParser):
+        self.npm_parser = npm_parser
+
+    def supports(self, file_name: str) -> bool:
+        return file_name in {'package.json', 'package-lock.json'}
+
+    def parse_file(self, file_path: Path) -> List[NpmPackage]:
+        # Preserve previous duplicate-avoidance behavior.
+        if file_path.name.lower() == 'package.json':
+            lock_file = file_path.parent / 'package-lock.json'
+            if lock_file.exists():
+                return []
+        return self.npm_parser.parse_file(file_path)
+
+
+class PythonDependencyStrategy:
+    """Dependency strategy for Python manifests."""
+
+    dependency_type = "pip"
+
+    def __init__(self, python_parser: PythonDependencyParser):
+        self.python_parser = python_parser
+
+    def supports(self, file_name: str) -> bool:
+        return file_name in {'requirements.txt', 'pyproject.toml', 'pipfile'} or file_name.endswith('-requirements.txt')
+
+    def parse_file(self, file_path: Path) -> List[PythonPackage]:
+        return self.python_parser.parse_file(file_path)
+
+
+class MavenDependencyStrategy:
+    """Dependency strategy for Maven manifests."""
+
+    dependency_type = "maven"
+
+    def __init__(self, parser_fn):
+        self._parser_fn = parser_fn
+
+    def supports(self, file_name: str) -> bool:
+        return file_name == 'pom.xml'
+
+    def parse_file(self, file_path: Path) -> List[JavaPackage]:
+        return self._parser_fn(file_path)
+
+
+class GradleDependencyStrategy:
+    """Dependency strategy for Gradle manifests."""
+
+    dependency_type = "gradle"
+
+    def __init__(self, parser_fn):
+        self._parser_fn = parser_fn
+
+    def supports(self, file_name: str) -> bool:
+        return file_name in {'build.gradle', 'build.gradle.kts'}
+
+    def parse_file(self, file_path: Path) -> List[JavaPackage]:
+        return self._parser_fn(file_path)
 
 
 class DependencyExtractor:
@@ -21,6 +102,7 @@ class DependencyExtractor:
     DEPENDENCY_FILES = {
         'npm': ['package.json', 'package-lock.json'],
         'python': ['requirements.txt', 'pyproject.toml', 'Pipfile'],
+        'java': ['pom.xml', 'build.gradle', 'build.gradle.kts'],
     }
     
     def __init__(self, session: AsyncSession):
@@ -33,6 +115,12 @@ class DependencyExtractor:
         self.session = session
         self.npm_parser = NpmParser()
         self.python_parser = PythonDependencyParser()
+        self.dependency_strategies: List[DependencyManifestStrategy] = [
+            NpmDependencyStrategy(self.npm_parser),
+            PythonDependencyStrategy(self.python_parser),
+            MavenDependencyStrategy(self._parse_maven_pom),
+            GradleDependencyStrategy(self._parse_gradle_build_file),
+        ]
     
     async def extract_dependencies(self, repository_id: int, repo_path: Path) -> int:
         """
@@ -131,6 +219,10 @@ class DependencyExtractor:
         if file_name in {'requirements.txt', 'pyproject.toml', 'pipfile'} or \
            file_name.endswith('-requirements.txt'):
             return True
+
+        # Java files
+        if file_name in {'pom.xml', 'build.gradle', 'build.gradle.kts'}:
+            return True
         
         return False
     
@@ -155,25 +247,9 @@ class DependencyExtractor:
             # Determine parser based on file type
             file_name = file_path.name.lower()
             packages = []
-            
-            if file_name in {'package.json', 'package-lock.json'}:
-                # Only parse package.json if package-lock.json doesn't exist
-                # to avoid duplicates
-                if file_name == 'package.json':
-                    lock_file = file_path.parent / 'package-lock.json'
-                    if lock_file.exists():
-                        logger.debug(
-                            "skipping_package_json",
-                            file_path=str(file_path),
-                            reason="package-lock.json exists"
-                        )
-                        return 0
-                
-                packages = self.npm_parser.parse_file(file_path)
-                
-            elif file_name in {'requirements.txt', 'pyproject.toml', 'pipfile'} or \
-                 file_name.endswith('-requirements.txt'):
-                packages = self.python_parser.parse_file(file_path)
+            strategy = next((s for s in self.dependency_strategies if s.supports(file_name)), None)
+            if strategy:
+                packages = strategy.parse_file(file_path)
             
             # Store packages in database
             if packages:
@@ -212,6 +288,90 @@ class DependencyExtractor:
             )
         
         return 0
+
+    def _parse_maven_pom(self, file_path: Path) -> List[JavaPackage]:
+        """Parse Maven `pom.xml` dependencies."""
+        packages: List[JavaPackage] = []
+        try:
+            tree = ET.parse(file_path)
+            root = tree.getroot()
+
+            # Handle optional XML namespace.
+            ns_match = re.match(r"\{(.+)\}", root.tag)
+            ns = {"m": ns_match.group(1)} if ns_match else {}
+            prefix = "m:" if ns else ""
+
+            dependency_nodes = root.findall(f".//{prefix}dependency", ns)
+            for dep in dependency_nodes:
+                group_id = dep.findtext(f"{prefix}groupId", default="", namespaces=ns).strip()
+                artifact_id = dep.findtext(f"{prefix}artifactId", default="", namespaces=ns).strip()
+                version = dep.findtext(f"{prefix}version", default="", namespaces=ns).strip()
+                scope = dep.findtext(f"{prefix}scope", default="", namespaces=ns).strip().lower()
+
+                if not group_id or not artifact_id:
+                    continue
+
+                packages.append(
+                    JavaPackage(
+                        package_name=f"{group_id}:{artifact_id}",
+                        version=version or None,
+                        version_constraint=version or None,
+                        is_dev_dependency=scope in {"test", "provided"},
+                        is_transitive=False,
+                        file_path=str(file_path),
+                        dependency_type="maven",
+                    )
+                )
+
+            logger.debug("parsed_maven_pom", file_path=str(file_path), packages_found=len(packages))
+        except Exception as e:
+            logger.error("error_parsing_maven_pom", file_path=str(file_path), error=str(e))
+        return packages
+
+    def _parse_gradle_build_file(self, file_path: Path) -> List[JavaPackage]:
+        """Parse Gradle dependencies from `build.gradle` or `build.gradle.kts`."""
+        packages: List[JavaPackage] = []
+        try:
+            text = file_path.read_text(encoding="utf-8", errors="ignore")
+
+            # Matches:
+            # implementation 'group:artifact:version'
+            # testImplementation("group:artifact:version")
+            # api("group:artifact")
+            pattern = re.compile(
+                r"\b(implementation|api|compileOnly|runtimeOnly|testImplementation|testRuntimeOnly|annotationProcessor|kapt)\b"
+                r"\s*(?:\(\s*)?[\"']([^\"']+)[\"']"
+            )
+            for match in pattern.finditer(text):
+                config = match.group(1)
+                notation = match.group(2).strip()
+
+                parts = notation.split(":")
+                if len(parts) < 2:
+                    continue
+
+                group_id = parts[0].strip()
+                artifact_id = parts[1].strip()
+                version = parts[2].strip() if len(parts) >= 3 and parts[2].strip() else None
+                if not group_id or not artifact_id:
+                    continue
+
+                packages.append(
+                    JavaPackage(
+                        package_name=f"{group_id}:{artifact_id}",
+                        version=version,
+                        version_constraint=version,
+                        is_dev_dependency=config.lower().startswith("test"),
+                        is_transitive=False,
+                        file_path=str(file_path),
+                        dependency_type="gradle",
+                    )
+                )
+
+            logger.debug("parsed_gradle_build_file", file_path=str(file_path), packages_found=len(packages))
+        except Exception as e:
+            logger.error("error_parsing_gradle_build_file", file_path=str(file_path), error=str(e))
+        return packages
     
     async def _clear_existing_dependencies(self, repository_id: int):
         """

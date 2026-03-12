@@ -65,6 +65,6 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Item | Status |
 | --- | --- |
 | Parser capability matrix document at `docs/architecture/parser_capability_matrix.md` | `✅` |
-| Introduce interfaces for import/call/dependency extraction by language | `🧭` |
-| Implement first Java semantic extractor set | `🧭` |
-| Add integration checks focused on relation creation quality | `🧭` |
+| Introduce interfaces for import/call/dependency extraction by language | `🚧` |
+| Implement first Java semantic extractor set | `🚧` |
+| Add integration checks focused on relation creation quality | `🚧` |

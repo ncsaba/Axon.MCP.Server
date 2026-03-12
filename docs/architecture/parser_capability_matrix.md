@@ -19,7 +19,7 @@
 | Language / Asset | Discovery + Routing | Symbol Extraction | Import Extraction (Parse) | Import Relations (Graph) | Call Graph Relations | API Endpoint Extraction | Dependency Extraction | Notes |
 |---|---|---|---|---|---|---|---|---|
 | Python (`.py`) | `✅` | `✅` | `🚧` | `🛑` | `🛑` | `🛑` | `✅` | Python dependency manifests are supported; semantic graph extractors are limited |
-| Java (`.java`) | `✅` | `✅` | `✅` | `🛑` | `🛑` | `🚧` | `🛑` | Core parser works; cross-file Java semantics are main gap |
+| Java (`.java`) | `✅` | `✅` | `✅` | `🚧` | `🚧` | `🚧` | `🚧` | Basic import/call/endpoint/dependency extraction is implemented with partial fidelity |
 | JavaScript (`.js/.jsx/.mjs`) | `✅` | `✅` | `✅` | `✅` | `✅` | `✅` | `✅` | Strongest semantic path today |
 | TypeScript (`.ts/.tsx`) | `✅` | `✅` | `✅` | `✅` | `✅` | `✅` | `✅` | Shares most JS extractor behavior |
 | Vue (`.vue`) | `✅` | `✅` | `🚧` | `🚧` | `🚧` | `🚧` | `🛑` | Backed by JS/TS parser logic; fidelity depends on embedded script content |
@@ -33,12 +33,12 @@
 
 | Capability | JS/TS | Java | Python | Other |
 |---|---|---|---|---|
-| Import relationship resolver | `✅` | `🛑` | `🛑` | `🛑` |
-| Call extraction + `CALLS` relation | `✅` | `🛑` | `🛑` | `🛑` |
+| Import relationship resolver | `✅` | `🚧` | `🛑` | `🛑` |
+| Call extraction + `CALLS` relation | `✅` | `🚧` | `🛑` | `🛑` |
 | Outgoing API call extraction | `✅` | `🛑` | `🛑` | `🛑` |
 | Event publish/subscribe extraction | `✅` | `🛑` | `🛑` | `🛑` |
 | API endpoint extraction | `✅` | `🚧` | `🛑` | `🚧` |
-| Dependency manifest extraction | `✅` | `🛑` | `✅` | `🛑` |
+| Dependency manifest extraction | `✅` | `🚧` | `✅` | `🛑` |
 
 ## Source Mapping (Current Implementation)
 
@@ -50,6 +50,7 @@
 - Events: `src/extractors/event_extractor.py`
 - API endpoints: `src/extractors/api_extractor.py`
 - Dependencies: `src/extractors/dependency_extractor.py`
+- Strategy interfaces: `src/extractors/strategy_interfaces.py`
 
 ## Planned Interfaces (Language Strategy Layer)
 
@@ -76,10 +77,22 @@
 
 | Phase | Status | Scope |
 | --- | --- | --- |
-| Define strategy interfaces and register existing JS/TS implementations | `🧭` | Establish language strategy seam without behavior regression |
+| Define strategy interfaces and register existing JS/TS implementations | `🚧` | Strategy interfaces + registry seams added across import/call/endpoint/dependency extractors |
 | Add Java implementations for imports, calls, endpoints | `🧭` | Deliver first Java semantic relation wave |
 | Add Java dependency strategies (Maven/Gradle) and relation persistence | `🧭` | Expand dependency intelligence for Java repos |
 | Add parser capability flags and fallback chunking policy | `🧭` | Improve resilience for parser-weak formats |
+
+## Current Increment (2026-03-11)
+
+`✅` implemented in this increment.
+
+| Increment | Scope | Validation |
+| --- | --- | --- |
+| Java import relations vertical slice | Add Java import extraction/resolution in `ImportRelationshipBuilder` and persist `IMPORTS` edges for basic class imports | Verified on 2026-03-11 by running `tests/integration/test_java_import_relationships.py` and `tests/integration/test_post_cleanup_integration.py` against local PostgreSQL test DB (`indexer`) |
+| Java call relations vertical slice | Add Java method call extraction in `CallGraphBuilder` path and persist `CALLS` edges for common invocation patterns | Verified on 2026-03-11 by running `tests/integration/test_java_call_relationships.py` against local PostgreSQL test DB (`indexer`) |
+| Java endpoint extraction vertical slice | Add Java annotation-based endpoint extraction (Spring/JAX-RS baseline) and persist endpoint symbols | Verified on 2026-03-11 by running `tests/integration/test_java_api_endpoint_extraction.py` against local PostgreSQL test DB (`indexer`) |
+| Java dependency extraction vertical slice | Add Maven/Gradle manifest extraction in `DependencyExtractor` and persist repository dependencies | Verified on 2026-03-11 by running `tests/integration/test_java_dependency_extraction.py` against local PostgreSQL test DB (`indexer`) |
+| Strategy seam refactor (non-breaking) | Introduce explicit strategy interfaces + language/file strategy registries for import/call/endpoint/dependency extraction | Verified on 2026-03-12 by rerunning Java integration slices and baseline post-cleanup integration tests |
 
 ## Acceptance Criteria for "Java Semantic Parity v1"
 
@@ -87,8 +100,8 @@
 
 | Criterion | Gate |
 | --- | --- |
-| Java import relations persisted as `IMPORTS` edges with measurable resolution rate | `✅` |
-| Java call relations persisted as `CALLS` edges for common invocation patterns | `✅` |
-| Java endpoint extraction supports common controller/router patterns in target repos | `✅` |
-| Java dependency manifests (`pom.xml`, `build.gradle*`) are parsed and stored | `✅` |
-| Integration tests validate end-to-end indexing on real Java repositories in dev-container | `✅` |
+| Java import relations persisted as `IMPORTS` edges with measurable resolution rate | `🚧` |
+| Java call relations persisted as `CALLS` edges for common invocation patterns | `🚧` |
+| Java endpoint extraction supports common controller/router patterns in target repos | `🚧` |
+| Java dependency manifests (`pom.xml`, `build.gradle*`) are parsed and stored | `🚧` |
+| Integration tests validate end-to-end indexing on real Java repositories in dev-container | `🚧` |

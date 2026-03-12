@@ -156,3 +156,70 @@ class JavaScriptCallAnalyzer:
             return ""
         code_bytes = code.encode("utf-8")
         return code_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="ignore")
+
+
+class JavaCallAnalyzer:
+    """Analyzes Java code to extract method invocations."""
+
+    def extract_calls(self, symbol_node: tree_sitter.Node, code: str) -> List[Call]:
+        calls: List[Call] = []
+
+        def traverse(node: tree_sitter.Node):
+            if node.type == "method_invocation":
+                call = self._parse_method_invocation(node, code)
+                if call:
+                    calls.append(call)
+
+            for child in node.children:
+                traverse(child)
+
+        body = self._find_method_body(symbol_node)
+        if body:
+            traverse(body)
+
+        return calls
+
+    def extract_usages(self, symbol_node: tree_sitter.Node, code: str) -> List[Call]:
+        # Java usage extraction is not implemented in this slice.
+        return []
+
+    def _find_method_body(self, symbol_node: tree_sitter.Node) -> Optional[tree_sitter.Node]:
+        for child in symbol_node.children:
+            if child.type == "block":
+                return child
+        return None
+
+    def _parse_method_invocation(self, node: tree_sitter.Node, code: str) -> Optional[Call]:
+        text = self._get_node_text(node, code).strip()
+        if not text:
+            return None
+
+        call_expr = text.split("(", 1)[0].strip()
+        if not call_expr:
+            return None
+
+        receiver: Optional[str] = None
+        method_name = call_expr
+        if "." in call_expr:
+            receiver, method_name = call_expr.rsplit(".", 1)
+            receiver = receiver.strip() or None
+        method_name = method_name.strip()
+        if not method_name:
+            return None
+
+        return Call(
+            method_name=method_name,
+            receiver=receiver,
+            line_number=node.start_point[0] + 1,
+            end_line=node.end_point[0] + 1,
+            start_column=node.start_point[1] + 1,
+            end_column=node.end_point[1] + 1,
+            is_async=False,
+            is_static=bool(receiver and receiver[:1].isupper()),
+        )
+
+    def _get_node_text(self, node: Optional[tree_sitter.Node], code: str) -> str:
+        if not node:
+            return ""
+        code_bytes = code.encode("utf-8")
+        return code_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="ignore")

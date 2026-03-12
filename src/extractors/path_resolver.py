@@ -181,6 +181,9 @@ class PathResolver:
         For internal packages, tries to find in src/ or other common locations.
         For external packages (e.g., node_modules), returns None.
         """
+        if language.lower() == "java":
+            return self._resolve_java_package_path(import_path)
+
         # Check if it's an external package (contains no path separators)
         if '/' not in import_path:
             # Likely external package (react, lodash, etc.)
@@ -196,6 +199,49 @@ class PathResolver:
                 if candidate.exists():
                     return candidate.relative_to(self.repository_root)
         
+        return None
+
+    def _resolve_java_package_path(self, import_path: str) -> Optional[Path]:
+        """
+        Resolve Java package imports to a .java file path.
+
+        Examples:
+        - com.example.service.UserService -> src/main/java/com/example/service/UserService.java
+        - com.example.service.* -> src/main/java/com/example/service (not resolved to a single file)
+        """
+        if not import_path:
+            return None
+
+        # Ignore wildcard imports for file-level resolution.
+        if import_path.endswith(".*"):
+            return None
+
+        normalized = import_path.replace(".", "/").strip("/")
+        if not normalized:
+            return None
+
+        # Java source roots in preferred lookup order.
+        java_roots = [
+            self.repository_root / "src" / "main" / "java",
+            self.repository_root / "src" / "test" / "java",
+            self.repository_root,
+        ]
+
+        for root in java_roots:
+            candidate = root / f"{normalized}.java"
+            if candidate.exists() and candidate.is_relative_to(self.repository_root):
+                return candidate.relative_to(self.repository_root)
+
+        # Support static imports by progressively stripping trailing members.
+        # import static a.b.C.D -> try a/b/C.java
+        parts = normalized.split("/")
+        for end in range(len(parts) - 1, 0, -1):
+            prefix = "/".join(parts[:end])
+            for root in java_roots:
+                candidate = root / f"{prefix}.java"
+                if candidate.exists() and candidate.is_relative_to(self.repository_root):
+                    return candidate.relative_to(self.repository_root)
+
         return None
     
     def _get_extensions_for_language(self, language: str) -> List[str]:
