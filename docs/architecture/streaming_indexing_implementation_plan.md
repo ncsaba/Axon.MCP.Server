@@ -30,7 +30,7 @@ Note:
 | Batch metadata gate worker | `🚧` | Implemented behind feature flag (`metadata_gate_enabled`); full cutover pending. |
 | Changed/new-only parse pipeline | `🚧` | Queue fanout + parsing barrier implemented; broader integration coverage pending. |
 | Incremental graph aggregator from parse events | `🚧` | Graph logic exists, not event-stream wired |
-| Changed-chunk-only embedding batching | `🚧` | Batch generation exists, not filtered by change contract |
+| Changed-chunk-only embedding batching | `🚧` | Embedding calculation now skips reused hashes; full end-to-end gating validation pending. |
 
 ## Delivery Strategy
 
@@ -214,6 +214,19 @@ Remaining Slice 2 items:
 1. Unchanged files produce no embedding work.
 2. Embedding queue load tracks changed chunk volume only.
 3. Repeated runs over unchanged tree keep embedding count stable.
+
+### Slice 6A Status (2026-03-13)
+
+`✅` implemented in this increment:
+
+1. Embedding generation now skips recalculation when chunk content hash has an existing embedding for same model/version.
+2. Existing chunk embeddings for same model/version are skipped entirely (no duplicate generation).
+3. Reused vectors are persisted for new chunk IDs without re-running embedding model.
+
+`🚧` remaining:
+
+1. Integration validation proving unchanged runs enqueue/execute zero embedding calculation work at pipeline level.
+2. Future cross-repo/content-table dedup remains deferred to dedup track.
 
 ## Slice 7: Streaming Observability + Guardrails
 

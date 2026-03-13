@@ -36,3 +36,4 @@ This fork targets Python + Java + docs/config indexing with a graph-oriented cod
 - [MCP Tools](api/mcp_tools.md)
 - [Setup Guide](guides/setup.md)
 - [Analysis and Roadmap](AXON_ANALYSIS_AND_ROADMAP.md)
+- [Session Handover (2026-03-13)](SESSION_HANDOVER_2026-03-13.md)

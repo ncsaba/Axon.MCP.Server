@@ -11,8 +11,8 @@ from sqlalchemy import select
 from src.workers.celery_app import celery_app
 from src.workers.utils import _run_with_engine_cleanup
 from src.database.session import AsyncSessionLocal
-from src.database.models import Chunk, File
-from src.embeddings.generator import EmbeddingGenerator
+from src.database.models import Chunk, Embedding, File
+from src.embeddings.generator import EmbeddingGenerator, EmbeddingResult
 from src.vector_store.pgvector_store import PgVectorStore
 from src.utils.logging_config import get_logger
 
@@ -142,32 +142,48 @@ async def _generate_embeddings_async(chunk_ids: List[int]):
                 logger.warning("no_chunks_found", chunk_ids=chunk_ids, error=error_msg)
                 return {"status": "error", "error": error_msg}
             
-            # Prepare chunk data
-            chunk_data = [
-                {'id': chunk.id, 'content': chunk.content}
-                for chunk in chunks
-            ]
-            
-            # Generate embeddings
             generator = EmbeddingGenerator()
-            embedding_results = await generator.generate_embeddings(chunk_data)
-            
+            existing_chunk_ids, reusable_by_hash = await _lookup_embedding_reuse_candidates(
+                session=session,
+                chunks=chunks,
+                model_name=generator.model_name,
+                model_version=generator.model_version,
+            )
+
+            chunk_data, reused_results, skipped_existing = _plan_embedding_generation(
+                chunks=chunks,
+                existing_chunk_ids=existing_chunk_ids,
+                reusable_by_hash=reusable_by_hash,
+                model_name=generator.model_name,
+                model_version=generator.model_version,
+            )
+
+            generated_results: List[EmbeddingResult] = []
+            if chunk_data:
+                generated_results = await generator.generate_embeddings(chunk_data)
+
             # Store embeddings
             vector_store = PgVectorStore(session)
-            stored = await vector_store.store_embeddings(embedding_results)
+            stored = await vector_store.store_embeddings(reused_results + generated_results)
             
             await session.commit()
             
             logger.info(
                 "embeddings_generated_successfully",
                 chunk_count=len(chunk_ids),
-                embeddings_stored=stored
+                embeddings_stored=stored,
+                embeddings_generated=len(generated_results),
+                embeddings_reused=len(reused_results),
+                chunks_skipped_existing=skipped_existing,
             )
             
             return {
                 "status": "success",
                 "embeddings_generated": stored,
-                "chunk_count": len(chunks)
+                "embeddings_generated_new": len(generated_results),
+                "embeddings_reused": len(reused_results),
+                "chunks_skipped_existing": skipped_existing,
+                "chunk_count": len(chunks),
             }
             
         except Exception as e:
@@ -180,3 +196,86 @@ async def _generate_embeddings_async(chunk_ids: List[int]):
             )
             await session.rollback()
             raise
+
+
+async def _lookup_embedding_reuse_candidates(
+    session,
+    chunks: List[Chunk],
+    model_name: str,
+    model_version: str,
+) -> tuple[set[int], dict[str, EmbeddingResult]]:
+    chunk_ids = [chunk.id for chunk in chunks]
+    hash_values = sorted({chunk.content_hash for chunk in chunks if chunk.content_hash})
+
+    existing_chunk_ids: set[int] = set()
+    reusable_by_hash: dict[str, EmbeddingResult] = {}
+
+    if chunk_ids:
+        existing_result = await session.execute(
+            select(Embedding.chunk_id).where(
+                Embedding.chunk_id.in_(chunk_ids),
+                Embedding.model_name == model_name,
+                Embedding.model_version == model_version,
+            )
+        )
+        existing_chunk_ids = {int(chunk_id) for chunk_id in existing_result.scalars().all()}
+
+    if hash_values:
+        reuse_result = await session.execute(
+            select(
+                Chunk.content_hash,
+                Embedding.vector,
+                Embedding.dimension,
+            )
+            .join(Embedding, Embedding.chunk_id == Chunk.id)
+            .where(
+                Chunk.content_hash.in_(hash_values),
+                Embedding.model_name == model_name,
+                Embedding.model_version == model_version,
+            )
+        )
+        for content_hash, vector, dimension in reuse_result.all():
+            if content_hash and content_hash not in reusable_by_hash:
+                reusable_by_hash[content_hash] = EmbeddingResult(
+                    chunk_id=0,
+                    vector=vector,
+                    model_name=model_name,
+                    model_version=model_version,
+                    dimension=int(dimension),
+                )
+
+    return existing_chunk_ids, reusable_by_hash
+
+
+def _plan_embedding_generation(
+    chunks: List[Chunk],
+    existing_chunk_ids: set[int],
+    reusable_by_hash: dict[str, EmbeddingResult],
+    model_name: str,
+    model_version: str,
+) -> tuple[list[dict], list[EmbeddingResult], int]:
+    chunk_data: list[dict] = []
+    reused_results: list[EmbeddingResult] = []
+    skipped_existing = 0
+
+    for chunk in chunks:
+        if int(chunk.id) in existing_chunk_ids:
+            skipped_existing += 1
+            continue
+
+        if chunk.content_hash and chunk.content_hash in reusable_by_hash:
+            reusable = reusable_by_hash[chunk.content_hash]
+            reused_results.append(
+                EmbeddingResult(
+                    chunk_id=int(chunk.id),
+                    vector=reusable.vector,
+                    model_name=model_name,
+                    model_version=model_version,
+                    dimension=int(reusable.dimension),
+                )
+            )
+            continue
+
+        chunk_data.append({"id": int(chunk.id), "content": chunk.content})
+
+    return chunk_data, reused_results, skipped_existing

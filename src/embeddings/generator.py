@@ -44,6 +44,7 @@ class EmbeddingGenerator:
             self.client = AsyncOpenAI(api_key=get_settings().openai_api_key)
             self.model_name = get_settings().openai_embedding_model
             self.dimension = get_settings().openai_embedding_dimension
+            self.model_version = "1.0"
         else:
             # Local model using sentence-transformers
             from sentence_transformers import SentenceTransformer
@@ -54,6 +55,7 @@ class EmbeddingGenerator:
             self.model = SentenceTransformer(get_settings().local_embedding_model)
             self.model_name = get_settings().local_embedding_model
             self.dimension = self.model.get_sentence_embedding_dimension()
+            self.model_version = "1.0"
         
         logger.info(
             "embedding_generator_initialized",
@@ -142,7 +144,7 @@ class EmbeddingGenerator:
                     chunk_id=chunk['id'],
                     vector=response.data[i].embedding,
                     model_name=self.model_name,
-                    model_version="1.0",  # Could extract from response
+                    model_version=self.model_version,  # Could extract from response
                     dimension=self.dimension
                 ))
             
@@ -184,7 +186,7 @@ class EmbeddingGenerator:
                     chunk_id=chunk['id'],
                     vector=embeddings[i].tolist(),
                     model_name=self.model_name,
-                    model_version="1.0",
+                    model_version=self.model_version,
                     dimension=self.dimension
                 ))
             
@@ -224,4 +226,3 @@ class EmbeddingGenerator:
         if results:
             return results[0].vector
         return []
-
