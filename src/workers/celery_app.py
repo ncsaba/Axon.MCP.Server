@@ -44,6 +44,9 @@ celery_app.conf.update(
         'src.workers.tasks.sync_repository': {'queue': 'repository_sync'},
         'src.workers.tasks.parse_file_task': {'queue': 'file_parsing'},
         'src.workers.tasks.generate_embeddings_task': {'queue': 'embeddings'},
+        'src.workers.inventory_worker.process_discovery_batch': {
+            'queue': get_settings().inventory_queue_name
+        },
         'src.workers.enrichment_worker.enrich_batch': {'queue': 'ai_enrichment'},
         'src.workers.aggregation_worker.aggregate_repository_summary': {'queue': 'repository_aggregation'},
     },
@@ -91,4 +94,3 @@ def setup_worker_credentials(**kwargs):
     before any git operations are performed.
     """
     return None
-

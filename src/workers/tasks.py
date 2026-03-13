@@ -8,6 +8,7 @@ from src.workers.enrichment_worker import enrich_batch
 from src.workers.system_context_worker import generate_context
 from src.workers.aggregation_worker import aggregate_repository_summary
 from src.workers.link_worker import link_microservices, link_repository
+from src.workers.inventory_worker import process_discovery_batch
 
 # Define __all__ to explicitly state what is exported and prevent linter warnings
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     'aggregate_repository_summary',
     'link_microservices',
     'link_repository',
+    'process_discovery_batch',
 ]

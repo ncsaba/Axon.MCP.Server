@@ -16,6 +16,7 @@ from src.workers.tasks import (
     enrich_batch,
     generate_context,
     aggregate_repository_summary,
+    process_discovery_batch,
 )
 from src.workers.distributed_lock import DistributedLock, get_distributed_lock
 from src.workers.job_monitor import JobMonitor
@@ -28,9 +29,9 @@ __all__ = [
     'enrich_batch',
     'generate_context',
     'aggregate_repository_summary',
+    'process_discovery_batch',
     'DistributedLock',
     'get_distributed_lock',
     'JobMonitor',
 ]
-
 

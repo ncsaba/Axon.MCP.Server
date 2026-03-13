@@ -91,6 +91,37 @@ memory_usage_bytes = Gauge("memory_usage_bytes", "Memory usage in bytes")
 
 cpu_usage_percent = Gauge("cpu_usage_percent", "CPU usage percentage")
 
+# Streaming Inventory Metrics
+files_enumerated_total = Counter(
+    "files_enumerated_total",
+    "Total files enumerated by discovery inventory provider",
+    ["backend"],
+)
+
+directories_enumerated_total = Counter(
+    "directories_enumerated_total",
+    "Total directories enumerated by discovery inventory provider",
+    ["backend"],
+)
+
+inventory_batches_emitted_total = Counter(
+    "inventory_batches_emitted_total",
+    "Total discovery inventory batches emitted",
+    ["backend", "status"],
+)
+
+inventory_emit_latency_ms = Histogram(
+    "inventory_emit_latency_ms",
+    "Discovery inventory batch emission latency in milliseconds",
+    ["backend"],
+)
+
+inventory_queue_lag = Gauge(
+    "inventory_queue_lag",
+    "Current number of in-flight discovery batch publish operations",
+    ["backend"],
+)
+
 
 def track_time(metric: Histogram, labels: dict | None = None) -> Callable:
     """
@@ -180,4 +211,3 @@ def increment_counter(counter: Counter, labels: dict | None = None) -> Callable:
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
     return decorator
-

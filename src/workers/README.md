@@ -75,6 +75,7 @@ async with get_async_session() as session:
 - **repository_sync**: Repository synchronization
 - **file_parsing**: Individual file parsing
 - **embeddings**: Embedding generation
+- **discovery_inventory**: Streaming discovery batch payloads
 
 ## Starting Workers
 
@@ -224,4 +225,3 @@ help(sync_repository)
 help(DistributedLock)
 help(JobMonitor)
 ```
-

@@ -147,6 +147,10 @@ class Settings(BaseSettings):
     # Parsing
     parse_timeout_seconds: int = 300
     parse_max_file_size_mb: int = 10
+    inventory_batch_size: int = 500
+    inventory_max_inflight_batches: int = 8
+    inventory_emit_enabled: bool = True
+    inventory_queue_name: str = "discovery_inventory"
 
     # Extraction (automated during sync)
     extract_api_endpoints: bool = True  # Extract API endpoints automatically

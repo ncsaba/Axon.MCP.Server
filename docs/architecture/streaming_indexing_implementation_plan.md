@@ -26,6 +26,7 @@ Note:
 | Monolithic repository sync pipeline | `✅` | Runs clone/discovery/parse/extract in one task |
 | File metadata persistence (`size_bytes`, `content_hash`) | `✅` | Updated in `create_or_update_file()` |
 | `last_modified` persistence | `✅` | Persisted in `create_or_update_file()`; legacy rows handled by hash fallback |
+| Discovery batch producer (`scandir` fallback) | `✅` | Streaming provider + queue batch emission with idempotency key implemented. |
 | Batch metadata gate worker | `🛑` | Not implemented |
 | Changed/new-only parse pipeline | `🛑` | Not implemented |
 | Incremental graph aggregator from parse events | `🚧` | Graph logic exists, not event-stream wired |
@@ -81,6 +82,21 @@ Implement in slices, each independently testable and reversible.
 
 Reference design:
 - `docs/architecture/streaming_file_inventory_design.md`
+
+### Slice 2A Status (2026-03-13)
+
+`✅` implemented in this increment:
+
+1. `FileInventoryProvider` abstraction plus portable `os.scandir` backend.
+2. Streaming discovery emission with bounded in-flight publish operations.
+3. Batch schema in producer includes `repository_id`, `run_id`, `batch_seq`, `observed_at`, `files[]`, and `idempotency_key`.
+4. Celery queue route + task registration for discovery inventory payloads.
+5. Baseline inventory metrics (`files/directories enumerated`, `batches emitted`, `emit latency`, `in-flight publish lag`).
+
+Remaining Slice 2 items:
+
+1. Native Linux backend + benchmark harness.
+2. Full memory-decoupled parse fanout (current pipeline still populates `ctx.files` for Slice 3 compatibility).
 
 ## Slice 3: Metadata Gate Workers
 
