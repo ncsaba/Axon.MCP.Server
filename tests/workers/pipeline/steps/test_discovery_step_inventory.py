@@ -58,6 +58,8 @@ async def test_discovery_step_emits_inventory_batches(tmp_path):
     assert second_payload["idempotency_key"].endswith(":2")
     assert len(first_payload["files"]) == 2
     assert len(second_payload["files"]) == 1
+    assert ctx.metadata["parse_task_ids"] == []
+    assert ctx.metadata["parse_enqueued_total"] == 0
 
 
 @pytest.mark.asyncio
@@ -83,6 +85,11 @@ async def test_discovery_step_processes_batches_inline_when_metadata_gate_enable
         inventory_emit_enabled=True,
         metadata_gate_enabled=True,
     )
+    process_result = {
+        "parse_enqueued": 1,
+        "parse_processed": 0,
+        "parse_task_ids": ["task-a"],
+    }
 
     with patch(
         "src.workers.pipeline.steps.discovery_step.RedisLogPublisher",
@@ -96,9 +103,13 @@ async def test_discovery_step_processes_batches_inline_when_metadata_gate_enable
     ) as send_task, patch(
         "src.workers.inventory_worker._process_discovery_batch_async",
         new_callable=AsyncMock,
+        return_value=process_result,
     ) as process_batch:
         step = DiscoveryStep()
         await step.execute(ctx)
 
     assert process_batch.await_count == 2
     assert send_task.call_count == 0
+    assert ctx.metadata["parse_enqueued_total"] == 2
+    assert ctx.metadata["parse_processed_total"] == 0
+    assert ctx.metadata["parse_task_ids"] == ["task-a"]

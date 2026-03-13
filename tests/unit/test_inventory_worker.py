@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.workers.inventory_worker import (
+    _enqueue_parse_tasks,
     _metadata_matches,
     _process_discovery_batch_async,
     _safe_int,
@@ -61,3 +62,19 @@ async def test_process_discovery_batch_disabled_returns_accepted() -> None:
 
     assert result["status"] == "accepted_metadata_gate_disabled"
     assert result["files_count"] == 1
+
+
+def test_enqueue_parse_tasks_respects_chunk_size() -> None:
+    settings = MagicMock(metadata_gate_parse_enqueue_chunk_size=2)
+
+    send_result = MagicMock()
+    send_result.id = "task-id"
+
+    with patch("src.workers.inventory_worker.get_settings", return_value=settings), patch(
+        "src.workers.inventory_worker.celery_app.send_task",
+        return_value=send_result,
+    ) as send_task:
+        task_ids = _enqueue_parse_tasks([1, 2, 3, 4, 5])
+
+    assert send_task.call_count == 5
+    assert task_ids == ["task-id", "task-id", "task-id", "task-id", "task-id"]

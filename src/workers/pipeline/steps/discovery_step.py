@@ -59,6 +59,8 @@ class DiscoveryStep(PipelineStep):
         pending_emits: set[asyncio.Task[None]] = set()
         current_batch: list[FileMeta] = []
         batch_seq = 0
+        parse_task_ids: set[str] = set()
+        parse_totals = {"enqueued": 0, "processed": 0}
 
         def should_include(rel_path: str, size_bytes: int) -> bool:
             suffix = Path(rel_path).suffix.lower()
@@ -91,6 +93,8 @@ class DiscoveryStep(PipelineStep):
                     batch_files=current_batch,
                     pending_emits=pending_emits,
                     max_inflight_batches=max_inflight_batches,
+                    parse_task_ids=parse_task_ids,
+                    parse_totals=parse_totals,
                 )
                 current_batch = []
 
@@ -103,12 +107,15 @@ class DiscoveryStep(PipelineStep):
                 batch_files=current_batch,
                 pending_emits=pending_emits,
                 max_inflight_batches=max_inflight_batches,
+                parse_task_ids=parse_task_ids,
+                parse_totals=parse_totals,
             )
 
         if pending_emits:
             done, _ = await asyncio.wait(pending_emits)
             for completed in done:
-                await completed
+                result = await completed
+                self._collect_parse_fanout(result, parse_task_ids, parse_totals)
             inventory_queue_lag.labels(backend=INVENTORY_BACKEND).set(0)
 
         files_before = inventory_provider.files_seen
@@ -132,6 +139,9 @@ class DiscoveryStep(PipelineStep):
         ctx.files = files
         ctx.metadata["exclusion_rules"] = exclusion_rules
         ctx.metadata["inventory_batches_emitted"] = batch_seq
+        ctx.metadata["parse_task_ids"] = sorted(parse_task_ids)
+        ctx.metadata["parse_enqueued_total"] = parse_totals["enqueued"]
+        ctx.metadata["parse_processed_total"] = parse_totals["processed"]
 
         repo.status = RepositoryStatusEnum.PARSING
         repo.total_files = len(files)
@@ -150,6 +160,8 @@ class DiscoveryStep(PipelineStep):
                 "total_files": len(files),
                 "inventory_batches_emitted": batch_seq,
                 "inventory_backend": INVENTORY_BACKEND,
+                "parse_enqueued_total": parse_totals["enqueued"],
+                "parse_processed_total": parse_totals["processed"],
             },
         )
 
@@ -172,6 +184,8 @@ class DiscoveryStep(PipelineStep):
         batch_files: list[FileMeta],
         pending_emits: set[asyncio.Task[None]],
         max_inflight_batches: int,
+        parse_task_ids: set[str],
+        parse_totals: dict[str, int],
     ) -> None:
         payload = {
             "repository_id": repository_id,
@@ -192,28 +206,35 @@ class DiscoveryStep(PipelineStep):
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for completed in done:
-                await completed
+                result = await completed
+                self._collect_parse_fanout(result, parse_task_ids, parse_totals)
             pending_emits.clear()
             pending_emits.update(still_pending)
             inventory_queue_lag.labels(backend=INVENTORY_BACKEND).set(len(pending_emits))
 
-    async def _emit_inventory_batch(self, payload: dict) -> None:
+        # keep counters visible for caller even before all tasks complete
+        parse_totals["enqueued"] = parse_totals.get("enqueued", 0)
+        parse_totals["processed"] = parse_totals.get("processed", 0)
+
+    async def _emit_inventory_batch(self, payload: dict) -> dict:
         start = time.perf_counter()
         try:
             if get_settings().metadata_gate_enabled:
                 from src.workers.inventory_worker import _process_discovery_batch_async
 
-                await _process_discovery_batch_async(payload)
+                result = await _process_discovery_batch_async(payload)
             else:
                 await asyncio.to_thread(
                     celery_app.send_task,
                     "src.workers.inventory_worker.process_discovery_batch",
                     kwargs={"payload": payload},
                 )
+                result = {}
             inventory_batches_emitted_total.labels(
                 backend=INVENTORY_BACKEND,
                 status="success",
             ).inc()
+            return result
         except Exception:
             inventory_batches_emitted_total.labels(
                 backend=INVENTORY_BACKEND,
@@ -232,3 +253,22 @@ class DiscoveryStep(PipelineStep):
             "mtime_ns": file_meta.mtime_ns,
             "kind": file_meta.kind,
         }
+
+    @staticmethod
+    def _collect_parse_fanout(
+        result: dict,
+        parse_task_ids: set[str],
+        parse_totals: dict[str, int],
+    ) -> None:
+        if not isinstance(result, dict):
+            return
+
+        for task_id in result.get("parse_task_ids", []) or []:
+            parse_task_ids.add(str(task_id))
+
+        parse_totals["enqueued"] = parse_totals.get("enqueued", 0) + int(
+            result.get("parse_enqueued", 0) or 0
+        )
+        parse_totals["processed"] = parse_totals.get("processed", 0) + int(
+            result.get("parse_processed", 0) or 0
+        )

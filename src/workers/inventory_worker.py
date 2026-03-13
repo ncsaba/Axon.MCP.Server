@@ -169,6 +169,7 @@ async def _run_metadata_gate(
             metadata_gate_files_total.labels(decision=decision).inc(count)
 
     parse_processed = 0
+    parse_task_ids: list[str] = []
     if inline_parse_enabled:
         from src.workers.file_worker import _parse_file_async
 
@@ -176,8 +177,7 @@ async def _run_metadata_gate(
             await _parse_file_async(file_id)
             parse_processed += 1
     else:
-        for file_id in parse_file_ids:
-            celery_app.send_task("src.workers.tasks.parse_file_task", kwargs={"file_id": file_id})
+        parse_task_ids = _enqueue_parse_tasks(parse_file_ids)
 
     logger.info(
         "metadata_gate_batch_processed",
@@ -188,6 +188,7 @@ async def _run_metadata_gate(
         parse_enqueued=len(parse_file_ids),
         parse_processed=parse_processed,
         parse_mode="inline" if inline_parse_enabled else "queued",
+        parse_task_ids_count=len(parse_task_ids),
         decisions=decision_counts,
     )
     return {
@@ -199,6 +200,7 @@ async def _run_metadata_gate(
         "parse_enqueued": len(parse_file_ids),
         "parse_processed": parse_processed,
         "parse_mode": "inline" if inline_parse_enabled else "queued",
+        "parse_task_ids": parse_task_ids,
         "decisions": decision_counts,
         "idempotency_key": payload["idempotency_key"],
     }
@@ -274,3 +276,20 @@ def _safe_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _enqueue_parse_tasks(file_ids: list[int]) -> list[str]:
+    settings = get_settings()
+    chunk_size = max(1, int(settings.metadata_gate_parse_enqueue_chunk_size))
+    task_ids: list[str] = []
+
+    for start in range(0, len(file_ids), chunk_size):
+        chunk = file_ids[start : start + chunk_size]
+        for file_id in chunk:
+            async_result = celery_app.send_task(
+                "src.workers.tasks.parse_file_task",
+                kwargs={"file_id": file_id},
+            )
+            task_ids.append(str(async_result.id))
+
+    return task_ids

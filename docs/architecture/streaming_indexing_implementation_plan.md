@@ -28,7 +28,7 @@ Note:
 | `last_modified` persistence | `✅` | Persisted in `create_or_update_file()`; legacy rows handled by hash fallback |
 | Discovery batch producer (`scandir` fallback) | `✅` | Streaming provider + queue batch emission with idempotency key implemented. |
 | Batch metadata gate worker | `🚧` | Implemented behind feature flag (`metadata_gate_enabled`); full cutover pending. |
-| Changed/new-only parse pipeline | `🛑` | Not implemented |
+| Changed/new-only parse pipeline | `🚧` | Queue fanout + parsing barrier implemented; broader integration coverage pending. |
 | Incremental graph aggregator from parse events | `🚧` | Graph logic exists, not event-stream wired |
 | Changed-chunk-only embedding batching | `🚧` | Batch generation exists, not filtered by change contract |
 
@@ -159,6 +159,21 @@ Remaining Slice 2 items:
 1. Parse workers parallelize across files.
 2. No duplicate symbol/chunk growth on repeated unchanged runs.
 3. Parse output event contract available for downstream consumers.
+
+### Slice 4A Status (2026-03-13)
+
+`✅` implemented in this increment:
+
+1. Metadata gate now defaults to queued parse fanout (`metadata_gate_inline_parse_enabled=false`).
+2. Parse fanout enqueue is controlled with chunked task emission (`metadata_gate_parse_enqueue_chunk_size`).
+3. Discovery collects parse task IDs from metadata-gate responses.
+4. `ParsingStep` now serves as a completion barrier in streaming mode, waiting for parse task completion before downstream extraction steps.
+5. Per-file parse writes remain idempotent through file-scoped symbol/dependency replacement in extraction.
+
+`🚧` remaining:
+
+1. Add broader integration tests for full multi-worker queue topology under load.
+2. Formal parse output event contract for downstream consumers.
 
 ## Slice 5: Incremental Graph Aggregator Workers
 

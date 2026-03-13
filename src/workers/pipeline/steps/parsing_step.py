@@ -1,5 +1,7 @@
 import asyncio
 import time
+from celery.result import AsyncResult
+from celery.states import READY_STATES
 from sqlalchemy import select
 from celery import current_task
 
@@ -28,12 +30,16 @@ class ParsingStep(PipelineStep):
     async def execute(self, ctx: PipelineContext) -> None:
         settings = get_settings()
         if settings.metadata_gate_enabled and settings.inventory_emit_enabled:
-            logger.info(
-                "parsing_step_skipped_streaming_cutover",
-                repository_id=ctx.repository_id,
-                reason="metadata_gate_enabled",
-            )
-            ctx.timings["parsing"] = 0.0
+            if settings.metadata_gate_inline_parse_enabled:
+                logger.info(
+                    "parsing_step_skipped_streaming_cutover",
+                    repository_id=ctx.repository_id,
+                    reason="metadata_gate_inline_parse_enabled",
+                )
+                ctx.timings["parsing"] = 0.0
+                return
+
+            await self._wait_for_streaming_parse_tasks(ctx, settings)
             return
 
         if not ctx.files:
@@ -159,3 +165,57 @@ class ParsingStep(PipelineStep):
         await publisher.publish_log(ctx.repository_id, f"Parsing completed. Processed {files_processed} files.", details={"files_processed": files_processed})
         
         ctx.timings['parsing'] = time.time() - start_time
+
+    async def _wait_for_streaming_parse_tasks(self, ctx: PipelineContext, settings) -> None:
+        start_time = time.time()
+        task_ids = [str(x) for x in (ctx.metadata.get("parse_task_ids") or []) if x]
+        if not task_ids:
+            logger.info(
+                "no_parse_tasks_from_metadata_gate",
+                repository_id=ctx.repository_id,
+            )
+            ctx.timings["parsing"] = time.time() - start_time
+            return
+
+        timeout_seconds = max(1, int(settings.parse_task_wait_timeout_seconds))
+        poll_seconds = max(0.1, float(settings.parse_task_wait_poll_seconds))
+        deadline = time.monotonic() + timeout_seconds
+
+        pending = set(task_ids)
+        failed: dict[str, str] = {}
+
+        while pending and time.monotonic() < deadline:
+            completed_now: list[str] = []
+            for task_id in pending:
+                result = AsyncResult(task_id)
+                state = str(result.state)
+                if state not in READY_STATES:
+                    continue
+
+                completed_now.append(task_id)
+                if state != "SUCCESS":
+                    failed[task_id] = state
+
+            for task_id in completed_now:
+                pending.discard(task_id)
+
+            if pending:
+                await asyncio.sleep(poll_seconds)
+
+        if pending:
+            raise TimeoutError(
+                f"Timed out waiting for {len(pending)} parse tasks after {timeout_seconds}s"
+            )
+
+        if failed:
+            failed_summary = ", ".join(f"{task_id}:{state}" for task_id, state in sorted(failed.items()))
+            raise RuntimeError(f"Parse task failures detected: {failed_summary}")
+
+        ctx.files_processed = int(ctx.metadata.get("parse_enqueued_total", len(task_ids)) or len(task_ids))
+        logger.info(
+            "streaming_parse_tasks_completed",
+            repository_id=ctx.repository_id,
+            tasks_total=len(task_ids),
+            files_processed=ctx.files_processed,
+        )
+        ctx.timings["parsing"] = time.time() - start_time

@@ -154,7 +154,10 @@ class Settings(BaseSettings):
     metadata_gate_enabled: bool = True
     metadata_gate_hash_fallback_enabled: bool = True
     metadata_gate_idempotency_ttl_seconds: int = 86400
-    metadata_gate_inline_parse_enabled: bool = True
+    metadata_gate_inline_parse_enabled: bool = False
+    metadata_gate_parse_enqueue_chunk_size: int = 100
+    parse_task_wait_timeout_seconds: int = 7200
+    parse_task_wait_poll_seconds: float = 0.5
 
     # Extraction (automated during sync)
     extract_api_endpoints: bool = True  # Extract API endpoints automatically

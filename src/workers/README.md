@@ -79,8 +79,8 @@ async with get_async_session() as session:
 
 Metadata gate behavior:
 - Discovery inventory batches are consumed by `process_discovery_batch`.
-- Parse fanout from metadata gate is controlled by `metadata_gate_enabled` (defaults to `False` during transition from monolithic parsing).
-- When `metadata_gate_enabled=true`, monolithic `ParsingStep` is skipped and parse runs via metadata-gate fanout (`metadata_gate_inline_parse_enabled=true` for in-process deterministic ordering).
+- Parse fanout from metadata gate is controlled by `metadata_gate_enabled` (default `True`).
+- Default mode uses queued parse fanout (`metadata_gate_inline_parse_enabled=false`) and `ParsingStep` waits for parse task completion before downstream extraction stages.
 
 ## Starting Workers
 
