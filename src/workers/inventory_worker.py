@@ -1,9 +1,28 @@
-"""Discovery inventory queue tasks."""
+"""Discovery inventory queue tasks and metadata-gate decisions."""
 
 from __future__ import annotations
 
+import asyncio
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy import select
+
+from src.config.settings import get_settings
+from src.database.models import File, Repository
+from src.database.session import AsyncSessionLocal
+from src.repository_sources import get_repository_source_registry
 from src.utils.logging_config import get_logger
+from src.utils.metrics import metadata_gate_files_total
 from src.workers.celery_app import celery_app
+from src.workers.file_worker import create_or_update_file
+from src.workers.utils import _calculate_content_hash, _run_with_engine_cleanup
+
+try:
+    import redis.asyncio as redis
+except ImportError:  # pragma: no cover - optional dependency in some environments
+    redis = None
 
 logger = get_logger(__name__)
 
@@ -14,7 +33,178 @@ logger = get_logger(__name__)
     max_retries=3,
 )
 def process_discovery_batch(self, payload: dict) -> dict:
-    """Validate and acknowledge one discovery batch payload."""
+    """Consume one discovery batch and apply metadata-gate decisions."""
+    try:
+        return asyncio.run(_run_with_engine_cleanup(_process_discovery_batch_async(payload)))
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "discovery_batch_processing_failed",
+            error=str(exc),
+            run_id=payload.get("run_id"),
+            batch_seq=payload.get("batch_seq"),
+        )
+        raise self.retry(exc=exc, countdown=30 * (2 ** self.request.retries))
+
+
+async def _process_discovery_batch_async(payload: dict[str, Any]) -> dict[str, Any]:
+    _validate_payload(payload)
+    settings = get_settings()
+    idempotency_key = str(payload["idempotency_key"])
+
+    acquired = await _claim_batch_idempotency(
+        idempotency_key=idempotency_key,
+        ttl_seconds=settings.metadata_gate_idempotency_ttl_seconds,
+    )
+    if not acquired:
+        logger.info(
+            "discovery_batch_duplicate_skipped",
+            run_id=payload["run_id"],
+            batch_seq=payload["batch_seq"],
+            idempotency_key=idempotency_key,
+        )
+        return {
+            "status": "duplicate_skipped",
+            "repository_id": payload["repository_id"],
+            "run_id": payload["run_id"],
+            "batch_seq": payload["batch_seq"],
+            "idempotency_key": idempotency_key,
+        }
+
+    if not settings.metadata_gate_enabled:
+        logger.info(
+            "metadata_gate_disabled_batch_accepted",
+            repository_id=payload["repository_id"],
+            run_id=payload["run_id"],
+            batch_seq=payload["batch_seq"],
+            files_count=len(payload["files"]),
+        )
+        return {
+            "status": "accepted_metadata_gate_disabled",
+            "repository_id": payload["repository_id"],
+            "run_id": payload["run_id"],
+            "batch_seq": payload["batch_seq"],
+            "files_count": len(payload["files"]),
+            "idempotency_key": idempotency_key,
+        }
+
+    return await _run_metadata_gate(
+        payload,
+        hash_fallback_enabled=settings.metadata_gate_hash_fallback_enabled,
+        inline_parse_enabled=settings.metadata_gate_inline_parse_enabled,
+    )
+
+
+async def _run_metadata_gate(
+    payload: dict[str, Any],
+    hash_fallback_enabled: bool,
+    inline_parse_enabled: bool,
+) -> dict[str, Any]:
+    repository_id = int(payload["repository_id"])
+    batch_files: list[dict[str, Any]] = payload["files"]
+
+    decision_counts = {
+        "new": 0,
+        "changed": 0,
+        "unchanged": 0,
+        "unchanged_hash": 0,
+        "missing_on_disk": 0,
+    }
+    parse_file_ids: list[int] = []
+
+    async with AsyncSessionLocal() as session:
+        repo = await session.get(Repository, repository_id)
+        if repo is None:
+            raise ValueError(f"Repository not found for metadata gate: {repository_id}")
+
+        repo_path = get_repository_source_registry().resolve_repository_path(repo)
+
+        rel_paths = [str(item["rel_path"]) for item in batch_files]
+        existing_records = await session.execute(
+            select(File).where(File.repository_id == repository_id, File.path.in_(rel_paths))
+        )
+        existing_by_path = {record.path: record for record in existing_records.scalars().all()}
+
+        for item in batch_files:
+            rel_path = str(item["rel_path"])
+            file_path = repo_path / rel_path
+
+            if not file_path.exists() or not file_path.is_file():
+                decision_counts["missing_on_disk"] += 1
+                continue
+
+            existing = existing_by_path.get(rel_path)
+            payload_size = int(item["size_bytes"])
+            payload_mtime_ns = _safe_int(item.get("mtime_ns"))
+
+            if existing is None:
+                file_record = await create_or_update_file(session, repository_id, file_path, repo_path)
+                parse_file_ids.append(file_record.id)
+                decision_counts["new"] += 1
+                continue
+
+            if _metadata_matches(existing, payload_size, payload_mtime_ns):
+                decision_counts["unchanged"] += 1
+                continue
+
+            hash_matched = False
+            if hash_fallback_enabled and (existing.content_hash or "").strip():
+                current_hash = await asyncio.to_thread(_read_content_hash, file_path)
+                if current_hash and current_hash == existing.content_hash:
+                    existing.size_bytes = payload_size
+                    existing.last_modified = _mtime_ns_to_utc(payload_mtime_ns)
+                    decision_counts["unchanged_hash"] += 1
+                    hash_matched = True
+
+            if hash_matched:
+                continue
+
+            file_record = await create_or_update_file(session, repository_id, file_path, repo_path)
+            parse_file_ids.append(file_record.id)
+            decision_counts["changed"] += 1
+
+        await session.commit()
+
+    for decision, count in decision_counts.items():
+        if count:
+            metadata_gate_files_total.labels(decision=decision).inc(count)
+
+    parse_processed = 0
+    if inline_parse_enabled:
+        from src.workers.file_worker import _parse_file_async
+
+        for file_id in parse_file_ids:
+            await _parse_file_async(file_id)
+            parse_processed += 1
+    else:
+        for file_id in parse_file_ids:
+            celery_app.send_task("src.workers.tasks.parse_file_task", kwargs={"file_id": file_id})
+
+    logger.info(
+        "metadata_gate_batch_processed",
+        repository_id=repository_id,
+        run_id=payload["run_id"],
+        batch_seq=payload["batch_seq"],
+        files_total=len(batch_files),
+        parse_enqueued=len(parse_file_ids),
+        parse_processed=parse_processed,
+        parse_mode="inline" if inline_parse_enabled else "queued",
+        decisions=decision_counts,
+    )
+    return {
+        "status": "processed",
+        "repository_id": repository_id,
+        "run_id": payload["run_id"],
+        "batch_seq": payload["batch_seq"],
+        "files_total": len(batch_files),
+        "parse_enqueued": len(parse_file_ids),
+        "parse_processed": parse_processed,
+        "parse_mode": "inline" if inline_parse_enabled else "queued",
+        "decisions": decision_counts,
+        "idempotency_key": payload["idempotency_key"],
+    }
+
+
+def _validate_payload(payload: dict[str, Any]) -> None:
     required_fields = {
         "repository_id",
         "run_id",
@@ -26,19 +216,61 @@ def process_discovery_batch(self, payload: dict) -> dict:
     missing_fields = sorted(required_fields.difference(payload.keys()))
     if missing_fields:
         raise ValueError(f"Invalid discovery batch payload, missing: {', '.join(missing_fields)}")
+    if not isinstance(payload.get("files"), list):
+        raise ValueError("Invalid discovery batch payload: files must be a list")
 
-    logger.info(
-        "discovery_batch_received",
-        repository_id=payload["repository_id"],
-        run_id=payload["run_id"],
-        batch_seq=payload["batch_seq"],
-        files_count=len(payload["files"]),
-        idempotency_key=payload["idempotency_key"],
-    )
-    return {
-        "status": "accepted",
-        "repository_id": payload["repository_id"],
-        "run_id": payload["run_id"],
-        "batch_seq": payload["batch_seq"],
-        "files_count": len(payload["files"]),
-    }
+
+async def _claim_batch_idempotency(idempotency_key: str, ttl_seconds: int) -> bool:
+    if redis is None:
+        return True
+
+    settings = get_settings()
+    client = None
+    try:
+        client = redis.from_url(settings.redis_url, encoding="utf-8", decode_responses=True)
+        redis_key = f"inventory_batch:{idempotency_key}"
+        claimed = await client.set(redis_key, "1", nx=True, ex=max(1, ttl_seconds))
+        return bool(claimed)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("inventory_idempotency_claim_failed", key=idempotency_key, error=str(exc))
+        return True
+    finally:
+        if client is not None:
+            await client.close()
+
+
+def _metadata_matches(existing: File, size_bytes: int, mtime_ns: int | None) -> bool:
+    existing_mtime_ns = _datetime_to_ns(existing.last_modified)
+    if mtime_ns is None or existing_mtime_ns is None:
+        return False
+    return int(existing.size_bytes or 0) == int(size_bytes) and existing_mtime_ns == mtime_ns
+
+
+def _read_content_hash(file_path: Path) -> str:
+    try:
+        content = file_path.read_text(errors="ignore")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("metadata_gate_file_read_failed", file_path=str(file_path), error=str(exc))
+        return ""
+    return _calculate_content_hash(content)
+
+
+def _datetime_to_ns(value: datetime | None) -> int | None:
+    if value is None:
+        return None
+    return int(value.astimezone(UTC).timestamp() * 1_000_000_000)
+
+
+def _mtime_ns_to_utc(mtime_ns: int | None) -> datetime | None:
+    if mtime_ns is None:
+        return None
+    return datetime.fromtimestamp(mtime_ns / 1_000_000_000, tz=UTC)
+
+
+def _safe_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

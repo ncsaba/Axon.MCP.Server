@@ -151,6 +151,10 @@ class Settings(BaseSettings):
     inventory_max_inflight_batches: int = 8
     inventory_emit_enabled: bool = True
     inventory_queue_name: str = "discovery_inventory"
+    metadata_gate_enabled: bool = True
+    metadata_gate_hash_fallback_enabled: bool = True
+    metadata_gate_idempotency_ttl_seconds: int = 86400
+    metadata_gate_inline_parse_enabled: bool = True
 
     # Extraction (automated during sync)
     extract_api_endpoints: bool = True  # Extract API endpoints automatically

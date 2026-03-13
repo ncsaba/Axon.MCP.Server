@@ -122,6 +122,12 @@ inventory_queue_lag = Gauge(
     ["backend"],
 )
 
+metadata_gate_files_total = Counter(
+    "metadata_gate_files_total",
+    "Total files processed by metadata gate grouped by decision",
+    ["decision"],
+)
+
 
 def track_time(metric: Histogram, labels: dict | None = None) -> Callable:
     """

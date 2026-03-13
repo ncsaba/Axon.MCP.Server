@@ -200,11 +200,16 @@ class DiscoveryStep(PipelineStep):
     async def _emit_inventory_batch(self, payload: dict) -> None:
         start = time.perf_counter()
         try:
-            await asyncio.to_thread(
-                celery_app.send_task,
-                "src.workers.inventory_worker.process_discovery_batch",
-                kwargs={"payload": payload},
-            )
+            if get_settings().metadata_gate_enabled:
+                from src.workers.inventory_worker import _process_discovery_batch_async
+
+                await _process_discovery_batch_async(payload)
+            else:
+                await asyncio.to_thread(
+                    celery_app.send_task,
+                    "src.workers.inventory_worker.process_discovery_batch",
+                    kwargs={"payload": payload},
+                )
             inventory_batches_emitted_total.labels(
                 backend=INVENTORY_BACKEND,
                 status="success",

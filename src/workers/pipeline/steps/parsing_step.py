@@ -26,6 +26,16 @@ class ParsingStep(PipelineStep):
     requires_fields = ["files", "repo_path"]
 
     async def execute(self, ctx: PipelineContext) -> None:
+        settings = get_settings()
+        if settings.metadata_gate_enabled and settings.inventory_emit_enabled:
+            logger.info(
+                "parsing_step_skipped_streaming_cutover",
+                repository_id=ctx.repository_id,
+                reason="metadata_gate_enabled",
+            )
+            ctx.timings["parsing"] = 0.0
+            return
+
         if not ctx.files:
             logger.warning("no_files_to_parse", repository_id=ctx.repository_id)
             return

@@ -28,6 +28,7 @@ async def test_discovery_step_emits_inventory_batches(tmp_path):
         inventory_batch_size=2,
         inventory_max_inflight_batches=2,
         inventory_emit_enabled=True,
+        metadata_gate_enabled=False,
     )
 
     with patch(
@@ -57,3 +58,47 @@ async def test_discovery_step_emits_inventory_batches(tmp_path):
     assert second_payload["idempotency_key"].endswith(":2")
     assert len(first_payload["files"]) == 2
     assert len(second_payload["files"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_discovery_step_processes_batches_inline_when_metadata_gate_enabled(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "a.py").write_text("print('a')", encoding="utf-8")
+    (tmp_path / "src" / "b.py").write_text("print('b')", encoding="utf-8")
+
+    session = AsyncMock()
+    repository = MagicMock()
+    repository.status = None
+    repository.total_files = 0
+
+    ctx = PipelineContext(repository_id=456, session=session)
+    ctx.repo_path = tmp_path
+    ctx.repository = repository
+
+    publisher = AsyncMock()
+    settings = MagicMock(
+        parse_max_file_size_mb=10,
+        inventory_batch_size=1,
+        inventory_max_inflight_batches=2,
+        inventory_emit_enabled=True,
+        metadata_gate_enabled=True,
+    )
+
+    with patch(
+        "src.workers.pipeline.steps.discovery_step.RedisLogPublisher",
+        return_value=publisher,
+    ), patch(
+        "src.workers.pipeline.steps.discovery_step.get_settings",
+        return_value=settings,
+    ), patch(
+        "src.workers.pipeline.steps.discovery_step.celery_app.send_task",
+        return_value=MagicMock(id="task-1"),
+    ) as send_task, patch(
+        "src.workers.inventory_worker._process_discovery_batch_async",
+        new_callable=AsyncMock,
+    ) as process_batch:
+        step = DiscoveryStep()
+        await step.execute(ctx)
+
+    assert process_batch.await_count == 2
+    assert send_task.call_count == 0

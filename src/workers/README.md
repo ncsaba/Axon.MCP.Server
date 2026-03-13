@@ -77,6 +77,11 @@ async with get_async_session() as session:
 - **embeddings**: Embedding generation
 - **discovery_inventory**: Streaming discovery batch payloads
 
+Metadata gate behavior:
+- Discovery inventory batches are consumed by `process_discovery_batch`.
+- Parse fanout from metadata gate is controlled by `metadata_gate_enabled` (defaults to `False` during transition from monolithic parsing).
+- When `metadata_gate_enabled=true`, monolithic `ParsingStep` is skipped and parse runs via metadata-gate fanout (`metadata_gate_inline_parse_enabled=true` for in-process deterministic ordering).
+
 ## Starting Workers
 
 ### Development

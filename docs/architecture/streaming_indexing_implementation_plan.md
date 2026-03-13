@@ -27,7 +27,7 @@ Note:
 | File metadata persistence (`size_bytes`, `content_hash`) | `✅` | Updated in `create_or_update_file()` |
 | `last_modified` persistence | `✅` | Persisted in `create_or_update_file()`; legacy rows handled by hash fallback |
 | Discovery batch producer (`scandir` fallback) | `✅` | Streaming provider + queue batch emission with idempotency key implemented. |
-| Batch metadata gate worker | `🛑` | Not implemented |
+| Batch metadata gate worker | `🚧` | Implemented behind feature flag (`metadata_gate_enabled`); full cutover pending. |
 | Changed/new-only parse pipeline | `🛑` | Not implemented |
 | Incremental graph aggregator from parse events | `🚧` | Graph logic exists, not event-stream wired |
 | Changed-chunk-only embedding batching | `🚧` | Batch generation exists, not filtered by change contract |
@@ -121,6 +121,24 @@ Remaining Slice 2 items:
 1. Unchanged files do not enqueue parse tasks.
 2. Changed/new files do enqueue parse tasks.
 3. Gate operates in batch DB mode (no per-file metadata query loops).
+
+### Slice 3A Status (2026-03-13)
+
+`✅` implemented in this increment:
+
+1. Discovery-batch consumer task now performs metadata gate decisions in batch DB mode.
+2. Decision policy implemented:
+   - `size + mtime` match => unchanged
+   - mismatch => hash fallback (when enabled)
+   - new/changed => upsert file metadata + enqueue parse task
+3. Batch idempotency claim support added via Redis key (`inventory_batch:{idempotency_key}`).
+4. Decision telemetry added (`metadata_gate_files_total`).
+5. Monolithic `ParsingStep` is bypassed when streaming cutover flag is enabled (`metadata_gate_enabled=true`), and metadata gate can execute parse inline for deterministic step ordering.
+
+`🚧` remaining:
+
+1. Remove/replace monolithic parsing step path and complete end-to-end streaming cutover.
+2. Validate gate behavior with integration coverage over full queue topology.
 
 ## Slice 4: Parse Fanout + Idempotent Writes
 
