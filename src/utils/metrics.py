@@ -128,6 +128,48 @@ metadata_gate_files_total = Counter(
     ["decision"],
 )
 
+streaming_stage_batches_total = Counter(
+    "streaming_stage_batches_total",
+    "Total streaming stage batches processed",
+    ["stage", "status"],
+)
+
+streaming_stage_batch_size = Histogram(
+    "streaming_stage_batch_size",
+    "Streaming stage batch size",
+    ["stage"],
+)
+
+streaming_stage_duration_seconds = Histogram(
+    "streaming_stage_duration_seconds",
+    "Streaming stage execution duration in seconds",
+    ["stage", "mode"],
+)
+
+streaming_stage_lag_seconds = Histogram(
+    "streaming_stage_lag_seconds",
+    "Observed lag for a streaming stage in seconds",
+    ["stage"],
+)
+
+streaming_stage_db_duration_seconds = Histogram(
+    "streaming_stage_db_duration_seconds",
+    "Database operation duration for streaming stages in seconds",
+    ["stage", "operation"],
+)
+
+streaming_stage_items_total = Counter(
+    "streaming_stage_items_total",
+    "Items processed by streaming stages",
+    ["stage", "item_type", "result"],
+)
+
+streaming_stage_queue_depth = Gauge(
+    "streaming_stage_queue_depth",
+    "Current queue depth or pending work count for a streaming stage",
+    ["stage"],
+)
+
 
 def track_time(metric: Histogram, labels: dict | None = None) -> Callable:
     """

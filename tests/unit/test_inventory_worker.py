@@ -6,6 +6,7 @@ import pytest
 from src.workers.inventory_worker import (
     _enqueue_parse_tasks,
     _metadata_matches,
+    _payload_lag_seconds,
     _process_discovery_batch_async,
     _safe_int,
     _validate_payload,
@@ -34,6 +35,11 @@ def test_safe_int_handles_invalid_values() -> None:
     assert _safe_int("abc") is None
 
 
+def test_payload_lag_seconds_handles_invalid_values() -> None:
+    assert _payload_lag_seconds(None) is None
+    assert _payload_lag_seconds("not-a-date") is None
+
+
 @pytest.mark.asyncio
 async def test_process_discovery_batch_disabled_returns_accepted() -> None:
     payload = {
@@ -54,14 +60,25 @@ async def test_process_discovery_batch_disabled_returns_accepted() -> None:
         metadata_gate_inline_parse_enabled=True,
     )
 
+    lag_metric = MagicMock()
+    batch_metric = MagicMock()
+
     with patch("src.workers.inventory_worker.get_settings", return_value=settings), patch(
         "src.workers.inventory_worker._claim_batch_idempotency",
         return_value=True,
+    ), patch(
+        "src.workers.inventory_worker.streaming_stage_lag_seconds.labels",
+        return_value=lag_metric,
+    ), patch(
+        "src.workers.inventory_worker.streaming_stage_batches_total.labels",
+        return_value=batch_metric,
     ):
         result = await _process_discovery_batch_async(payload)
 
     assert result["status"] == "accepted_metadata_gate_disabled"
     assert result["files_count"] == 1
+    lag_metric.observe.assert_called_once()
+    batch_metric.inc.assert_called_once()
 
 
 def test_enqueue_parse_tasks_respects_chunk_size() -> None:

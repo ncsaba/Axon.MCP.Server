@@ -52,6 +52,12 @@ async def test_parsing_step_waits_for_streaming_parse_tasks(tmp_path):
 
     success_result = MagicMock()
     success_result.state = "SUCCESS"
+    success_result.result = {"status": "success", "chunk_ids": [11, 22]}
+    duration_metric = MagicMock()
+    lag_metric = MagicMock()
+    batch_metric = MagicMock()
+    queue_metric = MagicMock()
+    items_metric = MagicMock()
 
     with patch(
         "src.workers.pipeline.steps.parsing_step.get_settings",
@@ -59,9 +65,30 @@ async def test_parsing_step_waits_for_streaming_parse_tasks(tmp_path):
     ), patch(
         "src.workers.pipeline.steps.parsing_step.AsyncResult",
         return_value=success_result,
+    ), patch(
+        "src.workers.pipeline.steps.parsing_step.streaming_stage_duration_seconds.labels",
+        return_value=duration_metric,
+    ), patch(
+        "src.workers.pipeline.steps.parsing_step.streaming_stage_lag_seconds.labels",
+        return_value=lag_metric,
+    ), patch(
+        "src.workers.pipeline.steps.parsing_step.streaming_stage_batch_size.labels",
+        return_value=batch_metric,
+    ), patch(
+        "src.workers.pipeline.steps.parsing_step.streaming_stage_queue_depth.labels",
+        return_value=queue_metric,
+    ), patch(
+        "src.workers.pipeline.steps.parsing_step.streaming_stage_items_total.labels",
+        return_value=items_metric,
     ):
         step = ParsingStep()
         await step.execute(ctx)
 
     assert ctx.files_processed == 2
+    assert ctx.metadata["changed_chunk_ids"] == [11, 22]
     assert "parsing" in ctx.timings
+    duration_metric.observe.assert_called_once()
+    lag_metric.observe.assert_called_once()
+    batch_metric.observe.assert_called_once_with(2)
+    assert queue_metric.set.call_count >= 1
+    assert items_metric.inc.call_count >= 1

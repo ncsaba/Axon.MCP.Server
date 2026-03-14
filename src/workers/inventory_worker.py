@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,15 @@ from src.database.models import File, Repository
 from src.database.session import AsyncSessionLocal
 from src.repository_sources import get_repository_source_registry
 from src.utils.logging_config import get_logger
-from src.utils.metrics import metadata_gate_files_total
+from src.utils.metrics import (
+    metadata_gate_files_total,
+    streaming_stage_batch_size,
+    streaming_stage_batches_total,
+    streaming_stage_db_duration_seconds,
+    streaming_stage_duration_seconds,
+    streaming_stage_items_total,
+    streaming_stage_lag_seconds,
+)
 from src.workers.celery_app import celery_app
 from src.workers.file_worker import create_or_update_file
 from src.workers.utils import _calculate_content_hash, _run_with_engine_cleanup
@@ -50,12 +59,16 @@ async def _process_discovery_batch_async(payload: dict[str, Any]) -> dict[str, A
     _validate_payload(payload)
     settings = get_settings()
     idempotency_key = str(payload["idempotency_key"])
+    observed_lag_seconds = _payload_lag_seconds(payload.get("observed_at"))
+    if observed_lag_seconds is not None:
+        streaming_stage_lag_seconds.labels(stage="metadata_gate").observe(observed_lag_seconds)
 
     acquired = await _claim_batch_idempotency(
         idempotency_key=idempotency_key,
         ttl_seconds=settings.metadata_gate_idempotency_ttl_seconds,
     )
     if not acquired:
+        streaming_stage_batches_total.labels(stage="metadata_gate", status="duplicate").inc()
         logger.info(
             "discovery_batch_duplicate_skipped",
             run_id=payload["run_id"],
@@ -71,6 +84,7 @@ async def _process_discovery_batch_async(payload: dict[str, Any]) -> dict[str, A
         }
 
     if not settings.metadata_gate_enabled:
+        streaming_stage_batches_total.labels(stage="metadata_gate", status="disabled").inc()
         logger.info(
             "metadata_gate_disabled_batch_accepted",
             repository_id=payload["repository_id"],
@@ -99,8 +113,16 @@ async def _run_metadata_gate(
     hash_fallback_enabled: bool,
     inline_parse_enabled: bool,
 ) -> dict[str, Any]:
+    stage_started = time.perf_counter()
     repository_id = int(payload["repository_id"])
     batch_files: list[dict[str, Any]] = payload["files"]
+    batch_size = len(batch_files)
+    streaming_stage_batch_size.labels(stage="metadata_gate").observe(batch_size)
+    streaming_stage_items_total.labels(
+        stage="metadata_gate",
+        item_type="files",
+        result="received",
+    ).inc(batch_size)
 
     decision_counts = {
         "new": 0,
@@ -119,9 +141,14 @@ async def _run_metadata_gate(
         repo_path = get_repository_source_registry().resolve_repository_path(repo)
 
         rel_paths = [str(item["rel_path"]) for item in batch_files]
+        db_started = time.perf_counter()
         existing_records = await session.execute(
             select(File).where(File.repository_id == repository_id, File.path.in_(rel_paths))
         )
+        streaming_stage_db_duration_seconds.labels(
+            stage="metadata_gate",
+            operation="select_existing_files",
+        ).observe(time.perf_counter() - db_started)
         existing_by_path = {record.path: record for record in existing_records.scalars().all()}
 
         for item in batch_files:
@@ -162,19 +189,36 @@ async def _run_metadata_gate(
             parse_file_ids.append(file_record.id)
             decision_counts["changed"] += 1
 
+        db_started = time.perf_counter()
         await session.commit()
+        streaming_stage_db_duration_seconds.labels(
+            stage="metadata_gate",
+            operation="commit",
+        ).observe(time.perf_counter() - db_started)
 
     for decision, count in decision_counts.items():
         if count:
             metadata_gate_files_total.labels(decision=decision).inc(count)
+            streaming_stage_items_total.labels(
+                stage="metadata_gate",
+                item_type="files",
+                result=decision,
+            ).inc(count)
 
     parse_processed = 0
     parse_task_ids: list[str] = []
+    changed_chunk_ids: list[int] = []
     if inline_parse_enabled:
         from src.workers.file_worker import _parse_file_async
 
         for file_id in parse_file_ids:
-            await _parse_file_async(file_id)
+            parse_result = await _parse_file_async(file_id)
+            if isinstance(parse_result, dict):
+                changed_chunk_ids.extend(
+                    int(chunk_id)
+                    for chunk_id in (parse_result.get("chunk_ids") or [])
+                    if chunk_id is not None
+                )
             parse_processed += 1
     else:
         parse_task_ids = _enqueue_parse_tasks(parse_file_ids)
@@ -189,8 +233,19 @@ async def _run_metadata_gate(
         parse_processed=parse_processed,
         parse_mode="inline" if inline_parse_enabled else "queued",
         parse_task_ids_count=len(parse_task_ids),
+        changed_chunk_ids_count=len(changed_chunk_ids),
         decisions=decision_counts,
     )
+    streaming_stage_batches_total.labels(stage="metadata_gate", status="processed").inc()
+    streaming_stage_duration_seconds.labels(stage="metadata_gate", mode="streaming").observe(
+        time.perf_counter() - stage_started
+    )
+    if parse_file_ids:
+        streaming_stage_items_total.labels(
+            stage="metadata_gate",
+            item_type="files",
+            result="parse_enqueued",
+        ).inc(len(parse_file_ids))
     return {
         "status": "processed",
         "repository_id": repository_id,
@@ -201,6 +256,8 @@ async def _run_metadata_gate(
         "parse_processed": parse_processed,
         "parse_mode": "inline" if inline_parse_enabled else "queued",
         "parse_task_ids": parse_task_ids,
+        "parse_file_ids": parse_file_ids,
+        "changed_chunk_ids": sorted(set(changed_chunk_ids)),
         "decisions": decision_counts,
         "idempotency_key": payload["idempotency_key"],
     }
@@ -276,6 +333,18 @@ def _safe_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _payload_lag_seconds(observed_at: Any) -> float | None:
+    if not observed_at:
+        return None
+    try:
+        value = datetime.fromisoformat(str(observed_at))
+    except ValueError:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return max(0.0, (datetime.now(UTC) - value.astimezone(UTC)).total_seconds())
 
 
 def _enqueue_parse_tasks(file_ids: list[int]) -> list[str]:

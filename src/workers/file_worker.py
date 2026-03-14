@@ -15,7 +15,7 @@ from src.gitlab.repository_manager import RepositoryManager
 from src.parsers import parse_file
 from src.extractors.knowledge_extractor import KnowledgeExtractor
 from src.database.session import AsyncSessionLocal
-from src.database.models import Repository, File
+from src.database.models import Repository, File, Chunk
 from src.repository_sources import get_repository_source_registry
 from src.utils.logging_config import get_logger
 from src.utils.async_compat import maybe_await
@@ -187,6 +187,11 @@ async def _parse_file_async(file_id: int):
                 parse_result,
                 file_record.id
             )
+
+            chunk_result = await session.execute(
+                select(Chunk.id).where(Chunk.file_id == file_id)
+            )
+            chunk_ids = [int(chunk_id) for chunk_id in chunk_result.scalars().all()]
             
             await session.commit()
             
@@ -200,7 +205,8 @@ async def _parse_file_async(file_id: int):
                 "status": "success",
                 "file_id": file_id,
                 "symbols_created": extraction_result.symbols_created,  # Attribute access
-                "chunks_created": extraction_result.chunks_created  # Attribute access
+                "chunks_created": extraction_result.chunks_created,  # Attribute access
+                "chunk_ids": chunk_ids,
             }
             
         except Exception as e:

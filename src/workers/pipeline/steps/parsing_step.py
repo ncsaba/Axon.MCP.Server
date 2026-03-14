@@ -9,6 +9,13 @@ from src.config.settings import get_settings
 from src.utils.redis_logger import RedisLogPublisher
 from src.utils.logging_config import get_logger
 from src.utils.file_exclusion import FileExclusionRules
+from src.utils.metrics import (
+    streaming_stage_batch_size,
+    streaming_stage_duration_seconds,
+    streaming_stage_items_total,
+    streaming_stage_lag_seconds,
+    streaming_stage_queue_depth,
+)
 from src.workers.file_worker import create_or_update_file
 from src.extractors.knowledge_extractor import KnowledgeExtractor
 from src.parsers import parse_file_async
@@ -60,6 +67,7 @@ class ParsingStep(PipelineStep):
         files_processed = 0
         total_chunks_created = 0 # Fix 1.1: Local accumulator to avoid metric inflation
         total_files = len(ctx.files)
+        streaming_stage_batch_size.labels(stage="parsing").observe(total_files)
         
         for idx, file_path in enumerate(ctx.files):
             try:
@@ -163,16 +171,32 @@ class ParsingStep(PipelineStep):
             files_processed=files_processed
         )
         await publisher.publish_log(ctx.repository_id, f"Parsing completed. Processed {files_processed} files.", details={"files_processed": files_processed})
-        
-        ctx.timings['parsing'] = time.time() - start_time
+        duration = time.time() - start_time
+        streaming_stage_duration_seconds.labels(stage="parsing", mode="batch").observe(duration)
+        streaming_stage_items_total.labels(
+            stage="parsing",
+            item_type="files",
+            result="processed",
+        ).inc(files_processed)
+        ctx.timings['parsing'] = duration
 
     async def _wait_for_streaming_parse_tasks(self, ctx: PipelineContext, settings) -> None:
         start_time = time.time()
         task_ids = [str(x) for x in (ctx.metadata.get("parse_task_ids") or []) if x]
+        changed_chunk_ids = {
+            int(chunk_id)
+            for chunk_id in (ctx.metadata.get("changed_chunk_ids") or [])
+            if chunk_id is not None
+        }
         if not task_ids:
             logger.info(
                 "no_parse_tasks_from_metadata_gate",
                 repository_id=ctx.repository_id,
+            )
+            ctx.metadata["changed_chunk_ids"] = sorted(changed_chunk_ids)
+            streaming_stage_batch_size.labels(stage="parse_wait").observe(0)
+            streaming_stage_duration_seconds.labels(stage="parse_wait", mode="streaming").observe(
+                time.time() - start_time
             )
             ctx.timings["parsing"] = time.time() - start_time
             return
@@ -180,11 +204,13 @@ class ParsingStep(PipelineStep):
         timeout_seconds = max(1, int(settings.parse_task_wait_timeout_seconds))
         poll_seconds = max(0.1, float(settings.parse_task_wait_poll_seconds))
         deadline = time.monotonic() + timeout_seconds
+        streaming_stage_batch_size.labels(stage="parse_wait").observe(len(task_ids))
 
         pending = set(task_ids)
         failed: dict[str, str] = {}
 
         while pending and time.monotonic() < deadline:
+            streaming_stage_queue_depth.labels(stage="parse_wait").set(len(pending))
             completed_now: list[str] = []
             for task_id in pending:
                 result = AsyncResult(task_id)
@@ -195,12 +221,25 @@ class ParsingStep(PipelineStep):
                 completed_now.append(task_id)
                 if state != "SUCCESS":
                     failed[task_id] = state
+                    continue
+
+                payload = result.result
+                if isinstance(payload, dict):
+                    for chunk_id in payload.get("chunk_ids", []) or []:
+                        if chunk_id is not None:
+                            changed_chunk_ids.add(int(chunk_id))
+                    if payload.get("status") == "error":
+                        failed[task_id] = "APPLICATION_ERROR"
+                elif payload is not None:
+                    failed[task_id] = "INVALID_RESULT"
 
             for task_id in completed_now:
                 pending.discard(task_id)
 
             if pending:
                 await asyncio.sleep(poll_seconds)
+
+        streaming_stage_queue_depth.labels(stage="parse_wait").set(0)
 
         if pending:
             raise TimeoutError(
@@ -212,10 +251,28 @@ class ParsingStep(PipelineStep):
             raise RuntimeError(f"Parse task failures detected: {failed_summary}")
 
         ctx.files_processed = int(ctx.metadata.get("parse_enqueued_total", len(task_ids)) or len(task_ids))
+        ctx.metadata["changed_chunk_ids"] = sorted(changed_chunk_ids)
+        parse_wait_duration = time.time() - start_time
+        streaming_stage_duration_seconds.labels(stage="parse_wait", mode="streaming").observe(
+            parse_wait_duration
+        )
+        streaming_stage_lag_seconds.labels(stage="parse_wait").observe(parse_wait_duration)
+        streaming_stage_items_total.labels(
+            stage="parse_wait",
+            item_type="tasks",
+            result="completed",
+        ).inc(len(task_ids))
+        if changed_chunk_ids:
+            streaming_stage_items_total.labels(
+                stage="parse_wait",
+                item_type="chunks",
+                result="changed",
+            ).inc(len(changed_chunk_ids))
         logger.info(
             "streaming_parse_tasks_completed",
             repository_id=ctx.repository_id,
             tasks_total=len(task_ids),
             files_processed=ctx.files_processed,
+            changed_chunk_ids=len(changed_chunk_ids),
         )
-        ctx.timings["parsing"] = time.time() - start_time
+        ctx.timings["parsing"] = parse_wait_duration

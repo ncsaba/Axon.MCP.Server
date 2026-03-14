@@ -98,9 +98,10 @@ For native backends:
 1. Implement provider interface + queue schema.
 2. Implement discovery producer + portable `scandir` provider first.
 3. Integrate metadata-gate consumption path with same schema.
-4. Add Linux native backend and benchmark.
-5. Add macOS and Windows backends (testing environments available).
-6. Keep fallback backend always available behind provider selection.
+4. Add repeatable discovery-only benchmark harness for real repositories (`scripts/benchmark_file_discovery.py`) so fallback and native backends can be compared with the same workload.
+5. Add Linux native backend and benchmark.
+6. Add macOS and Windows backends (testing environments available).
+7. Keep fallback backend always available behind provider selection.
 
 ## Benchmark Acceptance (Slice 2)
 
@@ -108,3 +109,11 @@ For native backends:
 2. Producer emits incremental batches within seconds of start.
 3. Linux native backend outperforms fallback backend on file/sec.
 4. Cross-platform correctness parity validated on Windows/macOS test environments.
+
+Current local benchmark command:
+
+```bash
+cd /workspaces/axon-mcp/axon-src
+source /home/vscode/.venv-axon-mcp/bin/activate
+python scripts/benchmark_file_discovery.py /workspaces/axon-mcp/domeus-core --runs 6
+```

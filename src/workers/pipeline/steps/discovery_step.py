@@ -56,10 +56,12 @@ class DiscoveryStep(PipelineStep):
         emit_enabled = bool(settings.inventory_emit_enabled)
 
         files: list[Path] = []
-        pending_emits: set[asyncio.Task[None]] = set()
+        pending_emits: set[asyncio.Task[dict]] = set()
         current_batch: list[FileMeta] = []
         batch_seq = 0
         parse_task_ids: set[str] = set()
+        parse_file_ids: set[int] = set()
+        changed_chunk_ids: set[int] = set()
         parse_totals = {"enqueued": 0, "processed": 0}
 
         def should_include(rel_path: str, size_bytes: int) -> bool:
@@ -94,6 +96,8 @@ class DiscoveryStep(PipelineStep):
                     pending_emits=pending_emits,
                     max_inflight_batches=max_inflight_batches,
                     parse_task_ids=parse_task_ids,
+                    parse_file_ids=parse_file_ids,
+                    changed_chunk_ids=changed_chunk_ids,
                     parse_totals=parse_totals,
                 )
                 current_batch = []
@@ -108,6 +112,8 @@ class DiscoveryStep(PipelineStep):
                 pending_emits=pending_emits,
                 max_inflight_batches=max_inflight_batches,
                 parse_task_ids=parse_task_ids,
+                parse_file_ids=parse_file_ids,
+                changed_chunk_ids=changed_chunk_ids,
                 parse_totals=parse_totals,
             )
 
@@ -115,7 +121,13 @@ class DiscoveryStep(PipelineStep):
             done, _ = await asyncio.wait(pending_emits)
             for completed in done:
                 result = await completed
-                self._collect_parse_fanout(result, parse_task_ids, parse_totals)
+                self._collect_parse_fanout(
+                    result,
+                    parse_task_ids,
+                    parse_file_ids,
+                    changed_chunk_ids,
+                    parse_totals,
+                )
             inventory_queue_lag.labels(backend=INVENTORY_BACKEND).set(0)
 
         files_before = inventory_provider.files_seen
@@ -140,6 +152,8 @@ class DiscoveryStep(PipelineStep):
         ctx.metadata["exclusion_rules"] = exclusion_rules
         ctx.metadata["inventory_batches_emitted"] = batch_seq
         ctx.metadata["parse_task_ids"] = sorted(parse_task_ids)
+        ctx.metadata["parse_file_ids"] = sorted(parse_file_ids)
+        ctx.metadata["changed_chunk_ids"] = sorted(changed_chunk_ids)
         ctx.metadata["parse_enqueued_total"] = parse_totals["enqueued"]
         ctx.metadata["parse_processed_total"] = parse_totals["processed"]
 
@@ -182,9 +196,11 @@ class DiscoveryStep(PipelineStep):
         run_id: str,
         batch_seq: int,
         batch_files: list[FileMeta],
-        pending_emits: set[asyncio.Task[None]],
+        pending_emits: set[asyncio.Task[dict]],
         max_inflight_batches: int,
         parse_task_ids: set[str],
+        parse_file_ids: set[int],
+        changed_chunk_ids: set[int],
         parse_totals: dict[str, int],
     ) -> None:
         payload = {
@@ -207,7 +223,13 @@ class DiscoveryStep(PipelineStep):
             )
             for completed in done:
                 result = await completed
-                self._collect_parse_fanout(result, parse_task_ids, parse_totals)
+                self._collect_parse_fanout(
+                    result,
+                    parse_task_ids,
+                    parse_file_ids,
+                    changed_chunk_ids,
+                    parse_totals,
+                )
             pending_emits.clear()
             pending_emits.update(still_pending)
             inventory_queue_lag.labels(backend=INVENTORY_BACKEND).set(len(pending_emits))
@@ -258,6 +280,8 @@ class DiscoveryStep(PipelineStep):
     def _collect_parse_fanout(
         result: dict,
         parse_task_ids: set[str],
+        parse_file_ids: set[int],
+        changed_chunk_ids: set[int],
         parse_totals: dict[str, int],
     ) -> None:
         if not isinstance(result, dict):
@@ -265,6 +289,14 @@ class DiscoveryStep(PipelineStep):
 
         for task_id in result.get("parse_task_ids", []) or []:
             parse_task_ids.add(str(task_id))
+
+        for file_id in result.get("parse_file_ids", []) or []:
+            if file_id is not None:
+                parse_file_ids.add(int(file_id))
+
+        for chunk_id in result.get("changed_chunk_ids", []) or []:
+            if chunk_id is not None:
+                changed_chunk_ids.add(int(chunk_id))
 
         parse_totals["enqueued"] = parse_totals.get("enqueued", 0) + int(
             result.get("parse_enqueued", 0) or 0

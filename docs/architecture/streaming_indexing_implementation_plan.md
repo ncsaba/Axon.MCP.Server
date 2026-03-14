@@ -222,10 +222,12 @@ Remaining Slice 2 items:
 1. Embedding generation now skips recalculation when chunk content hash has an existing embedding for same model/version.
 2. Existing chunk embeddings for same model/version are skipped entirely (no duplicate generation).
 3. Reused vectors are persisted for new chunk IDs without re-running embedding model.
+4. Streaming pipeline now propagates `changed_chunk_ids` from parse fanout into `EmbeddingGenerationStep`, replacing repository-wide embedding generation in streaming mode.
+5. Added integration coverage for unchanged rerun skip behavior at pipeline step level (`tests/integration/test_embedding_streaming_unchanged_rerun.py`).
 
 `🚧` remaining:
 
-1. Integration validation proving unchanged runs enqueue/execute zero embedding calculation work at pipeline level.
+1. Execute full multi-worker integration run to verify unchanged reruns enqueue/execute zero embedding calculation tasks across queue topology (not only step-level behavior).
 2. Future cross-repo/content-table dedup remains deferred to dedup track.
 
 ## Slice 7: Streaming Observability + Guardrails
@@ -235,6 +237,21 @@ Remaining Slice 2 items:
 1. Add stage lag metrics and throughput metrics.
 2. Emit decision stats (`new/changed/unchanged`) per batch.
 3. Add DB query/load timing markers per stage.
+
+### Slice 7A Status (2026-03-14)
+
+`✅` implemented in this increment:
+
+1. Added low-cardinality Prometheus metrics for streaming stage batches, batch sizes, durations, lag, DB timings, item totals, and queue depth.
+2. Instrumented metadata gate with batch-size, observed-lag, decision-count, DB lookup/commit timing, and parse-enqueue telemetry.
+3. Instrumented streaming parse wait with pending-task depth, completion lag, duration, and changed-chunk totals.
+4. Instrumented embedding stage with changed-chunk batch sizing, DB timing, queue depth, generated/reused embedding totals, and mode-aware duration (`streaming` vs `batch`).
+5. Kept telemetry batch-oriented and async-safe by updating metrics at stage boundaries rather than per-file hot paths.
+
+`🚧` remaining:
+
+1. Add telemetry for future Slice 5 incremental graph-aggregator workers once that queue/event contract exists.
+2. Validate telemetry behavior under multi-worker load so queue-depth signals can be compared against real broker behavior.
 
 ### Target files
 
