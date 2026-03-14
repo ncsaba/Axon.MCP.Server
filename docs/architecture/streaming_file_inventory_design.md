@@ -80,7 +80,8 @@ For native backends:
 1. Constant-memory traversal (bounded batch + bounded in-flight queue).
 2. No per-file DB access in discovery stage.
 3. Bounded queue backpressure (pause producer when lag threshold exceeded).
-4. Emit metrics:
+4. Apply ignore rules before descending into child directories so generated/build trees are pruned, not merely filtered after traversal.
+5. Emit metrics:
    - `files_enumerated_total`
    - `directories_enumerated_total`
    - `inventory_batches_emitted_total`
@@ -99,9 +100,10 @@ For native backends:
 2. Implement discovery producer + portable `scandir` provider first.
 3. Integrate metadata-gate consumption path with same schema.
 4. Add repeatable discovery-only benchmark harness for real repositories (`scripts/benchmark_file_discovery.py`) so fallback and native backends can be compared with the same workload.
-5. Add Linux native backend and benchmark.
-6. Add macOS and Windows backends (testing environments available).
-7. Keep fallback backend always available behind provider selection.
+5. Keep an inspection mode in the benchmark harness that can list matched files plus visited/pruned directories for correctness debugging on real repositories.
+6. Add Linux native backend and benchmark.
+7. Add macOS and Windows backends (testing environments available).
+8. Keep fallback backend always available behind provider selection.
 
 ## Benchmark Acceptance (Slice 2)
 

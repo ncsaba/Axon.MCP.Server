@@ -69,6 +69,9 @@ class DiscoveryRunResult:
     payload_records_built: int
     files_per_second_seen: float
     files_per_second_matched: float
+    matched_files: list[str]
+    visited_directories: list[str]
+    pruned_directories: list[str]
 
 
 def _build_exclusion_rules(repo_path: Path) -> FileExclusionRules:
@@ -94,11 +97,15 @@ def run_discovery_benchmark(
     *,
     batch_size: int,
     max_file_size_mb: int,
+    capture_paths: bool = False,
 ) -> DiscoveryRunResult:
     exclusion_rules = _build_exclusion_rules(repo_path)
     file_size_limit_bytes = max_file_size_mb * 1024 * 1024
     suffixes = tuple(sorted(DEFAULT_DISCOVERY_EXTENSIONS))
     provider = ScandirFileInventoryProvider()
+    matched_files: list[str] = []
+    visited_directories: list[str] = []
+    pruned_directories: list[str] = []
 
     def should_include(rel_path: str, size_bytes: int) -> bool:
         rel_file_path = Path(rel_path)
@@ -120,8 +127,13 @@ def run_discovery_benchmark(
         repo_path,
         should_include=should_include,
         should_exclude=exclusion_rules.should_exclude,
+        should_exclude_directory=exclusion_rules.should_exclude_directory,
+        on_directory_enter=visited_directories.append if capture_paths else None,
+        on_directory_pruned=pruned_directories.append if capture_paths else None,
     ):
         files.append(repo_path / file_meta.rel_path)
+        if capture_paths:
+            matched_files.append(file_meta.rel_path)
         current_batch.append(file_meta)
 
         if len(current_batch) >= batch_size:
@@ -149,6 +161,9 @@ def run_discovery_benchmark(
         payload_records_built=payload_records_built,
         files_per_second_seen=(files_seen / elapsed_seconds) if elapsed_seconds > 0 else 0.0,
         files_per_second_matched=(files_matched / elapsed_seconds) if elapsed_seconds > 0 else 0.0,
+        matched_files=matched_files,
+        visited_directories=visited_directories,
+        pruned_directories=pruned_directories,
     )
 
 
@@ -257,6 +272,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum file size filter to apply, matching discovery settings",
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of human-readable output")
+    parser.add_argument(
+        "--capture-paths",
+        action="store_true",
+        help="Capture matched files plus visited/pruned directories for inspection",
+    )
     return parser
 
 
@@ -278,6 +298,7 @@ def main(argv: list[str] | None = None) -> int:
             repo_path,
             batch_size=batch_size,
             max_file_size_mb=max_file_size_mb,
+            capture_paths=bool(args.capture_paths),
         )
         result.run_index = run_index
         results.append(result)

@@ -762,6 +762,7 @@ def main(argv: list[str] | None = None) -> int:
         summary["job"] = job_detail
         summary["metrics_after"] = metrics_after
         summary["metrics_delta"] = _metric_deltas(metrics_before, metrics_after)
+        summary["repository_lock"] = _repository_lock_snapshot(env["REDIS_URL"], repo_id)
         summary["completed_at"] = datetime.now(UTC).isoformat()
         summary["status"] = "completed" if str(job_detail.get("status")) == "COMPLETED" else "finished_with_job_status"
         persist_summary()

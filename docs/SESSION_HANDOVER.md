@@ -150,9 +150,9 @@ Operational issue diagnosed during validation:
 
 ## Open technical work (next session)
 
-1. Fix sync job progress/accounting:
-   - ensure `jobs.job_metadata` reflects real pipeline metrics on successful streaming runs
-   - ensure unchanged reruns report meaningful zero-work counters instead of misleading all-zero summaries
+1. Fix sync job progress/accounting for unchanged reruns:
+   - successful fresh streaming runs now write populated `job_metadata` counters
+   - unchanged reruns still need verification so zero-work summaries remain accurate rather than ambiguous
 2. Reconcile repository file-count semantics:
    - `repository.detail.total_files`
    - `repository.stats.total_files`
@@ -164,6 +164,7 @@ Operational issue diagnosed during validation:
    and document recommended deployment posture accordingly
 5. Implement native inventory backend benchmark path (Linux first) per `streaming_file_inventory_design.md`.
 6. Defer major Phoenix instrumentation until richer AI/LLM workflows justify it.
+7. Extend parser/discovery support for Gradle build files if docs/config indexing should include Java build configuration (`build.gradle`, `settings.gradle`).
 
 ## Notes for next session
 
@@ -172,5 +173,13 @@ Operational issue diagnosed during validation:
 - Content/graph separation and global content table dedup remain intentionally deferred (tracked in `docs/architecture/file_instance_content_dedup_proposal.md`).
 - Prometheus multiprocess aggregation is required for worker metrics to appear correctly via API `/metrics`.
 - Stale Redis repository locks can block new syncs until TTL expiry unless cleared or handled operationally.
+- Follow-up discovery validation on `cep2-mobile-model` confirmed ignored directories are now pruned before descent (`.git`, `.gradle`, module `build/bin` trees) rather than traversed and filtered later.
+- Discovery validation on `cep2-mobile-model` admitted 60 files, all from source/docs paths; Gradle build files remain excluded because `.gradle` is not yet in `SUPPORTED_DISCOVERY_EXTENSIONS`.
+- Follow-up sync validation on `cep2-mobile-model` after reset completed in about `28s`; `job_metadata` now recorded populated counters (`files_processed=60`, `symbols_created=961`, `chunks_created=975`, `embeddings_generated=975`, `call_relationships_created=176`, `dependencies_found=7`).
+- The reported post-run repository lock issue was traced to the validation harness carrying a stale pre-run snapshot on the success path; the worker log shows `lock_released`, and the harness now refreshes `repository_lock` after completion, yielding `exists=false`.
+- Service detection/documentation slice was repaired after a follow-up check:
+  - `ServiceBoundaryAnalyzer` was failing because it used stdlib logging with structlog-style keyword arguments.
+  - Repository-wide fallback service mapping now links all repository symbols when no controller-based grouping exists.
+  - Fresh `cep2-mobile-model` validation now reports `services_detected=1`, `services_documented=1`, and `symbols_with_service_id=961`.
 
 This handover is the canonical continuation point for the next session.

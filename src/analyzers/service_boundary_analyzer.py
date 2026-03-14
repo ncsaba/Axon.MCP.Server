@@ -58,6 +58,7 @@ class ServiceBoundaryAnalyzer:
             controllers_by_group.setdefault(group, []).append(symbol)
 
         # If no controllers exist, still ensure one repository-level service fallback.
+        using_root_fallback = not controllers_by_group
         candidate_groups = set(controllers_by_group.keys()) or {"root"}
         detected_services: List[Service] = []
 
@@ -109,14 +110,22 @@ class ServiceBoundaryAnalyzer:
 
             # Link symbols under the same top-level group to the detected service.
             if group == "root":
-                # root service: symbols in files without '/' segment
-                root_ids_result = await session.execute(
-                    select(File.id).where(
-                        File.repository_id == repository.id,
-                        ~File.path.contains("/"),
+                if using_root_fallback:
+                    # No controller-derived grouping exists, so the repository-wide
+                    # fallback service should own the whole repository.
+                    root_ids_result = await session.execute(
+                        select(File.id).where(File.repository_id == repository.id)
                     )
-                )
-                file_ids = [row[0] for row in root_ids_result.all()]
+                    file_ids = [row[0] for row in root_ids_result.all()]
+                else:
+                    # root service: symbols in files without '/' segment
+                    root_ids_result = await session.execute(
+                        select(File.id).where(
+                            File.repository_id == repository.id,
+                            ~File.path.contains("/"),
+                        )
+                    )
+                    file_ids = [row[0] for row in root_ids_result.all()]
             else:
                 file_ids_result = await session.execute(
                     select(File.id).where(
@@ -136,8 +145,8 @@ class ServiceBoundaryAnalyzer:
             detected_services.append(service_obj)
 
         logger.info(
-            "service_detection_completed",
-            repository_id=repository.id,
-            services_detected=len(detected_services),
+            "service_detection_completed repository_id=%s services_detected=%s",
+            repository.id,
+            len(detected_services),
         )
         return detected_services

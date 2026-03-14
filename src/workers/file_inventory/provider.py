@@ -36,6 +36,9 @@ class FileInventoryProvider(Protocol):
         root_path: Path,
         should_include: Callable[[str, int], bool],
         should_exclude: Callable[[str], bool],
+        should_exclude_directory: Callable[[str], bool] | None = None,
+        on_directory_enter: Callable[[str], None] | None = None,
+        on_directory_pruned: Callable[[str], None] | None = None,
     ) -> Iterator[FileMeta]:
         """Yield file metadata incrementally for root_path."""
 
@@ -52,6 +55,9 @@ class ScandirFileInventoryProvider:
         root_path: Path,
         should_include: Callable[[str, int], bool],
         should_exclude: Callable[[str], bool],
+        should_exclude_directory: Callable[[str], bool] | None = None,
+        on_directory_enter: Callable[[str], None] | None = None,
+        on_directory_pruned: Callable[[str], None] | None = None,
     ) -> Iterator[FileMeta]:
         self.directories_enumerated = 0
         self.files_seen = 0
@@ -59,6 +65,22 @@ class ScandirFileInventoryProvider:
         stack = [root_path]
         while stack:
             directory = stack.pop()
+            if directory == root_path:
+                rel_dir = "."
+            else:
+                try:
+                    rel_dir = directory.relative_to(root_path).as_posix()
+                except ValueError:
+                    logger.warning(
+                        "inventory_directory_outside_root_skipped",
+                        root_path=str(root_path),
+                        directory=str(directory),
+                    )
+                    continue
+
+            if on_directory_enter is not None:
+                on_directory_enter(rel_dir)
+
             self.directories_enumerated += 1
 
             try:
@@ -75,6 +97,19 @@ class ScandirFileInventoryProvider:
             for entry in entries:
                 entry_path = Path(entry.path)
                 if entry.is_dir(follow_symlinks=False):
+                    try:
+                        child_rel_path = entry_path.relative_to(root_path).as_posix()
+                    except ValueError:
+                        logger.warning(
+                            "inventory_directory_outside_root_skipped",
+                            root_path=str(root_path),
+                            directory=str(entry_path),
+                        )
+                        continue
+                    if should_exclude_directory is not None and should_exclude_directory(child_rel_path):
+                        if on_directory_pruned is not None:
+                            on_directory_pruned(child_rel_path)
+                        continue
                     child_dirs.append(entry_path)
                     continue
 

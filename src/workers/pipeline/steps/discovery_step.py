@@ -86,6 +86,7 @@ class DiscoveryStep(PipelineStep):
             ctx.repo_path,
             should_include=should_include,
             should_exclude=exclusion_rules.should_exclude,
+            should_exclude_directory=exclusion_rules.should_exclude_directory,
         ):
             files.append(ctx.repo_path / file_meta.rel_path)
             current_batch.append(file_meta)

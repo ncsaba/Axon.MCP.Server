@@ -30,6 +30,7 @@ class CallGraphStep(PipelineStep):
             call_graph_builder = CallGraphBuilder(ctx.session)
             call_relationships_created = await call_graph_builder.build_call_relationships(ctx.repository_id)
             
+            ctx.metrics.call_relationships_created = call_relationships_created
             ctx.metadata['call_relationships_created'] = call_relationships_created
             
             logger.info(

@@ -35,6 +35,7 @@ class ConfigExtractionStep(PipelineStep):
             config_extractor = ConfigExtractor(ctx.session)
             configs_found = await config_extractor.extract_configuration(ctx.repository_id, ctx.repo_path)
             
+            ctx.metrics.configs_found = configs_found
             ctx.metadata['configs_found'] = configs_found
             
             logger.info(

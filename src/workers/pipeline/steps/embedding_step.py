@@ -111,6 +111,7 @@ class EmbeddingGenerationStep(PipelineStep):
             ).inc(embeddings_generated)
         streaming_stage_queue_depth.labels(stage="embedding").set(0)
         
+        ctx.metrics.embeddings_generated = embeddings_generated
         ctx.metadata['embeddings_generated'] = embeddings_generated
     
         logger.info(

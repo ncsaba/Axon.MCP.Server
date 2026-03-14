@@ -46,6 +46,7 @@ class RelationshipBuildingStep(PipelineStep):
         relationship_builder = RelationshipBuilder(ctx.session)
         relationships_created = await relationship_builder.build_cross_file_relationships(ctx.repository_id)
         
+        ctx.metrics.relationships_created = relationships_created
         ctx.metadata['relationships_created'] = relationships_created
     
         logger.info(

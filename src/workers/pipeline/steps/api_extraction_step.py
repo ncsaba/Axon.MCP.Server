@@ -34,6 +34,7 @@ class ApiExtractionStep(PipelineStep):
             await ctx.session.commit()  # Commit endpoints to database
             
             api_endpoints_count = len(endpoints)
+            ctx.metrics.api_endpoints_count = api_endpoints_count
             ctx.metadata['api_endpoints_count'] = api_endpoints_count
             
             logger.info(

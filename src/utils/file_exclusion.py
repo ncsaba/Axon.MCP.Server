@@ -119,13 +119,44 @@ class FileExclusionRules:
         """
         # Normalize path separators
         normalized_path = file_path.replace('\\', '/')
-        
+        if normalized_path.startswith("./"):
+            normalized_path = normalized_path[2:]
+        if not normalized_path:
+            return False
+        candidates = (normalized_path, f"./{normalized_path}")
+
         # Check against all patterns
         for pattern in self._compiled_patterns:
-            if pattern.match(normalized_path):
+            if any(pattern.match(candidate) for candidate in candidates):
                 logger.debug("file_excluded", path=file_path, pattern=pattern.pattern)
                 return True
         
+        return False
+
+    def should_exclude_directory(self, dir_path: str) -> bool:
+        """
+        Check if a directory should be excluded from traversal.
+
+        Directory-style patterns like `build/` or `**/.git/**` need to match the
+        directory path itself, not only descendant files.
+        """
+        normalized_path = dir_path.replace('\\', '/').rstrip('/')
+        if normalized_path.startswith("./"):
+            normalized_path = normalized_path[2:]
+        if not normalized_path:
+            return False
+
+        candidates = (
+            normalized_path,
+            normalized_path + '/',
+            f"./{normalized_path}",
+            f"./{normalized_path}/",
+        )
+        for pattern in self._compiled_patterns:
+            if any(pattern.match(candidate) for candidate in candidates):
+                logger.debug("directory_excluded", path=dir_path, pattern=pattern.pattern)
+                return True
+
         return False
     
     def filter_files(self, file_paths: List[str]) -> List[str]:
@@ -264,4 +295,3 @@ class FileExclusionRules:
             logger.error("gitignore_parse_failed", path=str(gitignore_path), error=str(e))
         
         return patterns
-

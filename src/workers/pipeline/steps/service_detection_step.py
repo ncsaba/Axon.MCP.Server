@@ -36,6 +36,7 @@ class ServiceDetectionStep(PipelineStep):
             await ctx.session.commit()
             services_detected = len(services)
             
+            ctx.metrics.services_detected = services_detected
             ctx.metadata['services_detected'] = services_detected
             
             logger.info(

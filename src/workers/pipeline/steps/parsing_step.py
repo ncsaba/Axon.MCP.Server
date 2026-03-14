@@ -66,6 +66,7 @@ class ParsingStep(PipelineStep):
 
         files_processed = 0
         total_chunks_created = 0 # Fix 1.1: Local accumulator to avoid metric inflation
+        total_symbols_created = 0
         total_files = len(ctx.files)
         streaming_stage_batch_size.labels(stage="parsing").observe(total_files)
         
@@ -104,8 +105,10 @@ class ParsingStep(PipelineStep):
                 )
                 
                 # Update metrics
+                total_symbols_created += extraction_result.symbols_created
                 chunks_count = extraction_result.chunks_created
                 total_chunks_created += chunks_count
+                ctx.metrics.symbols_created = total_symbols_created
                 ctx.metrics.chunks_created = total_chunks_created
                 
                 # Explicitly delete heavy objects to free memory immediately
@@ -208,6 +211,8 @@ class ParsingStep(PipelineStep):
 
         pending = set(task_ids)
         failed: dict[str, str] = {}
+        symbols_created = 0
+        chunks_created = 0
 
         while pending and time.monotonic() < deadline:
             streaming_stage_queue_depth.labels(stage="parse_wait").set(len(pending))
@@ -225,6 +230,8 @@ class ParsingStep(PipelineStep):
 
                 payload = result.result
                 if isinstance(payload, dict):
+                    symbols_created += int(payload.get("symbols_created", 0) or 0)
+                    chunks_created += int(payload.get("chunks_created", 0) or 0)
                     for chunk_id in payload.get("chunk_ids", []) or []:
                         if chunk_id is not None:
                             changed_chunk_ids.add(int(chunk_id))
@@ -251,6 +258,8 @@ class ParsingStep(PipelineStep):
             raise RuntimeError(f"Parse task failures detected: {failed_summary}")
 
         ctx.files_processed = int(ctx.metadata.get("parse_enqueued_total", len(task_ids)) or len(task_ids))
+        ctx.metrics.symbols_created = symbols_created
+        ctx.metrics.chunks_created = chunks_created
         ctx.metadata["changed_chunk_ids"] = sorted(changed_chunk_ids)
         parse_wait_duration = time.time() - start_time
         streaming_stage_duration_seconds.labels(stage="parse_wait", mode="streaming").observe(

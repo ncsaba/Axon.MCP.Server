@@ -25,6 +25,7 @@ class PipelineMetrics:
     configs_found: int = 0
     services_detected: int = 0
     services_documented: int = 0
+    modules_summarized: int = 0
     
     def to_dict(self) -> Dict[str, int]:
         return {k: v for k, v in self.__dict__.items()}

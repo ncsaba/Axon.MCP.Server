@@ -98,6 +98,27 @@ Remaining Slice 2 items:
 1. Native Linux backend + benchmark harness.
 2. Full memory-decoupled parse fanout (current pipeline still populates `ctx.files` for Slice 3 compatibility).
 
+### Slice 2A Validation Update (2026-03-14)
+
+`✅` validated/fixed in follow-up:
+
+1. Discovery benchmark harness can now capture matched files plus visited/pruned directories for real-repository inspection.
+2. Portable `scandir` provider now prunes ignored directories before descending, instead of traversing them and filtering only descendant files.
+3. Validation on `/workspaces/axon-mcp/cep2-mobile-model` confirmed `.git`, `.gradle`, and module `build/bin` trees are pruned before descent.
+
+`🚧` follow-up gap discovered:
+
+1. Gradle build files (`build.gradle`, `settings.gradle`) are currently not admitted by discovery because `.gradle` is not part of the parser/discovery contract yet.
+
+### Streaming Validation Update (2026-03-14)
+
+`✅` verified on `/workspaces/axon-mcp/cep2-mobile-model` after DB/Redis reset:
+
+1. Fresh streaming sync completed in about `28s` with coherent repository file counts (`detail.total_files = stats.total_files = 60`).
+2. `jobs.job_metadata` now records populated counters for fresh runs instead of all-zero summaries.
+3. The previously reported lingering repository lock was a validation-harness snapshot bug, not a confirmed worker cleanup failure; success-path summaries now refresh the final Redis lock state after job completion.
+4. Service detection/documentation slice now completes coherently on repositories without controllers: fallback service detection succeeds, documentation counts match detection counts, and fallback service assignment covers repository symbols rather than only top-level files.
+
 ## Slice 3: Metadata Gate Workers
 
 ### Code changes

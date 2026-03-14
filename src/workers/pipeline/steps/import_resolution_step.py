@@ -33,6 +33,7 @@ class ImportResolutionStep(PipelineStep):
             import_builder = ImportRelationshipBuilder(ctx.session, ctx.repo_path)
             import_relationships_created = await import_builder.build_import_relationships(ctx.repository_id)
             
+            ctx.metrics.import_relationships_created = import_relationships_created
             ctx.metadata['import_relationships_created'] = import_relationships_created
             
             logger.info(

@@ -60,6 +60,7 @@ class ServiceDocumentationStep(PipelineStep):
             
             await ctx.session.commit()
             
+            ctx.metrics.services_documented = services_documented
             ctx.metadata['services_documented'] = services_documented
             
             logger.info(

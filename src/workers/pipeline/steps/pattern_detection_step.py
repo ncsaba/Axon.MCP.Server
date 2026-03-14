@@ -31,6 +31,7 @@ class PatternDetectionStep(PipelineStep):
             patterns = await pattern_detector.detect_patterns(ctx.repository_id)
             patterns_detected = len(patterns)
             
+            ctx.metrics.patterns_detected = patterns_detected
             ctx.metadata['patterns_detected'] = patterns_detected
             
             logger.info(

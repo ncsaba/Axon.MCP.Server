@@ -36,6 +36,7 @@ class DependencyExtractionStep(PipelineStep):
             dep_extractor = DependencyExtractor(ctx.session)
             dependencies_found = await dep_extractor.extract_dependencies(ctx.repository_id, ctx.repo_path)
             
+            ctx.metrics.dependencies_found = dependencies_found
             ctx.metadata['dependencies_found'] = dependencies_found
             
             logger.info(
