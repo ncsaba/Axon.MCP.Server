@@ -40,6 +40,7 @@ structlog.configure(
 )
 
 from src.utils.file_exclusion import FileExclusionRules
+from src.parsers import is_supported_file_path
 
 _PROVIDER_SPEC = importlib.util.spec_from_file_location(
     "benchmark_file_inventory_provider",
@@ -100,7 +101,10 @@ def run_discovery_benchmark(
     provider = ScandirFileInventoryProvider()
 
     def should_include(rel_path: str, size_bytes: int) -> bool:
+        rel_file_path = Path(rel_path)
         if not rel_path.lower().endswith(suffixes):
+            return False
+        if not is_supported_file_path(rel_file_path):
             return False
         if size_bytes > file_size_limit_bytes:
             return False

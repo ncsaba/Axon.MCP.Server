@@ -92,3 +92,41 @@ async def test_parsing_step_waits_for_streaming_parse_tasks(tmp_path):
     batch_metric.observe.assert_called_once_with(2)
     assert queue_metric.set.call_count >= 1
     assert items_metric.inc.call_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_parsing_step_treats_skipped_unsupported_tasks_as_completed(tmp_path):
+    ctx = PipelineContext(repository_id=1, session=AsyncMock())
+    ctx.repo_path = tmp_path
+    ctx.files = []
+    ctx.metadata["parse_task_ids"] = ["task-1", "task-2"]
+    ctx.metadata["parse_enqueued_total"] = 2
+
+    settings = MagicMock(
+        metadata_gate_enabled=True,
+        inventory_emit_enabled=True,
+        metadata_gate_inline_parse_enabled=False,
+        parse_task_wait_timeout_seconds=10,
+        parse_task_wait_poll_seconds=0.01,
+    )
+
+    results_by_id = {
+        "task-1": MagicMock(state="SUCCESS", result={"status": "skipped_unsupported", "chunk_ids": []}),
+        "task-2": MagicMock(state="SUCCESS", result={"status": "success", "chunk_ids": [33]}),
+    }
+
+    def async_result_factory(task_id):
+        return results_by_id[task_id]
+
+    with patch(
+        "src.workers.pipeline.steps.parsing_step.get_settings",
+        return_value=settings,
+    ), patch(
+        "src.workers.pipeline.steps.parsing_step.AsyncResult",
+        side_effect=async_result_factory,
+    ):
+        step = ParsingStep()
+        await step.execute(ctx)
+
+    assert ctx.files_processed == 2
+    assert ctx.metadata["changed_chunk_ids"] == [33]

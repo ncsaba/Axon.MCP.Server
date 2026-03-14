@@ -7,31 +7,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterator, Literal, Protocol
 
+from src.parsers import SUPPORTED_DISCOVERY_EXTENSIONS
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-DEFAULT_DISCOVERY_EXTENSIONS = {
-    ".py",
-    ".java",
-    ".js",
-    ".ts",
-    ".vue",
-    ".tsx",
-    ".jsx",
-    ".json",
-    ".yaml",
-    ".yml",
-    ".xml",
-    ".toml",
-    ".ini",
-    ".cfg",
-    ".md",
-    ".markdown",
-    ".sql",
-    ".ddl",
-    ".html",
-}
+DEFAULT_DISCOVERY_EXTENSIONS = SUPPORTED_DISCOVERY_EXTENSIONS
 
 
 @dataclass(frozen=True)

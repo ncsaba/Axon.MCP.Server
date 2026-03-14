@@ -179,8 +179,26 @@ async def _parse_file_async(file_id: int):
                 return {"status": "error", "error": error_msg}
             
             # Parse file
-            parse_result = await asyncio.to_thread(parse_file, file_path)
-            
+            try:
+                parse_result = await asyncio.to_thread(parse_file, file_path)
+            except ValueError as exc:
+                if "Unsupported file type" not in str(exc):
+                    raise
+                logger.info(
+                    "file_parse_skipped_unsupported_type",
+                    file_id=file_id,
+                    file_path=str(file_path),
+                    error=str(exc),
+                )
+                return {
+                    "status": "skipped_unsupported",
+                    "file_id": file_id,
+                    "symbols_created": 0,
+                    "chunks_created": 0,
+                    "chunk_ids": [],
+                    "skip_reason": "unsupported_file_type",
+                }
+
             # Extract knowledge
             extractor = KnowledgeExtractor(session)
             extraction_result = await extractor.extract_and_persist(

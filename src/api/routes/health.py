@@ -1,14 +1,24 @@
 import asyncio
+import os
 
 import psutil
 from fastapi import APIRouter, Response
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest, multiprocess
 
 from src.config.settings import get_settings
 from src.utils.metrics import cpu_usage_percent, memory_usage_bytes
 
 
 router = APIRouter()
+
+
+def _generate_metrics_payload() -> bytes:
+    multiproc_dir = os.environ.get("PROMETHEUS_MULTIPROC_DIR")
+    if multiproc_dir:
+        registry = CollectorRegistry()
+        multiprocess.MultiProcessCollector(registry)
+        return generate_latest(registry)
+    return generate_latest()
 
 
 @router.get("/health")
@@ -49,6 +59,5 @@ async def metrics() -> Response:
     memory_usage_bytes.set(psutil.Process().memory_info().rss)
     cpu_usage_percent.set(psutil.cpu_percent())
 
-    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
+    return Response(content=_generate_metrics_payload(), media_type=CONTENT_TYPE_LATEST)
 

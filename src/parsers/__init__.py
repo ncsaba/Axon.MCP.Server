@@ -17,6 +17,51 @@ from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+SUPPORTED_DISCOVERY_EXTENSIONS = frozenset(
+    {
+        ".py",
+        ".java",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".ts",
+        ".tsx",
+        ".vue",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".md",
+        ".markdown",
+        ".sql",
+        ".ddl",
+    }
+)
+
+
+def is_supported_file_path(file_path: Path) -> bool:
+    """Return True when the current parser contract can handle this file path."""
+    suffix = file_path.suffix.lower()
+    name = file_path.name.lower()
+
+    if suffix in {".js", ".jsx", ".mjs", ".ts", ".tsx", ".java", ".vue", ".py", ".md", ".markdown", ".sql", ".ddl"}:
+        return True
+    if name == "package.json":
+        return True
+    if name.startswith("appsettings") and suffix == ".json":
+        return True
+    if name in {
+        "openapi.json",
+        "openapi.yaml",
+        "openapi.yml",
+        "swagger.json",
+        "swagger.yaml",
+        "swagger.yml",
+    }:
+        return True
+    if suffix == ".json":
+        return True
+    return False
+
 class ParserFactory:
     """Factory for creating language-specific parsers."""
     
@@ -53,6 +98,7 @@ class ParserFactory:
             Parser instance
         """
         suffix = file_path.suffix.lower()
+        name = file_path.name.lower()
 
         if suffix in ['.js', '.jsx', '.mjs']:
             return cls.get_parser(LanguageEnum.JAVASCRIPT)
@@ -71,12 +117,12 @@ class ParserFactory:
             return cls.get_parser(LanguageEnum.MARKDOWN)
         elif suffix in ['.sql', '.ddl']:
             return cls.get_parser(LanguageEnum.SQL)
-        elif file_path.name.lower() == 'package.json':
+        elif name == 'package.json':
             return PackageJsonParser()
-        elif file_path.name.lower().startswith('appsettings') and suffix == '.json':
+        elif name.startswith('appsettings') and suffix == '.json':
             return AppSettingsParser()
-        elif file_path.name.lower() in ['openapi.json', 'openapi.yaml', 'openapi.yml', 
-                                          'swagger.json', 'swagger.yaml', 'swagger.yml']:
+        elif name in ['openapi.json', 'openapi.yaml', 'openapi.yml',
+                      'swagger.json', 'swagger.yaml', 'swagger.yml']:
             return OpenAPIParser()
         elif suffix == '.json':
             # Generic JSON files (e.g., global.json, tsconfig.json, launchSettings.json)
@@ -167,6 +213,8 @@ __all__ = [
     'VueParser',
     'PythonParser',
     'ParserFactory',
+    'SUPPORTED_DISCOVERY_EXTENSIONS',
+    'is_supported_file_path',
     'parse_file',
     'parse_file_async',
 ]

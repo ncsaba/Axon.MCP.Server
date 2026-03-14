@@ -174,6 +174,7 @@ Remaining Slice 2 items:
 
 1. Add broader integration tests for full multi-worker queue topology under load.
 2. Formal parse output event contract for downstream consumers.
+3. Align discovery admission with parser support so unsupported file types are skipped instead of aborting streaming syncs.
 
 ## Slice 5: Incremental Graph Aggregator Workers
 
@@ -227,8 +228,31 @@ Remaining Slice 2 items:
 
 `🚧` remaining:
 
-1. Execute full multi-worker integration run to verify unchanged reruns enqueue/execute zero embedding calculation tasks across queue topology (not only step-level behavior).
-2. Future cross-repo/content-table dedup remains deferred to dedup track.
+1. Reconcile sync job progress accounting so `jobs.job_metadata` reflects real pipeline work during/after streaming runs.
+2. Reconcile repository detail vs repository stats file-count semantics (`repo.total_files` vs persisted file-row counts).
+3. Future cross-repo/content-table dedup remains deferred to dedup track.
+
+Current local validation harness:
+
+```bash
+cd /workspaces/axon-mcp/axon-src
+source /home/vscode/.venv-axon-mcp/bin/activate
+python scripts/run_domeus_core_index_validation.py --json --output /tmp/domeus-core-index-validation.json
+```
+
+### Slice 6A Validation Status (2026-03-14)
+
+`✅` confirmed in multi-worker validation:
+
+1. `domeus-core` unchanged rerun completed successfully through full queue topology.
+2. Metadata gate marked all streamed files unchanged (`8` direct unchanged, `13449` unchanged via hash fallback).
+3. Parse wait completed with zero queued parse work.
+4. Embedding stage completed with zero changed chunks and zero embedding calculation work.
+
+Observed residual gaps:
+
+1. `jobs.job_metadata` remained zeroed despite successful pipeline completion.
+2. Repository detail `total_files` and repository stats `total_files` diverged, indicating inconsistent semantics.
 
 ## Slice 7: Streaming Observability + Guardrails
 
@@ -251,7 +275,21 @@ Remaining Slice 2 items:
 `🚧` remaining:
 
 1. Add telemetry for future Slice 5 incremental graph-aggregator workers once that queue/event contract exists.
-2. Validate telemetry behavior under multi-worker load so queue-depth signals can be compared against real broker behavior.
+2. Convert validated telemetry into documented dashboards/queries and deployment guidance.
+3. Keep worker metrics on Prometheus multiprocess collection path when exposed through API `/metrics`.
+
+### Slice 7A Validation Status (2026-03-14)
+
+`✅` confirmed in multi-worker validation:
+
+1. `metrics_delta` was populated successfully in the validation harness.
+2. Discovery emit, metadata gate, parse wait, and embedding stage metrics were all visible at API `/metrics`.
+3. Worker-stage metrics required Prometheus multiprocess collection to aggregate correctly through the API process.
+
+Follow-up documentation:
+
+1. `docs/architecture/observability_findings_and_recommendations.md`
+2. Prometheus should be documented and added to the dev-container in a follow-up environment/setup increment.
 
 ### Target files
 

@@ -12,6 +12,8 @@ async def test_discovery_step_emits_inventory_batches(tmp_path):
     (tmp_path / "src" / "a.py").write_text("print('a')", encoding="utf-8")
     (tmp_path / "src" / "b.py").write_text("print('b')", encoding="utf-8")
     (tmp_path / "README.md").write_text("# readme", encoding="utf-8")
+    (tmp_path / "pom.xml").write_text("<project />", encoding="utf-8")
+    (tmp_path / "config.yaml").write_text("key: value", encoding="utf-8")
 
     session = AsyncMock()
     repository = MagicMock()
@@ -60,6 +62,9 @@ async def test_discovery_step_emits_inventory_batches(tmp_path):
     assert len(second_payload["files"]) == 1
     assert ctx.metadata["parse_task_ids"] == []
     assert ctx.metadata["parse_enqueued_total"] == 0
+    all_rel_paths = [item["rel_path"] for payload in (first_payload, second_payload) for item in payload["files"]]
+    assert "pom.xml" not in all_rel_paths
+    assert "config.yaml" not in all_rel_paths
 
 
 @pytest.mark.asyncio

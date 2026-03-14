@@ -5,6 +5,7 @@ from pathlib import Path
 
 from src.config.enums import RepositoryStatusEnum
 from src.config.settings import get_settings
+from src.parsers import is_supported_file_path
 from src.utils.file_exclusion import FileExclusionRules
 from src.utils.logging_config import get_logger
 from src.utils.metrics import (
@@ -65,8 +66,11 @@ class DiscoveryStep(PipelineStep):
         parse_totals = {"enqueued": 0, "processed": 0}
 
         def should_include(rel_path: str, size_bytes: int) -> bool:
-            suffix = Path(rel_path).suffix.lower()
+            file_path = Path(rel_path)
+            suffix = file_path.suffix.lower()
             if suffix not in DEFAULT_DISCOVERY_EXTENSIONS:
+                return False
+            if not is_supported_file_path(file_path):
                 return False
             if size_bytes > file_size_limit_bytes:
                 logger.warning(
