@@ -14,6 +14,8 @@ from src.utils.metrics import (
     inventory_batches_emitted_total,
     inventory_emit_latency_ms,
     inventory_queue_lag,
+    streaming_stage_duration_seconds,
+    streaming_stage_items_total,
 )
 from src.utils.redis_logger import RedisLogPublisher
 from src.workers.celery_app import celery_app
@@ -64,6 +66,14 @@ class DiscoveryStep(PipelineStep):
         parse_file_ids: set[int] = set()
         changed_chunk_ids: set[int] = set()
         parse_totals = {"enqueued": 0, "processed": 0}
+        # Aggregate metadata gate decisions across all batches
+        gate_decisions = {
+            "new": 0,
+            "changed": 0,
+            "unchanged": 0,
+            "unchanged_hash": 0,
+            "missing_on_disk": 0,
+        }
 
         def should_include(rel_path: str, size_bytes: int) -> bool:
             file_path = Path(rel_path)
@@ -104,6 +114,7 @@ class DiscoveryStep(PipelineStep):
                     parse_file_ids=parse_file_ids,
                     changed_chunk_ids=changed_chunk_ids,
                     parse_totals=parse_totals,
+                    gate_decisions=gate_decisions,
                 )
                 current_batch = []
 
@@ -120,6 +131,7 @@ class DiscoveryStep(PipelineStep):
                 parse_file_ids=parse_file_ids,
                 changed_chunk_ids=changed_chunk_ids,
                 parse_totals=parse_totals,
+                gate_decisions=gate_decisions,
             )
 
         if pending_emits:
@@ -132,6 +144,7 @@ class DiscoveryStep(PipelineStep):
                     parse_file_ids,
                     changed_chunk_ids,
                     parse_totals,
+                    gate_decisions,
                 )
             inventory_queue_lag.labels(backend=INVENTORY_BACKEND).set(0)
 
@@ -161,6 +174,7 @@ class DiscoveryStep(PipelineStep):
         ctx.metadata["changed_chunk_ids"] = sorted(changed_chunk_ids)
         ctx.metadata["parse_enqueued_total"] = parse_totals["enqueued"]
         ctx.metadata["parse_processed_total"] = parse_totals["processed"]
+        ctx.metadata["gate_decisions"] = gate_decisions
 
         repo.status = RepositoryStatusEnum.PARSING
         repo.total_files = len(files)
@@ -184,7 +198,17 @@ class DiscoveryStep(PipelineStep):
             },
         )
 
-        ctx.timings["discovery"] = time.time() - start_time
+        duration = time.time() - start_time
+        ctx.timings["discovery"] = duration
+        
+        # Emit streaming stage metrics
+        mode = "streaming" if emit_enabled else "batch"
+        streaming_stage_duration_seconds.labels(stage="discovery", mode=mode).observe(duration)
+        streaming_stage_items_total.labels(
+            stage="discovery",
+            item_type="files",
+            result="discovered"
+        ).inc(len(files))
 
     @staticmethod
     def _build_exclusion_rules(repo_path: Path) -> FileExclusionRules:
@@ -207,6 +231,7 @@ class DiscoveryStep(PipelineStep):
         parse_file_ids: set[int],
         changed_chunk_ids: set[int],
         parse_totals: dict[str, int],
+        gate_decisions: dict[str, int],
     ) -> None:
         payload = {
             "repository_id": repository_id,
@@ -234,6 +259,7 @@ class DiscoveryStep(PipelineStep):
                     parse_file_ids,
                     changed_chunk_ids,
                     parse_totals,
+                    gate_decisions,
                 )
             pending_emits.clear()
             pending_emits.update(still_pending)
@@ -288,6 +314,7 @@ class DiscoveryStep(PipelineStep):
         parse_file_ids: set[int],
         changed_chunk_ids: set[int],
         parse_totals: dict[str, int],
+        gate_decisions: dict[str, int] | None = None,
     ) -> None:
         if not isinstance(result, dict):
             return
@@ -309,3 +336,10 @@ class DiscoveryStep(PipelineStep):
         parse_totals["processed"] = parse_totals.get("processed", 0) + int(
             result.get("parse_processed", 0) or 0
         )
+
+        # Aggregate metadata gate decisions for job_metadata
+        if gate_decisions is not None:
+            decisions = result.get("decisions") or {}
+            for key in gate_decisions:
+                if key in decisions:
+                    gate_decisions[key] = gate_decisions.get(key, 0) + int(decisions.get(key, 0) or 0)

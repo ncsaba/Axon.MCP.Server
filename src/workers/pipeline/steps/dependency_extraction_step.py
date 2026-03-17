@@ -2,6 +2,10 @@ import time
 from src.config.settings import get_settings
 from src.utils.redis_logger import RedisLogPublisher
 from src.utils.logging_config import get_logger
+from src.utils.metrics import (
+    streaming_stage_duration_seconds,
+    streaming_stage_items_total,
+)
 from ..step import PipelineStep
 from ..context import PipelineContext
 
@@ -21,7 +25,7 @@ class DependencyExtractionStep(PipelineStep):
              return
 
         publisher = RedisLogPublisher()
-        start_time = time.time()
+        start_time = time.perf_counter()
         
         logger.info(
             "dependency_extraction_started",
@@ -29,6 +33,7 @@ class DependencyExtractionStep(PipelineStep):
         )
         await publisher.publish_log(ctx.repository_id, "Extracting package dependencies...")
         
+        dependencies_found = 0
         try:
             # Import strictly locally as in original code
             from src.extractors.dependency_extractor import DependencyExtractor
@@ -59,4 +64,13 @@ class DependencyExtractionStep(PipelineStep):
             await publisher.publish_log(ctx.repository_id, f"Dependency extraction failed: {str(e)}", level="ERROR")
             # Continue even if dependency extraction fails
 
-        ctx.timings['dependency_extraction'] = time.time() - start_time
+        duration = time.perf_counter() - start_time
+        ctx.timings['dependency_extraction'] = duration
+        
+        # Emit streaming stage metrics
+        streaming_stage_duration_seconds.labels(stage="dependency_extraction", mode="batch").observe(duration)
+        streaming_stage_items_total.labels(
+            stage="dependency_extraction",
+            item_type="dependencies",
+            result="found"
+        ).inc(dependencies_found)

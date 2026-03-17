@@ -130,3 +130,44 @@ async def test_parsing_step_treats_skipped_unsupported_tasks_as_completed(tmp_pa
 
     assert ctx.files_processed == 2
     assert ctx.metadata["changed_chunk_ids"] == [33]
+
+
+@pytest.mark.asyncio
+async def test_parsing_step_sets_files_processed_for_unchanged_rerun(tmp_path):
+    """When no parse tasks exist (unchanged rerun), files_processed should be set to total discovered files."""
+    ctx = PipelineContext(repository_id=1, session=AsyncMock())
+    ctx.repo_path = tmp_path
+    ctx.files = [tmp_path / "a.py", tmp_path / "b.py", tmp_path / "c.py"]
+    ctx.metadata["parse_task_ids"] = []  # No parse tasks - all files unchanged
+    ctx.metadata["parse_enqueued_total"] = 0
+
+    settings = MagicMock(
+        metadata_gate_enabled=True,
+        inventory_emit_enabled=True,
+        metadata_gate_inline_parse_enabled=False,
+        parse_task_wait_timeout_seconds=10,
+        parse_task_wait_poll_seconds=0.01,
+    )
+
+    duration_metric = MagicMock()
+    batch_metric = MagicMock()
+
+    with patch(
+        "src.workers.pipeline.steps.parsing_step.get_settings",
+        return_value=settings,
+    ), patch(
+        "src.workers.pipeline.steps.parsing_step.streaming_stage_duration_seconds.labels",
+        return_value=duration_metric,
+    ), patch(
+        "src.workers.pipeline.steps.parsing_step.streaming_stage_batch_size.labels",
+        return_value=batch_metric,
+    ):
+        step = ParsingStep()
+        await step.execute(ctx)
+
+    # Key assertion: files_processed should be set to total discovered files
+    assert ctx.files_processed == 3
+    assert ctx.metadata["changed_chunk_ids"] == []
+    assert "parsing" in ctx.timings
+    duration_metric.observe.assert_called_once()
+    batch_metric.observe.assert_called_once_with(0)

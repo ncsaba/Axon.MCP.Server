@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Start local indexing services, run domeus-core indexing, and report results.
+"""Start local indexing services, run jverein indexing, and report results.
 
 This script is intended as a repeatable validation harness for the current
 streaming indexing path. It can:
 
 1. start the local API and queue workers if needed
 2. verify they are reachable
-3. create or reuse the domeus-core repository entry
+3. create or reuse the jverein repository entry
 4. trigger indexing and wait for completion
 5. capture repository/job stats plus Prometheus metric deltas for the run
 """
@@ -40,8 +40,8 @@ if str(ROOT_DIR) not in sys.path:
 from scripts.local_indexer import ApiClient, DEFAULT_BASE_URL, DEFAULT_DEV_ENV
 
 
-VENV_PYTHON = "/home/vscode/.venv-axon-mcp/bin/python"
-VENV_CELERY = "/home/vscode/.venv-axon-mcp/bin/celery"
+VENV_PYTHON = "/home/vscode/.venv-dev/bin/python"
+VENV_CELERY = "/home/vscode/.venv-dev/bin/celery"
 
 
 @dataclass
@@ -453,15 +453,141 @@ def _display_duration_seconds(job: dict[str, Any]) -> float | int | None:
     return round((datetime.now(UTC) - started.astimezone(UTC)).total_seconds(), 1)
 
 
+def _write_performance_report(report_path: Path, summary: dict[str, Any]) -> None:
+    """Generate a markdown performance report from the validation summary."""
+    lines: list[str] = []
+    
+    # Header
+    lines.append("# Pipeline Performance Report")
+    lines.append("")
+    lines.append(f"**Generated**: {summary.get('completed_at', summary.get('updated_at', 'N/A'))}")
+    lines.append(f"**Status**: {summary.get('status', 'unknown')}")
+    lines.append(f"**Log Directory**: `{summary.get('log_dir', 'N/A')}`")
+    lines.append("")
+    
+    # Repository info
+    repo = summary.get("repository", {})
+    lines.append("## Repository")
+    lines.append("")
+    lines.append(f"- **ID**: {repo.get('id', 'N/A')}")
+    lines.append(f"- **Name**: {repo.get('name', 'N/A')}")
+    lines.append(f"- **Namespace**: {repo.get('namespace', 'N/A')}")
+    lines.append(f"- **Path**: `{repo.get('path', 'N/A')}`")
+    lines.append("")
+    
+    # Job info
+    job = summary.get("job", {})
+    lines.append("## Job")
+    lines.append("")
+    lines.append(f"- **Job ID**: {job.get('id', 'N/A')}")
+    lines.append(f"- **Status**: {job.get('status', 'N/A')}")
+    lines.append(f"- **Duration**: {job.get('duration_seconds', 'N/A')}s")
+    lines.append(f"- **Retry Count**: {job.get('retry_count', 0)}")
+    lines.append("")
+    
+    # Job metadata (pipeline counters)
+    job_metadata = job.get("job_metadata", {}) or {}
+    if job_metadata:
+        lines.append("### Pipeline Counters")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
+        for key, value in sorted(job_metadata.items()):
+            lines.append(f"| {key} | {value} |")
+        lines.append("")
+    
+    # Stage timing breakdown from metrics_delta
+    metrics_delta = summary.get("metrics_delta", {})
+    stage_durations: dict[str, dict[str, float]] = {}
+    stage_items: dict[str, dict[str, float]] = {}
+    
+    for key, value in metrics_delta.items():
+        # Parse streaming_stage_duration_seconds_sum{stage="X",mode="Y"}
+        if key.startswith("streaming_stage_duration_seconds_sum"):
+            # Extract stage name from labels
+            match = re.search(r'stage="([^"]+)"', key)
+            if match:
+                stage = match.group(1)
+                if stage not in stage_durations:
+                    stage_durations[stage] = {}
+                stage_durations[stage]["duration"] = value
+        elif key.startswith("streaming_stage_items_total"):
+            # Extract stage and result from labels
+            stage_match = re.search(r'stage="([^"]+)"', key)
+            result_match = re.search(r'result="([^"]+)"', key)
+            if stage_match:
+                stage = stage_match.group(1)
+                result = result_match.group(1) if result_match else "unknown"
+                if stage not in stage_items:
+                    stage_items[stage] = {}
+                stage_items[stage][result] = value
+    
+    if stage_durations:
+        lines.append("## Stage Timing Breakdown")
+        lines.append("")
+        
+        # Calculate total duration for percentage
+        total_duration = sum(s.get("duration", 0) for s in stage_durations.values())
+        
+        lines.append("| Stage | Duration (s) | % of Total | Items Created |")
+        lines.append("|-------|--------------|------------|---------------|")
+        
+        # Sort by duration descending
+        for stage, data in sorted(stage_durations.items(), key=lambda x: x[1].get("duration", 0), reverse=True):
+            duration = data.get("duration", 0)
+            pct = (duration / total_duration * 100) if total_duration > 0 else 0
+            items = stage_items.get(stage, {})
+            items_str = ", ".join(f"{v:.0f} {k}" for k, v in items.items()) if items else "-"
+            lines.append(f"| {stage} | {duration:.3f} | {pct:.1f}% | {items_str} |")
+        
+        lines.append("")
+        lines.append(f"**Total Measured Duration**: {total_duration:.3f}s")
+        lines.append("")
+    
+    # Metadata gate decisions
+    gate_decisions = {}
+    for key, value in metrics_delta.items():
+        if key.startswith("metadata_gate_files_total"):
+            match = re.search(r'decision="([^"]+)"', key)
+            if match:
+                gate_decisions[match.group(1)] = value
+    
+    if gate_decisions:
+        lines.append("## Metadata Gate Decisions")
+        lines.append("")
+        lines.append("| Decision | Count |")
+        lines.append("|----------|-------|")
+        for decision, count in sorted(gate_decisions.items()):
+            lines.append(f"| {decision} | {count:.0f} |")
+        lines.append("")
+    
+    # Raw metrics delta (collapsed)
+    lines.append("## Raw Metrics Delta")
+    lines.append("")
+    lines.append("<details>")
+    lines.append("<summary>Click to expand</summary>")
+    lines.append("")
+    lines.append("```")
+    for key, value in sorted(metrics_delta.items()):
+        lines.append(f"{key} {value}")
+    lines.append("```")
+    lines.append("")
+    lines.append("</details>")
+    lines.append("")
+    
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text("\n".join(lines), encoding="utf-8")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Start local indexing services, run domeus-core indexing, and report the results.",
+        description="Start local indexing services, run jverein indexing, and report the results.",
     )
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
     parser.add_argument("--api-key", default="")
-    parser.add_argument("--repo-path", default="/workspaces/axon-mcp/domeus-core")
-    parser.add_argument("--repo-name", default="domeus-core")
-    parser.add_argument("--namespace", default="local/domeus-core")
+    parser.add_argument("--repo-path", default="/workspaces/axon-mcp/jverein")
+    parser.add_argument("--repo-name", default="jverein")
+    parser.add_argument("--namespace", default="local/jverein")
     parser.add_argument("--branch", default="main")
     parser.add_argument("--timeout", type=int, default=7200)
     parser.add_argument("--interval", type=int, default=5)
@@ -804,6 +930,11 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"{key} {value}", flush=True)
             print("metrics_delta_end", flush=True)
             print(f"log_dir={log_dir}", flush=True)
+            
+            # Generate markdown report
+            report_path = log_dir / "performance-report.md"
+            _write_performance_report(report_path, summary)
+            print(f"performance_report={report_path}", flush=True)
 
         if str(job_detail.get("status")) != "COMPLETED":
             return 2

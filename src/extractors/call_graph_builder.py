@@ -40,15 +40,24 @@ class CallGraphBuilder:
     
     async def build_call_relationships(
         self,
-        repository_id: int
+        repository_id: int,
+        changed_file_ids: Optional[List[int]] = None
     ):
         """
         Build call relationships for entire repository.
         
         Args:
             repository_id: Repository ID
+            changed_file_ids: Optional list of file IDs that changed. If provided,
+                             only process symbols from these files. If None or empty,
+                             process all files (full build).
         """
-        logger.info("building_call_relationships", repository_id=repository_id)
+        logger.info(
+            "building_call_relationships",
+            repository_id=repository_id,
+            changed_file_count=len(changed_file_ids) if changed_file_ids else 0,
+            selective_mode=bool(changed_file_ids)
+        )
         
         # Get repository
         result = await self.session.execute(
@@ -63,8 +72,8 @@ class CallGraphBuilder:
         source = get_repository_source_registry().resolve(repo)
         repo_path = source.get_repository_path(repo)
         
-        # Get all methods/functions in repository
-        result = await self.session.execute(
+        # Build query for symbols
+        query = (
             select(Symbol, File)
             .join(File, Symbol.file_id == File.id)
             .where(
@@ -78,15 +87,39 @@ class CallGraphBuilder:
             )
         )
         
+        # If changed_file_ids provided, filter to only those files
+        if changed_file_ids:
+            query = query.where(File.id.in_(changed_file_ids))
+        
+        result = await self.session.execute(query)
+        
         rows = result.all()
         
         # Group symbols by file
         files_map: Dict[int, File] = {}
         file_symbols: Dict[int, List[Symbol]] = defaultdict(list)
+        symbol_ids: List[int] = []
         
         for symbol, file in rows:
             files_map[file.id] = file
             file_symbols[file.id].append(symbol)
+            symbol_ids.append(symbol.id)
+        
+        # If selective mode, delete existing relationships from changed files first
+        if changed_file_ids and symbol_ids:
+            from sqlalchemy import delete as sql_delete
+            delete_stmt = sql_delete(Relation).where(
+                Relation.from_symbol_id.in_(symbol_ids),
+                Relation.relation_type.in_([RelationTypeEnum.CALLS, RelationTypeEnum.USES])
+            )
+            await self.session.execute(delete_stmt)
+            await self.session.commit()
+            logger.info(
+                "call_graph_deleted_existing_relations",
+                repository_id=repository_id,
+                changed_file_count=len(changed_file_ids),
+                symbol_count=len(symbol_ids)
+            )
             
         total_files = len(files_map)
         total_methods = len(rows)

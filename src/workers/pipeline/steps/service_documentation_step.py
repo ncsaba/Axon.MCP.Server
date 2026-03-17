@@ -5,6 +5,10 @@ from src.database.models import Service
 from src.generators.service_doc_generator import ServiceDocGenerator
 from src.utils.redis_logger import RedisLogPublisher
 from src.utils.logging_config import get_logger
+from src.utils.metrics import (
+    streaming_stage_duration_seconds,
+    streaming_stage_items_total,
+)
 from ..step import PipelineStep
 from ..context import PipelineContext
 
@@ -17,7 +21,7 @@ class ServiceDocumentationStep(PipelineStep):
     
     async def execute(self, ctx: PipelineContext) -> None:
         publisher = RedisLogPublisher()
-        start_time = time.time()
+        start_time = time.perf_counter()
         
         services_documented = 0
         try:
@@ -82,4 +86,13 @@ class ServiceDocumentationStep(PipelineStep):
             await publisher.publish_log(ctx.repository_id, f"Service documentation logic failed: {str(e)}", level="ERROR")
             # Continue
             
-        ctx.timings['service_doc_generation'] = time.time() - start_time
+        duration = time.perf_counter() - start_time
+        ctx.timings['service_doc_generation'] = duration
+        
+        # Emit streaming stage metrics
+        streaming_stage_duration_seconds.labels(stage="service_documentation", mode="batch").observe(duration)
+        streaming_stage_items_total.labels(
+            stage="service_documentation",
+            item_type="services",
+            result="documented"
+        ).inc(services_documented)

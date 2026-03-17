@@ -192,9 +192,14 @@ class ParsingStep(PipelineStep):
             if chunk_id is not None
         }
         if not task_ids:
+            # No parse tasks means all files were unchanged (metadata gate skip).
+            # Set files_processed to total discovered files for accurate job_metadata.
+            total_discovered_files = len(ctx.files) if ctx.files else 0
+            ctx.files_processed = total_discovered_files
             logger.info(
                 "no_parse_tasks_from_metadata_gate",
                 repository_id=ctx.repository_id,
+                total_discovered_files=total_discovered_files,
             )
             ctx.metadata["changed_chunk_ids"] = sorted(changed_chunk_ids)
             streaming_stage_batch_size.labels(stage="parse_wait").observe(0)

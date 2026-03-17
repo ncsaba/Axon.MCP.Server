@@ -2,7 +2,7 @@
 
 ## Session focus
 
-Executed and validated streaming indexing slices from implementation plan:
+Previous session completed streaming indexing slices from implementation plan:
 
 1. Slice 2A: streaming discovery inventory producer (portable fallback path).
 2. Slice 3A: metadata gate worker + idempotency + parse fanout contract.
@@ -11,7 +11,51 @@ Executed and validated streaming indexing slices from implementation plan:
 5. Slice 6 end-to-end changed-chunk embedding-stage wiring.
 6. Slice 7A: streaming telemetry and validation harness.
 
-## What was completed
+This session:
+1. Fixed job progress/accounting for unchanged reruns.
+2. Implemented early-exit optimization for CallGraphStep and ImportResolutionStep.
+
+## What was completed this session
+
+### 8) Job progress/accounting fix for unchanged reruns
+
+**Problem**: In streaming mode, when all files were unchanged (metadata gate skip), `job_metadata` counters remained zero because:
+- `ParsingStep._wait_for_streaming_parse_tasks()` returned early without setting `files_processed`
+- `DiscoveryStep` didn't aggregate metadata gate decisions into `ctx.metadata`
+
+**Solution**:
+1. [`parsing_step.py`](src/workers/pipeline/steps/parsing_step.py:186): When no parse tasks exist (unchanged rerun), set `files_processed` to total discovered files.
+2. [`discovery_step.py`](src/workers/pipeline/steps/discovery_step.py:67): Added `gate_decisions` aggregation across all inventory batches.
+3. [`discovery_step.py`](src/workers/pipeline/steps/discovery_step.py:176): Added `gate_decisions` to `ctx.metadata` for job_metadata persistence.
+
+**Test coverage**:
+- Added `test_parsing_step_sets_files_processed_for_unchanged_rerun` in [`test_parsing_step_streaming_cutover.py`](tests/workers/pipeline/steps/test_parsing_step_streaming_cutover.py:134)
+
+### 9) Early-exit optimization for unchanged reruns
+
+**Problem**: Unchanged reruns were taking ~38s instead of expected ~2-3s, with:
+- `CallGraphStep`: 29.8s (78% of time) creating 20,646 relationships
+- `ImportResolutionStep`: 5.9s (16% of time) creating 0 relationships
+
+Both steps ran on ALL files regardless of whether any files changed.
+
+**Analysis** (documented in [`plans/early-exit-safety-analysis.md`](plans/early-exit-safety-analysis.md)):
+- **CallGraphStep**: ✅ Safe to skip entirely for unchanged files (call relationships defined by caller's source code)
+- **ImportResolutionStep**: ✅ Safe to skip for unchanged reruns (no files changed = no new export resolutions needed)
+
+**Solution**:
+1. [`call_graph_step.py`](src/workers/pipeline/steps/call_graph_step.py): Added early-exit when `parse_file_ids` is empty in streaming mode.
+2. [`call_graph_builder.py`](src/extractors/call_graph_builder.py): Added `changed_file_ids` parameter for selective processing; deletes existing CALLS/USES relationships from changed files before rebuilding.
+3. [`import_resolution_step.py`](src/workers/pipeline/steps/import_resolution_step.py): Added early-exit when `parse_file_ids` is empty in streaming mode.
+
+**Expected impact**:
+| Scenario | Before | After |
+|----------|--------|-------|
+| Unchanged rerun | ~38s | ~2s |
+| 1 file changed | ~38s | ~10s |
+| 10% files changed | ~38s | ~12s |
+
+## What was completed (previous sessions)
 
 ### 1) Slice 2A - Streaming discovery inventory producer
 
@@ -143,16 +187,16 @@ Operational issue diagnosed during validation:
 | End-to-end changed-chunk-only embedding stage wiring | `✅` | Validated in full multi-worker unchanged-rerun run. |
 | Slice 7 streaming telemetry | `✅` | Metrics emitted and validated through API `/metrics`. |
 | Validation harness robustness | `✅` | Handles stale lock skip/result capture and writes incremental summaries. |
-| Job progress/accounting accuracy | `🚧` | `jobs.job_metadata` counters still remain zero despite successful runs. |
+| Job progress/accounting accuracy | `✅` | Fixed: `files_processed` now set correctly for unchanged reruns; `gate_decisions` aggregated in metadata. |
+| CallGraphStep early-exit optimization | `✅` | Skips processing when no files changed in streaming mode. |
+| ImportResolutionStep early-exit optimization | `✅` | Skips processing when no files changed in streaming mode. |
 | Repository detail vs stats consistency | `🚧` | `detail.total_files` and `stats.total_files` diverge. |
 | Native inventory backend (Linux/macOS/Windows optimized) | `🚧` | Still pending after fallback path. |
 | Deployment observability guidance | `🚧` | Findings documented, Prometheus/dev-container setup still pending. |
 
 ## Open technical work (next session)
 
-1. Fix sync job progress/accounting for unchanged reruns:
-   - successful fresh streaming runs now write populated `job_metadata` counters
-   - unchanged reruns still need verification so zero-work summaries remain accurate rather than ambiguous
+1. ~~Fix sync job progress/accounting for unchanged reruns~~: `✅` Completed this session.
 2. Reconcile repository file-count semantics:
    - `repository.detail.total_files`
    - `repository.stats.total_files`

@@ -3,6 +3,10 @@ from src.config.settings import get_settings
 from src.extractors.api_extractor import ApiEndpointExtractor
 from src.utils.redis_logger import RedisLogPublisher
 from src.utils.logging_config import get_logger
+from src.utils.metrics import (
+    streaming_stage_duration_seconds,
+    streaming_stage_items_total,
+)
 from ..step import PipelineStep
 from ..context import PipelineContext
 
@@ -18,7 +22,7 @@ class ApiExtractionStep(PipelineStep):
             return
 
         publisher = RedisLogPublisher()
-        start_time = time.time()
+        start_time = time.perf_counter()
         
         logger.info(
             "api_endpoint_extraction_started",
@@ -26,6 +30,7 @@ class ApiExtractionStep(PipelineStep):
         )
         await publisher.publish_log(ctx.repository_id, "Starting API endpoint extraction...")
         
+        api_endpoints_count = 0
         try:
             # Re-fetch objects if needed or assume session is clean
             api_extractor = ApiEndpointExtractor(ctx.session)
@@ -53,4 +58,13 @@ class ApiExtractionStep(PipelineStep):
             await publisher.publish_log(ctx.repository_id, f"API endpoint extraction failed: {str(e)}", level="ERROR")
             # Continue even if API extraction fails
 
-        ctx.timings['api_extraction'] = time.time() - start_time
+        duration = time.perf_counter() - start_time
+        ctx.timings['api_extraction'] = duration
+        
+        # Emit streaming stage metrics
+        streaming_stage_duration_seconds.labels(stage="api_extraction", mode="batch").observe(duration)
+        streaming_stage_items_total.labels(
+            stage="api_extraction",
+            item_type="endpoints",
+            result="created"
+        ).inc(api_endpoints_count)

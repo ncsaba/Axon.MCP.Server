@@ -6,6 +6,10 @@ from src.extractors.outgoing_call_extractor import OutgoingCallExtractor
 from src.extractors.event_extractor import EventExtractor
 from src.utils.redis_logger import RedisLogPublisher
 from src.utils.logging_config import get_logger
+from src.utils.metrics import (
+    streaming_stage_duration_seconds,
+    streaming_stage_items_total,
+)
 from ..step import PipelineStep
 from ..context import PipelineContext
 
@@ -19,7 +23,7 @@ class CombinedExtractionStep(PipelineStep):
     
     async def execute(self, ctx: PipelineContext) -> None:
         publisher = RedisLogPublisher()
-        start_time = time.time()
+        start_time = time.perf_counter()
         
         outgoing_calls_count = 0
         published_events_count = 0
@@ -50,9 +54,9 @@ class CombinedExtractionStep(PipelineStep):
                     
                 for file_obj in file_batch:
                     last_file_id = file_obj.id
-                    if not ctx.repo_path: 
+                    if not ctx.repo_path:
                          continue # Safe guard
-                         
+                          
                     file_path = ctx.repo_path / file_obj.path
                     
                     # Read content once
@@ -109,13 +113,13 @@ class CombinedExtractionStep(PipelineStep):
             ctx.metrics.event_subscriptions_count = event_subscriptions_count
             
             logger.info(
-                "combined_extraction_completed", 
+                "combined_extraction_completed",
                 outgoing_calls=outgoing_calls_count,
                 published_events=published_events_count,
                 event_subscriptions=event_subscriptions_count
             )
             await publisher.publish_log(
-                ctx.repository_id, 
+                ctx.repository_id,
                 f"Extraction completed. Found {outgoing_calls_count} outgoing calls, {published_events_count} published events, {event_subscriptions_count} subscriptions.",
                 details={
                     "outgoing_calls": outgoing_calls_count,
@@ -131,4 +135,23 @@ class CombinedExtractionStep(PipelineStep):
             await ctx.session.rollback()
             raise # CRITICAL for this step to ensure no partial incomplete states if batch fails badly
 
-        ctx.timings['combined_extraction'] = time.time() - start_time
+        duration = time.perf_counter() - start_time
+        ctx.timings['combined_extraction'] = duration
+        
+        # Emit streaming stage metrics
+        streaming_stage_duration_seconds.labels(stage="combined_extraction", mode="batch").observe(duration)
+        streaming_stage_items_total.labels(
+            stage="combined_extraction",
+            item_type="outgoing_calls",
+            result="created"
+        ).inc(outgoing_calls_count)
+        streaming_stage_items_total.labels(
+            stage="combined_extraction",
+            item_type="events_published",
+            result="created"
+        ).inc(published_events_count)
+        streaming_stage_items_total.labels(
+            stage="combined_extraction",
+            item_type="events_subscribed",
+            result="created"
+        ).inc(event_subscriptions_count)

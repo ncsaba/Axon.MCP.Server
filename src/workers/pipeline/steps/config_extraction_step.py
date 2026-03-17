@@ -2,6 +2,10 @@ import time
 from src.config.settings import get_settings
 from src.utils.redis_logger import RedisLogPublisher
 from src.utils.logging_config import get_logger
+from src.utils.metrics import (
+    streaming_stage_duration_seconds,
+    streaming_stage_items_total,
+)
 from ..step import PipelineStep
 from ..context import PipelineContext
 
@@ -20,7 +24,7 @@ class ConfigExtractionStep(PipelineStep):
              return
 
         publisher = RedisLogPublisher()
-        start_time = time.time()
+        start_time = time.perf_counter()
         
         logger.info(
             "configuration_extraction_started",
@@ -28,6 +32,7 @@ class ConfigExtractionStep(PipelineStep):
         )
         await publisher.publish_log(ctx.repository_id, "Extracting configuration...")
         
+        configs_found = 0
         try:
             # Import locally
             from src.extractors.config_extractor import ConfigExtractor
@@ -58,4 +63,13 @@ class ConfigExtractionStep(PipelineStep):
             await publisher.publish_log(ctx.repository_id, f"Configuration extraction failed: {str(e)}", level="ERROR")
             # Continue
 
-        ctx.timings['config_extraction'] = time.time() - start_time
+        duration = time.perf_counter() - start_time
+        ctx.timings['config_extraction'] = duration
+        
+        # Emit streaming stage metrics
+        streaming_stage_duration_seconds.labels(stage="config_extraction", mode="batch").observe(duration)
+        streaming_stage_items_total.labels(
+            stage="config_extraction",
+            item_type="configs",
+            result="found"
+        ).inc(configs_found)

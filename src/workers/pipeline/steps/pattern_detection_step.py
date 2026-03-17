@@ -3,6 +3,10 @@ from src.config.settings import get_settings
 from src.extractors.pattern_detector import PatternDetector
 from src.utils.redis_logger import RedisLogPublisher
 from src.utils.logging_config import get_logger
+from src.utils.metrics import (
+    streaming_stage_duration_seconds,
+    streaming_stage_items_total,
+)
 from ..step import PipelineStep
 from ..context import PipelineContext
 
@@ -18,7 +22,7 @@ class PatternDetectionStep(PipelineStep):
             return
 
         publisher = RedisLogPublisher()
-        start_time = time.time()
+        start_time = time.perf_counter()
         
         logger.info(
             "pattern_detection_started",
@@ -26,6 +30,7 @@ class PatternDetectionStep(PipelineStep):
         )
         await publisher.publish_log(ctx.repository_id, "Detecting patterns...")
         
+        patterns_detected = 0
         try:
             pattern_detector = PatternDetector(ctx.session)
             patterns = await pattern_detector.detect_patterns(ctx.repository_id)
@@ -50,4 +55,13 @@ class PatternDetectionStep(PipelineStep):
             await publisher.publish_log(ctx.repository_id, f"Pattern detection failed: {str(e)}", level="ERROR")
             # Continue
 
-        ctx.timings['pattern_detection'] = time.time() - start_time
+        duration = time.perf_counter() - start_time
+        ctx.timings['pattern_detection'] = duration
+        
+        # Emit streaming stage metrics
+        streaming_stage_duration_seconds.labels(stage="pattern_detection", mode="batch").observe(duration)
+        streaming_stage_items_total.labels(
+            stage="pattern_detection",
+            item_type="patterns",
+            result="detected"
+        ).inc(patterns_detected)

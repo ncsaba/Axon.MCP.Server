@@ -5,6 +5,10 @@ from src.config.enums import RepositoryStatusEnum
 from src.extractors.relationship_builder import RelationshipBuilder
 from src.utils.redis_logger import RedisLogPublisher
 from src.utils.logging_config import get_logger
+from src.utils.metrics import (
+    streaming_stage_duration_seconds,
+    streaming_stage_items_total,
+)
 from ..step import PipelineStep
 from ..context import PipelineContext
 
@@ -18,7 +22,7 @@ class RelationshipBuildingStep(PipelineStep):
     
     async def execute(self, ctx: PipelineContext) -> None:
         publisher = RedisLogPublisher()
-        start_time = time.time()
+        start_time = time.perf_counter()
         
         # Re-fetch repository object as it might have been detached by expunge_all() in previous steps
         # Although PipelineContext tries to hold it, session.expunge_all() acts on the session.
@@ -56,4 +60,13 @@ class RelationshipBuildingStep(PipelineStep):
         )
         await publisher.publish_log(ctx.repository_id, f"Relationship building completed. Created {relationships_created} relationships.", details={"relationships_created": relationships_created})
 
-        ctx.timings['relationship_building'] = time.time() - start_time
+        duration = time.perf_counter() - start_time
+        ctx.timings['relationship_building'] = duration
+        
+        # Emit streaming stage metrics
+        streaming_stage_duration_seconds.labels(stage="relationship_building", mode="batch").observe(duration)
+        streaming_stage_items_total.labels(
+            stage="relationship_building",
+            item_type="relationships",
+            result="created"
+        ).inc(relationships_created)
