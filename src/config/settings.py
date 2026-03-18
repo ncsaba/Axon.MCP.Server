@@ -2,7 +2,7 @@ import os
 import sys
 from typing import Optional
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import (
     BaseSettings,
     DotEnvSettingsSource,
@@ -62,6 +62,14 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0"
     debug: bool = False
     environment: str = "development"
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def _normalize_debug_aliases(cls, value):
+        """Accept the observed DEBUG=release environment variant as false."""
+        if isinstance(value, str) and value.strip().lower() == "release":
+            return False
+        return value
 
     # GitLab
     gitlab_url: str = "https://gitlab.com"

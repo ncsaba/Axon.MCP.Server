@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from mcp.types import TextContent
 
 from src.database.models import Symbol, File, Repository, Relation, OutgoingApiCall, ApiEndpointLink, PublishedEvent, EventLink, EventSubscription, Service
+from src.database.query_helpers import active_file_filter
 from src.database.session import get_async_session
 from src.config.enums import SymbolKindEnum, RelationTypeEnum
 from src.utils.logging_config import get_logger
@@ -252,6 +253,7 @@ async def trace_request_flow(
                 .join(File, Symbol.file_id == File.id)
                 .where(
                     File.repository_id == repository_id,
+                    active_file_filter(),
                     Symbol.kind == SymbolKindEnum.ENDPOINT
                 )
             )

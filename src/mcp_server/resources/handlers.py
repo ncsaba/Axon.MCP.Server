@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 from sqlalchemy import select, func
 
 from src.database.models import File, Repository, Symbol
+from src.database.query_helpers import active_file_filter
 from src.database.session import get_async_session
 from src.utils.logging_config import get_logger
 
@@ -90,7 +91,7 @@ async def read_mcp_resource(uri: str) -> Dict[str, Any]:
                 result = await session.execute(
                     select(File, Repository)
                     .join(Repository, File.repository_id == Repository.id)
-                    .where(Repository.id == repo_id)
+                    .where(Repository.id == repo_id, active_file_filter())
                 )
                 files_data = result.all()
                 
@@ -149,7 +150,7 @@ async def read_mcp_resource(uri: str) -> Dict[str, Any]:
                 
                 # Get file statistics by language
                 files_result = await session.execute(
-                    select(File).where(File.repository_id == repo_id)
+                    select(File).where(File.repository_id == repo_id, active_file_filter())
                 )
                 files = files_result.scalars().all()
                 

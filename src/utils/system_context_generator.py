@@ -12,6 +12,7 @@ from sqlalchemy import select, func, text
 from sqlalchemy.orm import selectinload
 
 from src.database.models import Repository, Symbol, File
+from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum
 from src.utils.logging_config import get_logger
 
@@ -87,7 +88,9 @@ class SystemContextGenerator:
         # Get languages
         query = select(File.language).distinct()
         if repository_id:
-            query = query.where(File.repository_id == repository_id)
+            query = query.where(File.repository_id == repository_id, active_file_filter())
+        else:
+            query = query.where(active_file_filter())
             
         result = await self.session.execute(query)
         tech_stack["languages"] = [str(r) for r in result.scalars().all() if r]
@@ -105,7 +108,9 @@ class SystemContextGenerator:
         ).limit(10)
         
         if repository_id:
-            query = query.join(Symbol.file).where(File.repository_id == repository_id)
+            query = query.join(Symbol.file).where(File.repository_id == repository_id, active_file_filter())
+        else:
+            query = query.join(Symbol.file).where(active_file_filter())
             
         result = await self.session.execute(query)
         symbols = result.scalars().all()
@@ -137,7 +142,7 @@ class SystemContextGenerator:
         try:
             query = (
                 select(File.language, func.count(File.id).label("count"))
-                .where(File.repository_id == repository_id)
+                .where(File.repository_id == repository_id, active_file_filter())
                 .group_by(File.language)
                 .order_by(text("count DESC"))
                 .limit(1)

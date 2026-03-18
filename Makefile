@@ -1,4 +1,4 @@
-.PHONY: help install dev-install test test-integration lint format clean docker-up docker-down docker-logs docker-rebuild docker-status docker-check migrate api-start api-dev api-test mcp-start mcp-dev ui-install ui-dev ui-build ui-test
+.PHONY: help install dev-install test test-integration lint format clean docker-up docker-down docker-logs docker-rebuild docker-status docker-check migrate db-reset api-start api-dev api-test mcp-start mcp-dev ui-install ui-dev ui-build ui-test
 
 help:
 	@echo "Available commands:"
@@ -11,6 +11,7 @@ help:
 	@echo "  make lint          - Run linters"
 	@echo "  make format        - Format code"
 	@echo "  make migrate       - Run database migrations"
+	@echo "  make db-reset      - Deliberately reset the PostgreSQL schema and recreate tables"
 	@echo "  make api-start     - Start API server (production)"
 	@echo "  make api-dev       - Start API server (development with reload)"
 	@echo "  make api-test      - Test API endpoints"
@@ -71,6 +72,9 @@ docker-down:
 
 migrate:
 	alembic upgrade head
+
+db-reset:
+	python scripts/reset_db.py --yes
 
 # API commands
 api-start:

@@ -58,3 +58,13 @@ def test_non_testing_environment_rejects_whitespace_only_secrets():
             api_secret_key="\t",
             jwt_secret_key="\n",
         )
+
+
+def test_debug_release_alias_is_treated_as_false():
+    settings = Settings(
+        environment="testing",
+        database_url="sqlite+aiosqlite:///./test.db",
+        debug="release",
+    )
+
+    assert settings.debug is False

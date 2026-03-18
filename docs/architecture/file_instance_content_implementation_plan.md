@@ -198,6 +198,33 @@ Recommendation:
 | Move chunks to fully shared content-scoped ownership | `🚧` | Transitional chunk model keeps instance linkage while `file_content_id` is introduced |
 | Add TTL cleanup worker for expired missing instances and orphan content reclamation | `✅` | Celery task + beat schedule + cleanup metrics are now present |
 
+## Next Validation Increment (2026-03-18)
+
+`🧭` next action for the current branch.
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Integration validation for `ACTIVE -> MISSING -> ACTIVE` lifecycle transitions | `🧭` | Add focused DB-backed tests for successful run finalization, failed-run no-op behavior, and reintroduction |
+| TTL cleanup verification for expired missing instances | `🧭` | Assert bounded deletion of missing rows and safe orphan `file_contents` reclamation |
+| Remaining active-instance read-path cleanup | `🧭` | Use `src/database/query_helpers.py` as the default user-facing filter pattern |
+| `DEBUG=release` settings hardening | `🧭` | Remove validation friction caused by non-boolean debug env values |
+
+### Validation Targets
+
+1. Successful sync finalization marks previously active unseen files as `MISSING`.
+2. Failed sync runs never execute the missing-file sweep.
+3. Reintroduced files reactivate existing instances and clear `missing_since`.
+4. TTL cleanup deletes only expired missing instances within batch limits.
+5. Orphan `file_contents` rows are reclaimed only when no file instance references remain.
+6. Sync-worker orchestration updates repository run state and lifecycle transitions correctly on both success and failure paths.
+7. User-facing read paths consistently exclude `MISSING` file instances unless explicitly requesting lifecycle state.
+
+### Execution Notes
+
+- Start by adding focused integration tests for lifecycle transitions and cleanup behavior.
+- Use those tests to identify remaining `File` query surfaces that should default to active-instance filtering.
+- Keep chunk/content consolidation out of this increment unless validation exposes a correctness bug that must be fixed immediately.
+
 ## Slice 1: Schema Reset And Model Rewrite
 
 ### Code changes

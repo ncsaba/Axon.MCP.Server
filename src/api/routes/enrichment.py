@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from src.database.session import get_db_session as get_db
-from src.database.models import Symbol, Repository
+from src.database.models import File, Symbol, Repository
+from src.database.query_helpers import active_file_filter
 from src.workers.enrichment_worker import enrich_batch
 from src.utils.logging_config import get_logger
 
@@ -63,7 +64,9 @@ async def get_enrichment_stats(
     ).join(Symbol.file)
     
     if repository_id:
-        query = query.where(File.repository_id == repository_id)
+        query = query.where(File.repository_id == repository_id, active_file_filter())
+    else:
+        query = query.where(active_file_filter())
         
     query = query.group_by(File.repository_id)
     

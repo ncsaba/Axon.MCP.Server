@@ -9,6 +9,7 @@ from src.database.models import (
     PublishedEvent, EventSubscription, ApiEndpointLink, 
     EventLink, ConfigurationEntry, File
 )
+from src.database.query_helpers import active_file_filter
 from src.database.session import AsyncSession
 from src.api.schemas.analysis import (
     ServiceAnalysis, IntegrationSummary,
@@ -173,6 +174,7 @@ async def get_repository_quality_metrics(
         .outerjoin(File.symbols)
         .where(
             File.repository_id == repository_id,
+            active_file_filter(),
             File.line_count > 0,
             # Ideally filter for source code extensions only
         )
@@ -185,7 +187,10 @@ async def get_repository_quality_metrics(
     
     if total_files > 0:
         avg_lines = await db.scalar(
-            select(func.avg(File.line_count)).where(File.repository_id == repository_id)
+            select(func.avg(File.line_count)).where(
+                File.repository_id == repository_id,
+                active_file_filter(),
+            )
         )
         metrics.append(QualityMetric(
             category="Maintainability",
@@ -196,7 +201,10 @@ async def get_repository_quality_metrics(
         ))
         
         avg_symbols = await db.scalar(
-            select(func.avg(File.size_bytes)).where(File.repository_id == repository_id)
+            select(func.avg(File.size_bytes)).where(
+                File.repository_id == repository_id,
+                active_file_filter(),
+            )
         )
         metrics.append(QualityMetric(
             category="Complexity",

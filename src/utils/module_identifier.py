@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.enums import LanguageEnum, SymbolKindEnum
 from src.database.models import File, Symbol
+from src.database.query_helpers import active_file_filter
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -83,7 +84,7 @@ class ModuleIdentifier:
             # Get all files for this repository
             files_result = await self.session.execute(
                 select(File)
-                .where(File.repository_id == repository_id)
+                .where(File.repository_id == repository_id, active_file_filter())
                 .order_by(File.path)
             )
             files = files_result.scalars().all()
@@ -285,6 +286,7 @@ class ModuleIdentifier:
                 select(File)
                 .where(
                     File.repository_id == repository_id,
+                    active_file_filter(),
                     File.path.like(f"{module_path}%"),
                 )
                 .order_by(File.path)

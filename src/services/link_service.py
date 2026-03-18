@@ -28,6 +28,7 @@ from src.database.models import (
     Repository,
     File,
 )
+from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum
 from src.parsers.ocelot_parser import OcelotParser
 from src.parsers.nginx_parser import NginxParser
@@ -79,7 +80,7 @@ class LinkService:
                 File.path.ilike('%.conf'),
                 File.path.ilike('%nginx%')
             )
-        )
+        ).where(active_file_filter())
         
         if repository_ids:
             query = query.where(File.repository_id.in_(repository_ids))
@@ -290,6 +291,7 @@ class LinkService:
                 )
             )
         )
+        query = query.where(active_file_filter())
         
         if repository_ids:
             query = query.where(File.repository_id.in_(repository_ids))
@@ -561,7 +563,7 @@ class LinkService:
                         )
                     )
                 )
-            ).limit(500)
+            ).where(active_file_filter()).limit(500)
             
             result = await self.db.execute(query)
             db_candidates = result.scalars().all()

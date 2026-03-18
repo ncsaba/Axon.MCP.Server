@@ -68,6 +68,8 @@ Adopt selectively from `external-inspiration/kilocode`:
 | File instance/content architecture design and deleted-file policy decision | `🧭` |
 | File instance/content implementation plan | `✅` |
 | Foundational file instance/content runtime slice (runs + instance/content upsert + missing finalization) | `🚧` |
+| Lifecycle validation + remaining active-instance read-path cleanup | `🧭` |
+| Sync-worker lifecycle validation (successful vs failed run finalization) | `🧭` |
 | Complete Java feature coverage to kilocode-equivalent baseline (parity gate) | `🧭` |
 | Java import parity expansion (package wildcard + static wildcard/member imports) | `✅` |
 | Java call parity expansion (qualified static calls + overload arity resolution) | `✅` |

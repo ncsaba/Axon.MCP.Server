@@ -71,6 +71,14 @@ async def _cleanup_missing_file_instances_async(repository_id: int | None = None
 
         expired_instance_ids = [int(row[0]) for row in (await session.execute(instance_ids_stmt)).all()]
 
+        deleted_instances = 0
+        deleted_contents = 0
+
+        if expired_instance_ids:
+            await session.execute(delete(File).where(File.id.in_(expired_instance_ids)))
+            deleted_instances = len(expired_instance_ids)
+            await session.flush()
+
         orphan_content_ids_stmt = (
             select(FileContent.id)
             .outerjoin(File, File.current_content_id == FileContent.id)
@@ -81,13 +89,6 @@ async def _cleanup_missing_file_instances_async(repository_id: int | None = None
         orphan_content_ids = [
             int(row[0]) for row in (await session.execute(orphan_content_ids_stmt)).all()
         ]
-
-        deleted_instances = 0
-        deleted_contents = 0
-
-        if expired_instance_ids:
-            await session.execute(delete(File).where(File.id.in_(expired_instance_ids)))
-            deleted_instances = len(expired_instance_ids)
 
         if orphan_content_ids:
             await session.execute(delete(FileContent).where(FileContent.id.in_(orphan_content_ids)))
