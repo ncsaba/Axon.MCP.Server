@@ -11,6 +11,7 @@ except ImportError:
     OPENAI_AVAILABLE = False
     AsyncOpenAI = None
 from src.config.settings import get_settings
+from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.utils.logging_config import get_logger
 from src.utils.metrics import embedding_generation_duration, embeddings_generated_total
 
@@ -45,6 +46,18 @@ class EmbeddingGenerator:
             self.model_name = get_settings().openai_embedding_model
             self.dimension = get_settings().openai_embedding_dimension
             self.model_version = "1.0"
+        elif self.provider == "ollama":
+            if not OPENAI_AVAILABLE:
+                raise ImportError(
+                    "Failed to initialize embedding generator: OpenAI package not installed. Install with: pip install openai"
+                )
+            self.client = AsyncOpenAI(
+                api_key="ollama",
+                base_url=get_settings().ollama_base_url,
+            )
+            self.model_name = get_settings().ollama_embedding_model
+            self.dimension = FIXED_EMBEDDING_DIMENSION
+            self.model_version = "1.0"
         else:
             # Local model using sentence-transformers
             from sentence_transformers import SentenceTransformer
@@ -56,6 +69,12 @@ class EmbeddingGenerator:
             self.model_name = get_settings().local_embedding_model
             self.dimension = self.model.get_sentence_embedding_dimension()
             self.model_version = "1.0"
+
+        if self.dimension != FIXED_EMBEDDING_DIMENSION:
+            raise ValueError(
+                f"Embedding model dimension {self.dimension} does not match fixed contract "
+                f"{FIXED_EMBEDDING_DIMENSION}"
+            )
         
         logger.info(
             "embedding_generator_initialized",
@@ -87,7 +106,7 @@ class EmbeddingGenerator:
             batch = chunks[i:i + batch_size]
             
             try:
-                if self.provider == "openai":
+                if self.provider in ("openai", "ollama"):
                     batch_results = await self._generate_openai_embeddings(batch)
                 else:
                     batch_results = await self._generate_local_embeddings(batch)

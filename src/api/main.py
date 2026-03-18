@@ -34,6 +34,25 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
+async def _ensure_semantic_search_vector_index() -> None:
+    """Ensure the fixed-dimension pgvector ANN index exists for semantic search."""
+    try:
+        from src.database.session import AsyncSessionLocal
+        from src.vector_store.pgvector_store import PgVectorStore
+
+        async with AsyncSessionLocal() as session:
+            store = PgVectorStore(session)
+            status = await store.ensure_vector_index(index_type="hnsw")
+            await session.commit()
+            logger.info(
+                "semantic_search_vector_index_ready",
+                status=status,
+                preferred_index_type="hnsw",
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("semantic_search_vector_index_ensure_failed", error=str(exc))
+
+
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
     logger.info("application_startup", environment=settings.environment)
@@ -85,6 +104,8 @@ async def _lifespan(_: FastAPI):
     # automatic migration execution on startup. Alembic remains available for
     # manual use, but runtime boot should not mutate schema history.
     logger.info("database_schema_mode", mode="reset_or_create_all")
+
+    await _ensure_semantic_search_vector_index()
 
     # Reset any interrupted jobs from previous run
     try:

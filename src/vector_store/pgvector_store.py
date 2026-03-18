@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from src.database.models import Embedding, Chunk, ChunkSymbolLink, Symbol, FileInstance as File, Repository
 from src.database.query_helpers import active_file_filter
+from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.embeddings.generator import EmbeddingResult
 from src.utils.logging_config import get_logger
 
@@ -11,6 +12,8 @@ logger = get_logger(__name__)
 
 class PgVectorStore:
     """pgvector-based vector store for semantic search."""
+
+    DEFAULT_VECTOR_INDEX_NAME = "embeddings_vector_idx"
     
     def __init__(self, session: AsyncSession):
         """
@@ -53,6 +56,16 @@ class PgVectorStore:
             # Create all embedding records
             embeddings_to_add = []
             for result in results:
+                if result.dimension != FIXED_EMBEDDING_DIMENSION:
+                    raise ValueError(
+                        f"Embedding dimension {result.dimension} does not match fixed contract "
+                        f"{FIXED_EMBEDDING_DIMENSION}"
+                    )
+                if len(result.vector) != FIXED_EMBEDDING_DIMENSION:
+                    raise ValueError(
+                        f"Embedding vector length {len(result.vector)} does not match fixed contract "
+                        f"{FIXED_EMBEDDING_DIMENSION}"
+                    )
                 chunk = chunks_by_id.get(result.chunk_id)
                 
                 if not chunk:
@@ -127,23 +140,57 @@ class PgVectorStore:
             raise ValueError(f"threshold must be between 0.0 and 1.0, got {threshold}")
         
         from sqlalchemy import func, or_
+
+        filters = dict(filters or {})
+        query_dimension = int(filters.pop("embedding_dimension", FIXED_EMBEDDING_DIMENSION))
+        if query_dimension != FIXED_EMBEDDING_DIMENSION:
+            raise ValueError(
+                f"embedding_dimension {query_dimension} does not match fixed contract "
+                f"{FIXED_EMBEDDING_DIMENSION}"
+            )
+        if len(query_vector) != FIXED_EMBEDDING_DIMENSION:
+            raise ValueError(
+                f"query_vector length {len(query_vector)} does not match fixed contract "
+                f"{FIXED_EMBEDDING_DIMENSION}"
+            )
+
+        query_model_name = filters.pop("embedding_model_name", None)
+        query_model_version = filters.pop("embedding_model_version", None)
+
+        vector_distance_expr = Embedding.vector.cosine_distance(query_vector)
+        vector_score_expr = (1 - vector_distance_expr)
         
         # 1. Vector Search
-        # Fetch more candidates than limit to allow for re-ranking
-        vector_limit = limit * 2
+        # Fetch more candidate chunks than the final symbol limit, then deduplicate by symbol.
+        # Using ORDER BY distance + LIMIT keeps the query in a shape that pgvector ANN indexes can use.
+        vector_limit = max(limit * 10, 50)
         
-        # Subquery to get best similarity per symbol through chunk links.
+        candidate_stmt = (
+            select(
+                ChunkSymbolLink.symbol_id.label("symbol_id"),
+                vector_score_expr.label("vector_score"),
+            )
+            .join(
+                ChunkSymbolLink,
+                ChunkSymbolLink.chunk_id == Embedding.chunk_id,
+            )
+            .where(Embedding.dimension == FIXED_EMBEDDING_DIMENSION)
+        )
+
+        if query_model_name:
+            candidate_stmt = candidate_stmt.where(Embedding.model_name == query_model_name)
+        if query_model_version:
+            candidate_stmt = candidate_stmt.where(Embedding.model_version == query_model_version)
+
+        candidate_subq = candidate_stmt.order_by(vector_distance_expr).limit(vector_limit).subquery()
+
+        # Subquery to get best similarity per symbol
         vector_subq = select(
-            ChunkSymbolLink.symbol_id.label("symbol_id"),
-            func.max(1 - Embedding.vector.cosine_distance(query_vector)).label('vector_score')
-        ).join(
-            ChunkSymbolLink,
-            ChunkSymbolLink.chunk_id == Embedding.chunk_id,
+            candidate_subq.c.symbol_id,
+            func.max(candidate_subq.c.vector_score).label("vector_score"),
         ).where(
-            (1 - Embedding.vector.cosine_distance(query_vector)) >= threshold
-        ).group_by(
-            ChunkSymbolLink.symbol_id
-        ).subquery()
+            candidate_subq.c.vector_score >= threshold
+        ).group_by(candidate_subq.c.symbol_id).subquery()
         
         vector_query = select(
             Symbol,
@@ -279,11 +326,113 @@ class PgVectorStore:
         scored_results.sort(key=lambda x: x[1], reverse=True)
         
         return scored_results[:limit]
+
+    @staticmethod
+    def _extract_index_type(index_definition: Optional[str]) -> Optional[str]:
+        """Extract the pgvector index method from a CREATE INDEX definition."""
+        if not index_definition:
+            return None
+
+        lowered = index_definition.lower()
+        if " using hnsw " in lowered:
+            return "hnsw"
+        if " using ivfflat " in lowered:
+            return "ivfflat"
+        return None
+
+    async def get_vector_index_type(
+        self,
+        index_name: str = DEFAULT_VECTOR_INDEX_NAME,
+    ) -> Optional[str]:
+        """Return the configured pgvector ANN index type for embeddings, if present."""
+        result = await self.session.execute(
+            text(
+                """
+                SELECT indexdef
+                FROM pg_indexes
+                WHERE tablename = 'embeddings' AND indexname = :index_name
+                ORDER BY schemaname = 'public' DESC, schemaname ASC
+                LIMIT 1
+                """
+            ),
+            {"index_name": index_name},
+        )
+        row = result.first()
+        if not row:
+            return None
+        return self._extract_index_type(row[0])
+
+    async def ensure_vector_index(
+        self,
+        index_type: str = "hnsw",
+        lists: int = 100,
+        index_name: str = DEFAULT_VECTOR_INDEX_NAME,
+    ) -> str:
+        """
+        Ensure the fixed-dimension pgvector ANN index exists for semantic search.
+
+        Returns:
+            One of: "created", "existing", "mismatched"
+        """
+        if index_type not in ("ivfflat", "hnsw"):
+            raise ValueError(f"Invalid index_type: {index_type}. Must be 'ivfflat' or 'hnsw'")
+
+        if not isinstance(lists, int) or lists < 1 or lists > 10000:
+            raise ValueError(f"Invalid lists value: {lists}. Must be integer between 1 and 10000")
+
+        existing_type = await self.get_vector_index_type(index_name=index_name)
+        if existing_type == index_type:
+            logger.info(
+                "vector_index_already_present",
+                index_name=index_name,
+                index_type=index_type,
+            )
+            return "existing"
+
+        if existing_type is not None and existing_type != index_type:
+            logger.warning(
+                "vector_index_type_mismatch",
+                index_name=index_name,
+                expected=index_type,
+                existing=existing_type,
+            )
+            return "mismatched"
+
+        if index_type == "ivfflat":
+            await self.session.execute(
+                text(
+                    f"""
+                    CREATE INDEX IF NOT EXISTS {index_name}
+                    ON embeddings USING ivfflat (vector vector_cosine_ops)
+                    WITH (lists = :lists)
+                    """
+                ),
+                {"lists": lists},
+            )
+            await self.session.execute(text("ANALYZE embeddings"))
+        else:
+            await self.session.execute(
+                text(
+                    f"""
+                    CREATE INDEX IF NOT EXISTS {index_name}
+                    ON embeddings USING hnsw (vector vector_cosine_ops)
+                    WITH (m = 16, ef_construction = 64)
+                    """
+                )
+            )
+
+        await self.session.flush()
+        logger.info(
+            "vector_index_ensured",
+            index_name=index_name,
+            index_type=index_type,
+        )
+        return "created"
     
     async def create_vector_index(
         self,
         index_type: str = "ivfflat",
-        lists: int = 100
+        lists: int = 100,
     ):
         """
         Create vector index for faster similarity search.
@@ -295,27 +444,31 @@ class PgVectorStore:
         Raises:
             ValueError: If index_type is invalid or lists is out of range
         """
-        # SECURITY: Validate inputs to prevent SQL injection
         if index_type not in ("ivfflat", "hnsw"):
             raise ValueError(f"Invalid index_type: {index_type}. Must be 'ivfflat' or 'hnsw'")
-        
+
         if not isinstance(lists, int) or lists < 1 or lists > 10000:
             raise ValueError(f"Invalid lists value: {lists}. Must be integer between 1 and 10000")
-        
+
         try:
+            index_name = self.DEFAULT_VECTOR_INDEX_NAME
+
             # Drop existing index if it exists
             await self.session.execute(text(
-                "DROP INDEX IF EXISTS embeddings_vector_idx"
+                f"DROP INDEX IF EXISTS {index_name}"
             ))
             
             if index_type == "ivfflat":
                 # FIXED: Use parameterized query to prevent SQL injection
                 await self.session.execute(
-                    text("""
-                        CREATE INDEX embeddings_vector_idx 
-                        ON embeddings USING ivfflat (vector vector_cosine_ops) 
+                    text(
+                        """
+                        CREATE INDEX %s
+                        ON embeddings USING ivfflat (vector vector_cosine_ops)
                         WITH (lists = :lists)
-                    """),
+                        """
+                        % index_name
+                    ),
                     {"lists": lists}
                 )
                 # FIXED: Analyze table so Postgres can use the IVFFlat index
@@ -325,16 +478,20 @@ class PgVectorStore:
                 
             elif index_type == "hnsw":
                 await self.session.execute(text(
-                    """
-                    CREATE INDEX embeddings_vector_idx 
-                    ON embeddings USING hnsw (vector vector_cosine_ops) 
+                    f"""
+                    CREATE INDEX {index_name}
+                    ON embeddings USING hnsw (vector vector_cosine_ops)
                     WITH (m = 16, ef_construction = 64)
                     """
                 ))
                 # HNSW doesn't require ANALYZE to be used by the planner
             
             await self.session.flush()
-            logger.info("vector_index_created", index_type=index_type, lists=lists if index_type == "ivfflat" else None)
+            logger.info(
+                "vector_index_created",
+                index_type=index_type,
+                lists=lists if index_type == "ivfflat" else None,
+            )
             
         except Exception as e:
             error_msg = f"Failed to create vector index: {str(e)}"

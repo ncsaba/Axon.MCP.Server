@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy import select
 
+from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.config.enums import LanguageEnum, RepositoryStatusEnum
 from src.database.models import Chunk, Embedding, FileInstance as File, FileContent, Repository
 from src.embeddings.generator import EmbeddingResult
@@ -75,10 +76,10 @@ async def test_embedding_reused_for_same_chunk_hash(async_session):
         return_value=[
             EmbeddingResult(
                 chunk_id=chunk1_id,
-                vector=[0.1, 0.2, 0.3],
+                vector=[0.1] * FIXED_EMBEDDING_DIMENSION,
                 model_name="test-model",
                 model_version="1.0",
-                dimension=3,
+                dimension=FIXED_EMBEDDING_DIMENSION,
             )
         ]
     )

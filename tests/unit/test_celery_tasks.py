@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from src.database.models import Repository, FileInstance as File, Chunk, Job
+from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.config.enums import (
     RepositoryStatusEnum,
     JobStatusEnum,
@@ -203,7 +204,7 @@ async def test_generate_repository_embeddings_success(mock_chunk):
             # Mock embedding generator
             mock_generator = AsyncMock()
             mock_generator.generate_embeddings.return_value = [
-                {'chunk_id': 1, 'vector': [0.1] * 768}
+                {'chunk_id': 1, 'vector': [0.1] * FIXED_EMBEDDING_DIMENSION}
             ]
             mock_generator_class.return_value = mock_generator
             

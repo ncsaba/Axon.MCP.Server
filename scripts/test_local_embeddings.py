@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Test script specifically for LOCAL embedding generation.
-Tests sentence-transformers without requiring OpenAI API.
+Test script specifically for local Ollama embedding generation.
+Tests `mxbai-embed-large` without requiring OpenAI APIs.
 """
 import asyncio
 import sys
@@ -11,9 +11,11 @@ import os
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Force local embedding provider
-os.environ['EMBEDDING_PROVIDER'] = 'local'
-os.environ['LOCAL_EMBEDDING_MODEL'] = 'sentence-transformers/all-MiniLM-L6-v2'  # Faster, smaller model for testing
+# Force local Ollama embedding provider
+os.environ.setdefault('ENVIRONMENT', 'testing')
+os.environ.setdefault('DEBUG', 'false')
+os.environ['EMBEDDING_PROVIDER'] = 'ollama'
+os.environ['OLLAMA_EMBEDDING_MODEL'] = 'mxbai-embed-large'
 
 from src.embeddings.generator import EmbeddingGenerator
 from src.embeddings.chunking import TextChunker
@@ -22,10 +24,10 @@ from src.embeddings.chunking import TextChunker
 async def test_local_embedding_generation():
     """Test local embedding generation."""
     print("\n" + "="*60)
-    print("Testing LOCAL Embedding Generation")
+    print("Testing LOCAL OLLAMA Embedding Generation")
     print("="*60)
     
-    print("\nInitializing local embedding generator...")
+    print("\nInitializing local Ollama embedding generator...")
     generator = EmbeddingGenerator()
     
     print(f"  Provider: {generator.provider}")
@@ -183,8 +185,8 @@ async def test_similarity_concept():
 async def main():
     """Run all local embedding tests."""
     print("\n" + "="*60)
-    print("LOCAL EMBEDDING PIPELINE TEST SUITE")
-    print("No API keys needed - runs entirely locally!")
+    print("LOCAL OLLAMA EMBEDDING PIPELINE TEST SUITE")
+    print("No cloud API keys needed - runs against local Ollama.")
     print("="*60)
     
     tests = [
@@ -226,9 +228,9 @@ async def main():
     print(f"\nTotal: {passed}/{total} tests passed")
     
     if passed == total:
-        print("\n[SUCCESS] All local embedding tests passed!")
-        print("\nYour local embedding pipeline is working correctly.")
-        print("You can now use embeddings without any API keys!")
+        print("\n[SUCCESS] All local Ollama embedding tests passed!")
+        print("\nYour local Ollama embedding pipeline is working correctly.")
+        print("You can now use embeddings with `mxbai-embed-large`.")
         return 0
     else:
         print(f"\n[WARNING] {total - passed} test(s) failed")
@@ -247,4 +249,3 @@ if __name__ == "__main__":
         import traceback
         traceback.print_exc()
         sys.exit(1)
-

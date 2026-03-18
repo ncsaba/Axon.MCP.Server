@@ -5,6 +5,7 @@ from datetime import datetime
 from src.vector_store.pgvector_store import PgVectorStore
 from src.embeddings.generator import EmbeddingResult
 from src.database.models import Embedding, Chunk, Symbol
+from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.config.enums import SymbolKindEnum, LanguageEnum
 
 
@@ -45,10 +46,10 @@ async def test_store_embeddings_success(vector_store, mock_session):
     embedding_results = [
         EmbeddingResult(
             chunk_id=1,
-            vector=[0.1] * 384,
-            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            vector=[0.1] * FIXED_EMBEDDING_DIMENSION,
+            model_name="mxbai-embed-large",
             model_version="1.0",
-            dimension=384
+            dimension=FIXED_EMBEDDING_DIMENSION
         )
     ]
     
@@ -71,10 +72,10 @@ async def test_store_embeddings_chunk_not_found(vector_store, mock_session):
     embedding_results = [
         EmbeddingResult(
             chunk_id=999,
-            vector=[0.1] * 384,
+            vector=[0.1] * FIXED_EMBEDDING_DIMENSION,
             model_name="test-model",
             model_version="1.0",
-            dimension=384
+            dimension=FIXED_EMBEDDING_DIMENSION
         )
     ]
     
@@ -95,10 +96,10 @@ async def test_store_embeddings_error_handling(vector_store, mock_session):
     embedding_results = [
         EmbeddingResult(
             chunk_id=1,
-            vector=[0.1] * 384,
+            vector=[0.1] * FIXED_EMBEDDING_DIMENSION,
             model_name="test-model",
             model_version="1.0",
-            dimension=384
+            dimension=FIXED_EMBEDDING_DIMENSION
         )
     ]
     
@@ -141,7 +142,7 @@ async def test_search_similar_basic(vector_store, mock_session):
     mock_result.all.return_value = [mock_row]
     mock_session.execute.return_value = mock_result
     
-    query_vector = [0.1] * 384
+    query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
     results = await vector_store.search_similar(query_vector, limit=10, threshold=0.7)
     
     # Verify results - returns 4-tuple (Symbol, similarity, File?, Repo?)
@@ -160,7 +161,7 @@ async def test_search_similar_with_language_filter(vector_store, mock_session):
     mock_result.all.return_value = []  # Use .all() instead of __iter__
     mock_session.execute.return_value = mock_result
     
-    query_vector = [0.1] * 384
+    query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
     filters = {'language': LanguageEnum.PYTHON}
     
     results = await vector_store.search_similar(
@@ -181,7 +182,7 @@ async def test_search_similar_with_repository_filter(vector_store, mock_session)
     mock_result.all.return_value = []  # Use .all() instead of __iter__
     mock_session.execute.return_value = mock_result
     
-    query_vector = [0.1] * 384
+    query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
     filters = {'repository_id': 1}
     
     results = await vector_store.search_similar(
@@ -202,7 +203,7 @@ async def test_search_similar_with_symbol_kind_filter(vector_store, mock_session
     mock_result.all.return_value = []  # Use .all() instead of __iter__
     mock_session.execute.return_value = mock_result
     
-    query_vector = [0.1] * 384
+    query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
     filters = {'symbol_kind': SymbolKindEnum.FUNCTION}
     
     results = await vector_store.search_similar(
@@ -223,7 +224,7 @@ async def test_search_similar_with_multiple_filters(vector_store, mock_session):
     mock_result.all.return_value = []  # Use .all() instead of __iter__
     mock_session.execute.return_value = mock_result
     
-    query_vector = [0.1] * 384
+    query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
     filters = {
         'language': LanguageEnum.PYTHON,
         'repository_id': 1,
@@ -275,6 +276,77 @@ async def test_create_vector_index_error(vector_store, mock_session):
     assert "Index creation failed" in str(exc_info.value)
 
 
+async def test_get_vector_index_type_missing(vector_store, mock_session):
+    """Test index type lookup when no vector index exists."""
+    mock_result = MagicMock()
+    mock_result.first.return_value = None
+    mock_session.execute.return_value = mock_result
+
+    index_type = await vector_store.get_vector_index_type()
+
+    assert index_type is None
+
+
+@pytest.mark.asyncio
+async def test_get_vector_index_type_hnsw(vector_store, mock_session):
+    """Test index type lookup for an HNSW pgvector index."""
+    mock_result = MagicMock()
+    mock_result.first.return_value = (
+        "CREATE INDEX embeddings_vector_idx ON public.embeddings USING hnsw (vector vector_cosine_ops)",
+    )
+    mock_session.execute.return_value = mock_result
+
+    index_type = await vector_store.get_vector_index_type()
+
+    assert index_type == "hnsw"
+
+
+@pytest.mark.asyncio
+async def test_ensure_vector_index_creates_hnsw_when_missing(vector_store, mock_session):
+    """Test ensure_vector_index creates the default HNSW index when missing."""
+    mock_lookup = MagicMock()
+    mock_lookup.first.return_value = None
+    mock_session.execute.return_value = mock_lookup
+
+    status = await vector_store.ensure_vector_index(index_type="hnsw")
+
+    assert status == "created"
+    assert mock_session.execute.call_count == 2
+    mock_session.flush.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_ensure_vector_index_returns_existing_when_already_present(vector_store, mock_session):
+    """Test ensure_vector_index is a no-op when the preferred index already exists."""
+    mock_lookup = MagicMock()
+    mock_lookup.first.return_value = (
+        "CREATE INDEX embeddings_vector_idx ON public.embeddings USING hnsw (vector vector_cosine_ops)",
+    )
+    mock_session.execute.return_value = mock_lookup
+
+    status = await vector_store.ensure_vector_index(index_type="hnsw")
+
+    assert status == "existing"
+    assert mock_session.execute.call_count == 1
+    mock_session.flush.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_ensure_vector_index_returns_mismatched_for_existing_ivfflat(vector_store, mock_session):
+    """Test ensure_vector_index does not overwrite an existing ANN index of another type."""
+    mock_lookup = MagicMock()
+    mock_lookup.first.return_value = (
+        "CREATE INDEX embeddings_vector_idx ON public.embeddings USING ivfflat (vector vector_cosine_ops)",
+    )
+    mock_session.execute.return_value = mock_lookup
+
+    status = await vector_store.ensure_vector_index(index_type="hnsw")
+
+    assert status == "mismatched"
+    assert mock_session.execute.call_count == 1
+    mock_session.flush.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_store_multiple_embeddings(vector_store, mock_session):
     """Test storing multiple embeddings in batch."""
@@ -293,10 +365,10 @@ async def test_store_multiple_embeddings(vector_store, mock_session):
     embedding_results = [
         EmbeddingResult(
             chunk_id=i + 1,
-            vector=[0.1 * (i + 1)] * 384,
+            vector=[0.1 * (i + 1)] * FIXED_EMBEDDING_DIMENSION,
             model_name="test-model",
             model_version="1.0",
-            dimension=384
+            dimension=FIXED_EMBEDDING_DIMENSION
         )
         for i in range(3)
     ]
@@ -319,7 +391,30 @@ async def test_search_similar_empty_results(vector_store, mock_session):
     mock_result.all.return_value = []  # Use .all() instead of __iter__
     mock_session.execute.return_value = mock_result
     
-    query_vector = [0.1] * 384
+    query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
     results = await vector_store.search_similar(query_vector, limit=10, threshold=0.9)
     
     assert len(results) == 0
+
+
+@pytest.mark.asyncio
+async def test_store_embeddings_rejects_wrong_dimension(vector_store, mock_session):
+    """Test storing embeddings rejects vectors outside the fixed contract."""
+    mock_chunk = MagicMock()
+    mock_chunk.id = 1
+    mock_chunks_result = MagicMock()
+    mock_chunks_result.scalars.return_value = [mock_chunk]
+    mock_session.execute.return_value = mock_chunks_result
+
+    embedding_results = [
+        EmbeddingResult(
+            chunk_id=1,
+            vector=[0.1] * FIXED_EMBEDDING_DIMENSION,
+            model_name="test-model",
+            model_version="1.0",
+            dimension=384,
+        )
+    ]
+
+    with pytest.raises(ValueError, match="does not match fixed contract"):
+        await vector_store.store_embeddings(embedding_results)
