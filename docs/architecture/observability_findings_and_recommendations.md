@@ -20,7 +20,7 @@ This is a planning/reference artifact only. It does not imply immediate implemen
 | Worker/process log capture | `✅` | Validation harness captures API and worker logs to per-run files. |
 | Repository-scoped progress logs | `✅` | Redis stream publisher exists for repository log history. |
 | Streaming/indexer Prometheus metrics | `✅` | Discovery, metadata gate, parse wait, and embedding metrics are emitted. |
-| Prometheus multiprocess aggregation | `🚧` | Implemented in validation harness context; not yet documented as a required dev-container dependency. |
+| Prometheus multiprocess aggregation | `✅` | Configured via `PROMETHEUS_MULTIPROC_DIR` in dev-container; Prometheus server added to runtime. |
 | Job progress/accounting consistency | `🚧` | `job_metadata` counters do not yet reflect real pipeline work reliably. |
 | ELK-compatible logging strategy | `🚧` | Logs are structured enough to ship, but deployment guidance is missing. |
 | Phoenix / AI tracing | `🧭` | Optional for future search/enrichment tracing; current AI footprint is too small to justify priority investment. |
@@ -60,7 +60,7 @@ Validation findings from the `domeus-core` run:
 
 Current weaknesses:
 
-1. Metrics exist, but Prometheus itself is not yet documented as a local runtime dependency.
+1. ~~Metrics exist, but Prometheus itself is not yet documented as a local runtime dependency~~: `✅` Fixed - Prometheus added to dev-container.
 2. `job_metadata` and metrics are not aligned; pipeline completion can be correct while job summary counters remain zero.
 3. Metric output currently favors validation and engineering analysis, not yet dashboards/alerts.
 
@@ -84,7 +84,7 @@ Observed deployment assumptions are mixed:
 1. Some target environments already have working ELK installations.
 2. Some target environments do not have centralized logging infrastructure.
 3. Some environments may also have Arize Phoenix available.
-4. Prometheus is not yet consistently present in local/dev workflow, but should be.
+4. ~~Prometheus is not yet consistently present in local/dev workflow~~: `✅` Fixed - Prometheus now installed and started automatically in dev-container.
 
 This means observability must support both:
 
@@ -120,17 +120,25 @@ Recommended operating model:
 
 | Recommendation | Priority | Why |
 | --- | --- | --- |
-| Document Prometheus as an explicit dependency for local/dev observability | `🧭` | Metrics are now useful enough to justify first-class setup. |
-| Add Prometheus startup/install to the dev-container in a follow-up increment | `🧭` | Required for practical scraping and dashboarding. |
+| ~~Document Prometheus as an explicit dependency for local/dev observability~~ | `✅` | Prometheus installed in dev-container. |
+| ~~Add Prometheus startup/install to the dev-container in a follow-up increment~~ | `✅` | Prometheus server starts automatically with `postStartCommand`. |
 | Keep current metrics low-cardinality and stage-oriented | `🧭` | This is the right tradeoff for indexer operational telemetry. |
 | Fix `job_metadata` progress/accounting so it matches real persisted work | `🧭` | Current zeroed counters are misleading. |
 | Add dashboards/queries for unchanged-rerun validation and queue-stage timing | `🧭` | The underlying metrics are now available. |
+
+Prometheus runtime setup (completed):
+
+1. Prometheus server installed via `apt-get install prometheus` in Dockerfile.
+2. Scrape configuration at `.devcontainer/services/prometheus/prometheus.yml` targets `localhost:8080/metrics`.
+3. `PROMETHEUS_MULTIPROC_DIR` environment variable set in dev-container for worker metric aggregation.
+4. Prometheus starts automatically via `start_prometheus.sh` in `postStartCommand`.
+5. Dashboard accessible at `http://localhost:9090`.
 
 Important Prometheus note:
 
 1. The API `/metrics` endpoint alone is not the full solution.
 2. Worker metrics require Prometheus multiprocess collection when exposed through the API process.
-3. That dependency and runtime contract must be documented before Prometheus is treated as operationally supported.
+3. That dependency is now configured via `PROMETHEUS_MULTIPROC_DIR` environment variable.
 
 ### AI / Phoenix
 
@@ -159,9 +167,9 @@ Good future Phoenix triggers would be:
 
 ### Slice B: Prometheus Runtime
 
-1. Add Prometheus to dev-container/runtime setup.
-2. Document scrape configuration for API `/metrics`.
-3. Document multiprocess metric collection requirements.
+1. ~~Add Prometheus to dev-container/runtime setup~~: `✅` Completed.
+2. ~~Document scrape configuration for API `/metrics`~~: `✅` Completed - see `.devcontainer/services/prometheus/prometheus.yml`.
+3. ~~Document multiprocess metric collection requirements~~: `✅` Completed - `PROMETHEUS_MULTIPROC_DIR` configured.
 4. Add a minimal dashboard/query cookbook for indexing runs.
 
 ### Slice C: Progress Accuracy
@@ -178,12 +186,12 @@ Good future Phoenix triggers would be:
 ## Recommended Current Position
 
 1. Logging: good enough to operate and debug, not yet fully standardized for all deployment modes.
-2. Metrics: useful and now validated, but Prometheus dependency/setup must be made explicit.
+2. Metrics: useful and validated; Prometheus now integrated into dev-container runtime.
 3. AI/Phoenix: defer major investment for now.
 
 ## Explicit Decisions
 
 1. Logging must work both with and without ELK.
-2. Prometheus should be documented and then added to the dev-container in a follow-up step.
+2. ~~Prometheus should be documented and then added to the dev-container in a follow-up step~~: `✅` Completed.
 3. Phoenix is optional for some environments, but not a current priority.
 4. Embedding observability is currently better handled with Prometheus than with dedicated AI tracing.
