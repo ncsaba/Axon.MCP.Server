@@ -328,7 +328,7 @@ class RelationshipBuilder:
         
         # Get all files in repository
         result = await self.session.execute(
-            select(File).where(File.repository_id == repository_id)
+            select(File).where(File.repository_id == repository_id, active_file_filter())
         )
         files = result.scalars().all()
         

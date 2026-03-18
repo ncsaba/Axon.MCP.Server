@@ -12,10 +12,12 @@ async def test_embedding_step_streaming_generates_only_for_changed_chunks() -> N
     session = AsyncMock()
     repo = MagicMock()
     repo.status = RepositoryStatusEnum.PARSING
-    session.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=repo))
+    repo_result = MagicMock(scalar_one=MagicMock(return_value=repo))
+    chunk_result = MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[7, 9]))))
+    session.execute.side_effect = [repo_result, chunk_result]
 
     ctx = PipelineContext(repository_id=123, session=session)
-    ctx.metadata["changed_chunk_ids"] = [7, 9, 9]
+    ctx.metadata["changed_content_ids"] = [70, 90, 90]
 
     settings = MagicMock(metadata_gate_enabled=True, inventory_emit_enabled=True)
     publisher = AsyncMock()
@@ -84,7 +86,7 @@ async def test_embedding_step_streaming_skips_when_no_changed_chunks() -> None:
     session.execute.return_value = MagicMock(scalar_one=MagicMock(return_value=repo))
 
     ctx = PipelineContext(repository_id=456, session=session)
-    ctx.metadata["changed_chunk_ids"] = []
+    ctx.metadata["changed_content_ids"] = []
 
     settings = MagicMock(metadata_gate_enabled=True, inventory_emit_enabled=True)
     publisher = AsyncMock()

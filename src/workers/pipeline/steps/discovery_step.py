@@ -64,7 +64,7 @@ class DiscoveryStep(PipelineStep):
         batch_seq = 0
         parse_task_ids: set[str] = set()
         parse_file_ids: set[int] = set()
-        changed_chunk_ids: set[int] = set()
+        changed_content_ids: set[int] = set()
         parse_totals = {"enqueued": 0, "processed": 0}
         # Aggregate metadata gate decisions across all batches
         gate_decisions = {
@@ -112,7 +112,7 @@ class DiscoveryStep(PipelineStep):
                     max_inflight_batches=max_inflight_batches,
                     parse_task_ids=parse_task_ids,
                     parse_file_ids=parse_file_ids,
-                    changed_chunk_ids=changed_chunk_ids,
+                    changed_content_ids=changed_content_ids,
                     parse_totals=parse_totals,
                     gate_decisions=gate_decisions,
                 )
@@ -129,7 +129,7 @@ class DiscoveryStep(PipelineStep):
                 max_inflight_batches=max_inflight_batches,
                 parse_task_ids=parse_task_ids,
                 parse_file_ids=parse_file_ids,
-                changed_chunk_ids=changed_chunk_ids,
+                changed_content_ids=changed_content_ids,
                 parse_totals=parse_totals,
                 gate_decisions=gate_decisions,
             )
@@ -142,7 +142,7 @@ class DiscoveryStep(PipelineStep):
                     result,
                     parse_task_ids,
                     parse_file_ids,
-                    changed_chunk_ids,
+                    changed_content_ids,
                     parse_totals,
                     gate_decisions,
                 )
@@ -171,7 +171,7 @@ class DiscoveryStep(PipelineStep):
         ctx.metadata["inventory_batches_emitted"] = batch_seq
         ctx.metadata["parse_task_ids"] = sorted(parse_task_ids)
         ctx.metadata["parse_file_ids"] = sorted(parse_file_ids)
-        ctx.metadata["changed_chunk_ids"] = sorted(changed_chunk_ids)
+        ctx.metadata["changed_content_ids"] = sorted(changed_content_ids)
         ctx.metadata["parse_enqueued_total"] = parse_totals["enqueued"]
         ctx.metadata["parse_processed_total"] = parse_totals["processed"]
         ctx.metadata["gate_decisions"] = gate_decisions
@@ -229,7 +229,7 @@ class DiscoveryStep(PipelineStep):
         max_inflight_batches: int,
         parse_task_ids: set[str],
         parse_file_ids: set[int],
-        changed_chunk_ids: set[int],
+        changed_content_ids: set[int],
         parse_totals: dict[str, int],
         gate_decisions: dict[str, int],
     ) -> None:
@@ -257,7 +257,7 @@ class DiscoveryStep(PipelineStep):
                     result,
                     parse_task_ids,
                     parse_file_ids,
-                    changed_chunk_ids,
+                    changed_content_ids,
                     parse_totals,
                     gate_decisions,
                 )
@@ -312,7 +312,7 @@ class DiscoveryStep(PipelineStep):
         result: dict,
         parse_task_ids: set[str],
         parse_file_ids: set[int],
-        changed_chunk_ids: set[int],
+        changed_content_ids: set[int],
         parse_totals: dict[str, int],
         gate_decisions: dict[str, int] | None = None,
     ) -> None:
@@ -326,9 +326,9 @@ class DiscoveryStep(PipelineStep):
             if file_id is not None:
                 parse_file_ids.add(int(file_id))
 
-        for chunk_id in result.get("changed_chunk_ids", []) or []:
-            if chunk_id is not None:
-                changed_chunk_ids.add(int(chunk_id))
+        for content_id in result.get("changed_content_ids", []) or []:
+            if content_id is not None:
+                changed_content_ids.add(int(content_id))
 
         parse_totals["enqueued"] = parse_totals.get("enqueued", 0) + int(
             result.get("parse_enqueued", 0) or 0

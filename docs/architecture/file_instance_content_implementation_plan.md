@@ -12,9 +12,9 @@
 
 | Priority | Status | Scope |
 | --- | --- | --- |
-| 1. Query-surface classification | `🚧` | Classify remaining `File` / `FileInstance` callers as active-only, lifecycle-aware, or write-path explicit. First user-facing batch is now classified as active-only. |
-| 2. User-facing read-path cleanup | `🚧` | Patch the highest-value API/MCP/operator surfaces to exclude `MISSING` instances by default. First batch is now landed. |
-| 3. Chunk/content consolidation | `🚧` | Continue only after read-path correctness is stable, or earlier if classification reveals a correctness bug. |
+| 1. Query-surface classification | `🚧` | Broad active-only audit is largely complete; remaining callers are mostly deliberate write-path/lifecycle code that should stay explicit. |
+| 2. User-facing read-path cleanup | `🚧` | Main API/MCP/search/navigation/link/traversal surfaces now exclude `MISSING` instances by default; remaining work is final spot-checking rather than broad patching. |
+| 3. Chunk/content consolidation | `🚧` | Final closure work is reducing transitional alias usage and deciding whether any additional chunk lookups should move from instance-owned reads toward fully content-owned semantics. |
 | 4. Broader language-platform work | `🚧` | Keep Java strategy and parser-platform work secondary to the current lifecycle branch until this slice stabilizes. |
 
 ## Objective
@@ -243,11 +243,14 @@ Recommendation:
 | Item | Status | Notes |
 | --- | --- | --- |
 | Update canonical docs to reflect branch priority | `✅` | Wrapper + roadmap docs now identify instance/content separation as the highest-priority track. |
-| Classify remaining query surfaces from session handover inventory | `🚧` | Completed active-only classification for the first user-facing batch, two extractor/resolver batches, and the first mixed worker batch. |
+| Classify remaining query surfaces from session handover inventory | `🚧` | High-value user-facing, extractor, worker, retrieval, and traversal surfaces are now classified and patched; remaining `File` callers are mostly intentional write-path/lifecycle code plus final low-risk spot checks. |
 | Patch first user-facing/operator-facing read paths | `✅` | `sample_service.py`, `symbols.py`, `module_summary_generator.py`, and `aggregation_worker.py` now exclude `MISSING` instances by default in direct file-backed reads. |
 | Patch repository-wide extractor/resolver scans that should stay active-only | `✅` | `outgoing_call_extractor.py`, `reference_builder.py`, `call_graph_builder.py`, `call_resolver.py`, `import_resolver.py`, `api_extractor.py`, `config_extractor.py`, and `docker_compose_extractor.py` now resolve against active file instances only. |
 | Patch unambiguous worker/pipeline scans that should stay active-only | `✅` | `embedding_worker.py` and `pipeline/steps/combined_extraction_step.py` now exclude `MISSING` instances during repository-wide processing scans. |
-| Capture mixed worker semantics explicitly | `🚧` | `inventory_worker.py`, `file_worker.py`, `file_lifecycle_worker.py`, and `sync_worker.py` are intentionally unchanged write-path/lifecycle code; `incremental_sync.py` is now the active refactor target because it still hard-deletes instead of using the new lifecycle model. |
+| Capture mixed worker semantics explicitly | `✅` | `inventory_worker.py`, `file_worker.py`, `file_lifecycle_worker.py`, and `sync_worker.py` remain deliberate write-path/lifecycle code; `incremental_sync.py` has been aligned with the new lifecycle model rather than left as a legacy hard-delete path. |
+| Tighten transitional chunk/content surfaces | `🚧` | Runtime now uses explicit `Chunk.file_instance_id` in the patched worker paths and hybrid retrieval is lifecycle-safe; the next closure step moves parse/embed orchestration from instance-owned `changed_chunk_ids` toward content-owned `changed_content_ids` so embedding refresh no longer depends on chunk-to-instance linkage. |
+| Define final shared-chunk association model | `🧭` | Full chunk sharing is now blocked on schema shape, not on more query cleanup: `Chunk.symbol_id` and `Embedding.symbol_id` still bind content artifacts to instance-scoped symbols. The next slice must introduce an association layer before `Chunk.file_instance_id` can be removed safely. |
+| Close late retrieval/traversal leaks | `✅` | Pattern detectors, relationship builder, vector search, link service endpoint lookups, and call graph traversal now default to active file instances in repository/user-facing reads. |
 | Focused verification after classification/fixes | `✅` | `py_compile` passed for all completed cleanup batches so far. |
 
 ## Incremental Git Sync Alignment Slice (2026-03-18)
@@ -261,7 +264,7 @@ Recommendation:
 | Replace hard delete with lifecycle-safe missing semantics | `✅` | Deleted paths and rename source paths now become `MISSING` and clear instance-owned extracted artifacts instead of being hard-deleted immediately. |
 | Keep async/concurrency refactor deferred | `✅` | The correctness refactor does not require moving the worker to the newer async pipeline shape yet. |
 | Rebuild only affected file-owned data on change | `✅` | Reparse clears instance-owned extracted artifacts before re-extraction, and the relationship-builder-owned cross-file relations are rebuilt repository-wide to avoid duplicate edges. |
-| Full git-workflow parity with the newer local-folder pipeline | `🚧` | Commit-based sync now respects the new file/content lifecycle model, but broader step parity with the main pipeline remains future work. |
+| Full git-workflow parity with the newer local-folder pipeline | `✅` | Incremental git sync now covers the lifecycle model plus the restored graph, metadata, embedding, and enrichment stages needed for functional parity. |
 
 ## Incremental Git Workflow Parity Audit (2026-03-18)
 
@@ -315,6 +318,53 @@ Current execution batch:
   behavior and now includes one live dependency-refresh parity stage.
   A later slice can extend that pattern to another restored stage such as reference building
   or service refresh if deeper end-to-end parity confidence is needed.
+
+## Final Chunk-Sharing Cut (Next Required Design Slice)
+
+This branch has now reached the point where the remaining work is primarily schema/model design.
+
+### Confirmed blocker
+
+The current runtime can no longer safely push chunk sharing further with small query edits because:
+
+1. `Chunk` is content-owned in intent, but still carries `symbol_id` and `file_instance_id`.
+2. `Embedding` also stores `symbol_id`, which assumes a chunk corresponds to one instance-scoped symbol.
+3. Search/snippet/traversal paths currently fetch source previews directly through `Chunk.symbol_id`.
+
+### Required target shape
+
+`🧭` recommended next model:
+
+| Entity | Target role |
+| --- | --- |
+| `Chunk` | pure content-owned artifact |
+| `Embedding` | pure chunk-owned vector artifact |
+| `ChunkSymbolLink` | association from shared chunk to instance-scoped symbol/file context |
+
+### Execution order
+
+1. Add a new association table/model, e.g. `chunk_symbol_links`:
+   - `chunk_id`
+   - `symbol_id`
+   - optional `file_instance_id` shortcut if needed for efficient filtering
+2. Update `KnowledgeExtractor`:
+   - reuse or create chunks by `file_content_id + content_hash + content_type + range`
+   - create per-symbol association rows instead of storing ownership on `Chunk`
+3. Update embedding storage/search:
+   - stop treating `Embedding.symbol_id` as canonical ownership
+   - join from embeddings/chunks back to symbols through the association table
+4. Update snippet/source retrieval:
+   - `search_service.py`
+   - `mcp_server/tools/symbols.py`
+   - `utils/call_graph_traversal.py`
+5. Only after that, remove runtime dependency on:
+   - `Chunk.file_instance_id`
+   - `Chunk.symbol_id`
+   - optionally `Embedding.symbol_id`
+
+### Why this is the correct stopping point for the current slice
+
+The broad lifecycle/query cleanup is done enough that further progress on content sharing is now blocked by data-model coupling, not by missing filters or missing worker parity.
 
 ## Slice 1: Schema Reset And Model Rewrite
 

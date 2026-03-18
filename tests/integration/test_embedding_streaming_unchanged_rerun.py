@@ -87,7 +87,7 @@ async def test_streaming_embedding_step_skips_unchanged_rerun(async_session) -> 
     settings = MagicMock(metadata_gate_enabled=True, inventory_emit_enabled=True)
 
     ctx = PipelineContext(repository_id=repo_id, session=async_session)
-    ctx.metadata["changed_chunk_ids"] = [chunk_id]
+    ctx.metadata["changed_content_ids"] = [int(file_content.id)]
 
     with patch(
         "src.workers.pipeline.steps.embedding_step.get_settings",
@@ -103,7 +103,7 @@ async def test_streaming_embedding_step_skips_unchanged_rerun(async_session) -> 
     assert generator.generate_embeddings.await_count == 1
 
     ctx = PipelineContext(repository_id=repo_id, session=async_session)
-    ctx.metadata["changed_chunk_ids"] = []
+    ctx.metadata["changed_content_ids"] = []
 
     with patch(
         "src.workers.pipeline.steps.embedding_step.get_settings",

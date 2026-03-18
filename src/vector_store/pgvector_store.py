@@ -2,6 +2,7 @@ from typing import List, Dict, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
 from src.database.models import Embedding, Chunk, Symbol, File, Repository
+from src.database.query_helpers import active_file_filter
 from src.embeddings.generator import EmbeddingResult
 from src.utils.logging_config import get_logger
 
@@ -154,6 +155,8 @@ class PgVectorStore:
             File, Symbol.file_id == File.id
         ).join(
             Repository, File.repository_id == Repository.id
+        ).where(
+            active_file_filter()
         )
         
         # Apply filters to vector query
@@ -186,7 +189,8 @@ class PgVectorStore:
                 or_(
                     Symbol.name.ilike(f"%{query_text}%"),
                     Symbol.fully_qualified_name.ilike(f"%{query_text}%")
-                )
+                ),
+                active_file_filter(),
             )
             
             # Apply filters to keyword query
@@ -334,4 +338,3 @@ class PgVectorStore:
             error_msg = f"Failed to create vector index: {str(e)}"
             logger.error("vector_index_creation_failed", error=error_msg)
             raise
-

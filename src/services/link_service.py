@@ -1014,7 +1014,10 @@ class LinkService:
             .outerjoin(Symbol, ApiEndpointLink.target_symbol_id == Symbol.id)
             .outerjoin(File, Symbol.file_id == File.id)
             .outerjoin(Repository, File.repository_id == Repository.id)
-            .where(OutgoingApiCall.symbol_id == symbol_id)
+            .where(
+                OutgoingApiCall.symbol_id == symbol_id,
+                or_(File.id.is_(None), active_file_filter()),
+            )
         )
         
         for row in outgoing_result.all():
@@ -1046,7 +1049,7 @@ class LinkService:
             .join(OutgoingApiCall, ApiEndpointLink.outgoing_call_id == OutgoingApiCall.id)
             .join(File, OutgoingApiCall.file_id == File.id)
             .join(Repository, File.repository_id == Repository.id)
-            .where(ApiEndpointLink.target_symbol_id == symbol_id)
+            .where(ApiEndpointLink.target_symbol_id == symbol_id, active_file_filter())
         )
         
         for row in incoming_result.all():

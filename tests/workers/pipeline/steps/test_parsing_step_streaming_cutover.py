@@ -52,7 +52,7 @@ async def test_parsing_step_waits_for_streaming_parse_tasks(tmp_path):
 
     success_result = MagicMock()
     success_result.state = "SUCCESS"
-    success_result.result = {"status": "success", "chunk_ids": [11, 22]}
+    success_result.result = {"status": "success", "changed_content_ids": [11, 22]}
     duration_metric = MagicMock()
     lag_metric = MagicMock()
     batch_metric = MagicMock()
@@ -85,7 +85,7 @@ async def test_parsing_step_waits_for_streaming_parse_tasks(tmp_path):
         await step.execute(ctx)
 
     assert ctx.files_processed == 2
-    assert ctx.metadata["changed_chunk_ids"] == [11, 22]
+    assert ctx.metadata["changed_content_ids"] == [11, 22]
     assert "parsing" in ctx.timings
     duration_metric.observe.assert_called_once()
     lag_metric.observe.assert_called_once()
@@ -111,8 +111,8 @@ async def test_parsing_step_treats_skipped_unsupported_tasks_as_completed(tmp_pa
     )
 
     results_by_id = {
-        "task-1": MagicMock(state="SUCCESS", result={"status": "skipped_unsupported", "chunk_ids": []}),
-        "task-2": MagicMock(state="SUCCESS", result={"status": "success", "chunk_ids": [33]}),
+        "task-1": MagicMock(state="SUCCESS", result={"status": "skipped_unsupported", "changed_content_ids": []}),
+        "task-2": MagicMock(state="SUCCESS", result={"status": "success", "changed_content_ids": [33]}),
     }
 
     def async_result_factory(task_id):
@@ -129,7 +129,7 @@ async def test_parsing_step_treats_skipped_unsupported_tasks_as_completed(tmp_pa
         await step.execute(ctx)
 
     assert ctx.files_processed == 2
-    assert ctx.metadata["changed_chunk_ids"] == [33]
+    assert ctx.metadata["changed_content_ids"] == [33]
 
 
 @pytest.mark.asyncio
@@ -167,7 +167,7 @@ async def test_parsing_step_sets_files_processed_for_unchanged_rerun(tmp_path):
 
     # Key assertion: files_processed should be set to total discovered files
     assert ctx.files_processed == 3
-    assert ctx.metadata["changed_chunk_ids"] == []
+    assert ctx.metadata["changed_content_ids"] == []
     assert "parsing" in ctx.timings
     duration_metric.observe.assert_called_once()
     batch_metric.observe.assert_called_once_with(0)

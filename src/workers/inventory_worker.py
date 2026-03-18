@@ -229,17 +229,17 @@ async def _run_metadata_gate(
 
     parse_processed = 0
     parse_task_ids: list[str] = []
-    changed_chunk_ids: list[int] = []
+    changed_content_ids: list[int] = []
     if inline_parse_enabled:
         from src.workers.file_worker import _parse_file_async
 
         for file_id in parse_file_ids:
             parse_result = await _parse_file_async(file_id)
             if isinstance(parse_result, dict):
-                changed_chunk_ids.extend(
-                    int(chunk_id)
-                    for chunk_id in (parse_result.get("chunk_ids") or [])
-                    if chunk_id is not None
+                changed_content_ids.extend(
+                    int(content_id)
+                    for content_id in (parse_result.get("changed_content_ids") or [])
+                    if content_id is not None
                 )
             parse_processed += 1
     else:
@@ -255,7 +255,7 @@ async def _run_metadata_gate(
         parse_processed=parse_processed,
         parse_mode="inline" if inline_parse_enabled else "queued",
         parse_task_ids_count=len(parse_task_ids),
-        changed_chunk_ids_count=len(changed_chunk_ids),
+        changed_content_ids_count=len(changed_content_ids),
         decisions=decision_counts,
     )
     streaming_stage_batches_total.labels(stage="metadata_gate", status="processed").inc()
@@ -279,7 +279,7 @@ async def _run_metadata_gate(
         "parse_mode": "inline" if inline_parse_enabled else "queued",
         "parse_task_ids": parse_task_ids,
         "parse_file_ids": parse_file_ids,
-        "changed_chunk_ids": sorted(set(changed_chunk_ids)),
+        "changed_content_ids": sorted(set(changed_content_ids)),
         "decisions": decision_counts,
         "idempotency_key": payload["idempotency_key"],
     }

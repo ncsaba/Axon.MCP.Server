@@ -749,8 +749,18 @@ class IncrementalSyncWorker:
         if not changed_file_ids:
             return
 
+        content_ids_result = await self.session.execute(
+            select(File.current_content_id).where(
+                File.id.in_(changed_file_ids),
+                File.current_content_id.is_not(None),
+            )
+        )
+        content_ids = [int(content_id) for content_id in content_ids_result.scalars().all()]
+        if not content_ids:
+            return
+
         chunk_ids_result = await self.session.execute(
-            select(Chunk.id).where(Chunk.file_id.in_(changed_file_ids))
+            select(Chunk.id).where(Chunk.file_content_id.in_(content_ids))
         )
         chunk_ids = [int(chunk_id) for chunk_id in chunk_ids_result.scalars().all()]
         if not chunk_ids:

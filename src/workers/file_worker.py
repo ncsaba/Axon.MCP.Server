@@ -233,6 +233,7 @@ async def _parse_file_async(file_id: int):
                     "symbols_created": 0,
                     "chunks_created": 0,
                     "chunk_ids": [],
+                    "changed_content_ids": [],
                     "skip_reason": "unsupported_file_type",
                 }
 
@@ -243,10 +244,12 @@ async def _parse_file_async(file_id: int):
                 file_record.id
             )
 
-            chunk_result = await session.execute(
-                select(Chunk.id).where(Chunk.file_id == file_id)
+            changed_content_ids = (
+                [int(file_record.current_content_id)]
+                if file_record.current_content_id is not None
+                else []
             )
-            chunk_ids = [int(chunk_id) for chunk_id in chunk_result.scalars().all()]
+            chunk_ids = await _get_chunk_ids_for_content_ids(session, changed_content_ids)
             
             await session.commit()
             
@@ -262,6 +265,7 @@ async def _parse_file_async(file_id: int):
                 "symbols_created": extraction_result.symbols_created,  # Attribute access
                 "chunks_created": extraction_result.chunks_created,  # Attribute access
                 "chunk_ids": chunk_ids,
+                "changed_content_ids": changed_content_ids,
             }
             
         except Exception as e:
@@ -274,3 +278,14 @@ async def _parse_file_async(file_id: int):
             )
             await session.rollback()
             raise
+
+
+async def _get_chunk_ids_for_content_ids(session, content_ids: list[int]) -> list[int]:
+    """Resolve chunk ids through content ownership rather than file-instance ownership."""
+    if not content_ids:
+        return []
+
+    chunk_result = await session.execute(
+        select(Chunk.id).where(Chunk.file_content_id.in_(content_ids))
+    )
+    return [int(chunk_id) for chunk_id in chunk_result.scalars().all()]
