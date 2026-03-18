@@ -4,9 +4,10 @@ import pytest
 from sqlalchemy import func, select, text
 
 from src.config.enums import LanguageEnum, RepositoryStatusEnum
-from src.database.models import Chunk, File, Repository, Symbol
+from src.database.models import Chunk, File, FileContent, Repository, Symbol
 from src.extractors.knowledge_extractor import KnowledgeExtractor
 from src.parsers import ParserFactory
+from src.workers.file_worker import DEFAULT_PARSER_FINGERPRINT
 
 
 pytestmark = pytest.mark.integration
@@ -49,16 +50,7 @@ async def test_python_parse_and_extract_roundtrip(async_session):
     async_session.add(repo)
     await async_session.flush()
 
-    file = File(
-        repository_id=repo.id,
-        path="src/app/main.py",
-        language=LanguageEnum.PYTHON,
-        size_bytes=256,
-    )
-    async_session.add(file)
-    await async_session.flush()
-
-    code = """
+    content = """
 class Greeter:
     def greet(self, name: str) -> str:
         return f"Hello {name}"
@@ -68,8 +60,30 @@ def run() -> str:
     greeter = Greeter()
     return greeter.greet("World")
 """
+    file_content = FileContent(
+        content_hash="integration-roundtrip-content",
+        language=LanguageEnum.PYTHON,
+        parser_fingerprint=DEFAULT_PARSER_FINGERPRINT,
+        size_bytes=len(content.encode("utf-8")),
+        line_count=len(content.splitlines()),
+    )
+    async_session.add(file_content)
+    await async_session.flush()
+
+    file = File(
+        repository_id=repo.id,
+        path="src/app/main.py",
+        language=LanguageEnum.PYTHON,
+        size_bytes=256,
+        current_content_id=file_content.id,
+        content_hash=file_content.content_hash,
+        line_count=file_content.line_count,
+    )
+    async_session.add(file)
+    await async_session.flush()
+
     parser = ParserFactory.get_parser_for_file(Path(file.path))
-    parse_result = parser.parse(code, file.path)
+    parse_result = parser.parse(content, file.path)
     assert not parse_result.parse_errors
     assert len(parse_result.symbols) > 0
 
