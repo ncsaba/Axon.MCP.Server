@@ -30,6 +30,8 @@ This fork targets Python + Java + docs/config indexing with a graph-oriented cod
 - [Retrieval Improvement Plan](architecture/retrieval_improvement_plan.md)
 - [Semantic Search Improvement Plan](architecture/semantic_search_improvement_plan.md)
 - [Repository Source Abstraction](architecture/repository_source_abstraction.md)
+- [Repository Registration And Sync Architecture](architecture/repository_registration_and_sync_architecture.md)
+- [Authentication And MCP Token Plan](architecture/authentication_and_mcp_token_plan.md)
 - [Incremental Indexing Spec](architecture/incremental_indexing_spec.md)
 - [Streaming Indexing Implementation Plan](architecture/streaming_indexing_implementation_plan.md)
 - [Streaming File Inventory Design (Slice 2)](architecture/streaming_file_inventory_design.md)

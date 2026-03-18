@@ -57,14 +57,56 @@ curl -H "X-API-Key: $KEY" "http://localhost:8080/api/v1/search?query=User&limit=
 #### `GET /repositories`
 List all indexed repositories.
 
+#### `POST /repositories`
+Create a tracked repository and enqueue its initial sync immediately.
+
+Current request shape:
+
+```json
+{
+  "provider": "GITLAB",
+  "name": "axon-src",
+  "path_with_namespace": "team/axon-src",
+  "url": "https://gitlab.example.org/team/axon-src.git",
+  "clone_url": "https://gitlab.example.org/team/axon-src.git",
+  "default_branch": "main",
+  "gitlab_project_id": 1234
+}
+```
+
+Notes:
+- This endpoint exists and is the main registration API.
+- The runtime has a generic git/local-directory source abstraction, but the current public provider enum is still `GITLAB`-only.
+- A successful create request also enqueues the first background sync automatically.
+
 #### `GET /repositories/discover/{group_id}`
 Discover GitLab repositories for a group and identify tracked/untracked entries.
+
+#### `POST /repositories/bulk-add`
+Register multiple repositories and enqueue sync for newly added entries.
+
+Notes:
+- The current implementation accepts GitLab-shaped payloads only.
+- Generic Git/GitHub registration is not documented or supported end-to-end yet, even though the runtime sync layer already has generic git primitives.
 
 #### `POST /repositories/{id}/sync`
 Manually trigger a full synchronization (pull, parse, analyze) for a repository.
 
-#### `GET /repositories/{id}/structure`
-Get the file tree structure of a repository.
+#### `GET /repositories/{id}`
+Get repository details, including status, totals, and last commit metadata when available.
+
+#### `GET /repositories/{id}/stats`
+Get repository statistics.
+
+#### `GET /repositories/{id}/sync-history`
+Get background sync job history for a repository.
+
+#### `GET /repositories/{id}/samples`
+Get representative repository sample data.
+
+Status note:
+- Repository registration is API-driven, not config-only.
+- Periodic polling for new commits is not exposed as a repository API yet; sync is currently triggered manually or by internal worker flows.
 
 ---
 

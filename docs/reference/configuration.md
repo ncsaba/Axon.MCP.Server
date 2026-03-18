@@ -34,6 +34,10 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 # Security
 API_SECRET_KEY=your_secure_api_secret_key_here_min_32_chars
 JWT_SECRET_KEY=your_secure_jwt_secret_key_here_min_64_chars
+AUTH_ENABLED=true
+ADMIN_API_KEY=replace_me
+READ_ONLY_API_KEYS='[]'
+MCP_AUTH_ENABLED=true
 
 # Logging
 LOG_LEVEL=INFO
@@ -46,6 +50,25 @@ LOG_FORMAT=json
 - **`alembic.ini`**: Alembic migration settings for the migration-based workflow
 - **`docker-compose.yml`**: Docker service definitions
 - **`pyproject.toml`**: Python project metadata
+
+## Authentication Modes
+
+Current shipped auth controls:
+
+- `AUTH_ENABLED`: when `false`, REST/API route auth is bypassed entirely
+- `ADMIN_API_KEY`: shared admin API key for service access
+- `READ_ONLY_API_KEYS`: optional list of read-only API keys
+- `JWT_SECRET_KEY`: local JWT validation for browser/cookie auth
+- `MCP_AUTH_ENABLED`: separate auth switch for MCP HTTP
+
+Current status:
+- local API-key and local JWT auth are implemented
+- full auth bypass is configurable
+- Keycloak/OIDC auth is not implemented yet
+- personalized MCP tokens are not implemented yet
+
+See:
+- `docs/architecture/authentication_and_mcp_token_plan.md`
 
 ## Database Separation
 

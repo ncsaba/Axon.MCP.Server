@@ -81,8 +81,14 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Java endpoint parity expansion (JAX-RS `@Path` + Spring multi-method `@RequestMapping`) | `✅` |
 | Java dependency parity expansion (Maven properties/dependencyManagement + Gradle platform/catalog patterns) | `✅` |
 | Repository source abstraction (Git + Local directory) with single-provider runtime cleanup | `✅` |
+| Repository registration + polling architecture doc | `✅` |
+| Keycloak REST auth + personalized MCP token architecture doc | `✅` |
 | Incremental indexing spec (file metadata gate + optional hash fallback + batch DB strategy) | `✅` |
 | Streaming indexing implementation plan (slice-by-slice execution) | `✅` |
+| Implement provider-neutral repository registration (`GIT`/`GITHUB`) | `🧭` |
+| Add scheduled repository polling + incremental commit-diff orchestration | `🧭` |
+| Implement Keycloak-backed REST auth | `🧭` |
+| Implement personalized MCP token issuance/revocation | `🧭` |
 | Approve incremental indexing implementation contract | `🧭` |
 | Execute streaming indexing slices (metadata contract -> gate -> parse fanout -> embed -> aggregate) | `🧭` |
 | Implement file instance/content separation vertical slice (chunks + embeddings first) | `✅` |

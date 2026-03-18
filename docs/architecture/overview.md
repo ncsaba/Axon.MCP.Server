@@ -18,6 +18,16 @@ Axon MCP Server is an AI-oriented code indexer and query surface.
 4. Build context artifacts (call graph, architecture map, module summaries).
 5. Serve results through REST and MCP tools.
 
+## Repository Lifecycle
+
+- Repositories are registered through the REST API and the initial sync is enqueued automatically.
+- Runtime repository access already resolves between generic git and local-directory sources.
+- Public provider support and recurring poll/incremental refresh orchestration are still narrower than the runtime foundation.
+
+Canonical references:
+- `docs/architecture/repository_registration_and_sync_architecture.md`
+- `docs/architecture/repository_source_abstraction.md`
+
 ## Parser Layer
 
 Parsers are organized by language and selected through parser routing.

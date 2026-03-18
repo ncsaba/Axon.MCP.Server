@@ -27,6 +27,10 @@
 - `list_symbols_in_file`
 - `list_dependencies`
 
+Current limitation:
+- MCP currently exposes repository read/navigation tools only.
+- Repository registration, repository deletion, and sync triggering are not exposed as MCP tools yet.
+
 ## Architecture and Context
 
 - `find_api_endpoints`
