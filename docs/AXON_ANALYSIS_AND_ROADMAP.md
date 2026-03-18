@@ -65,6 +65,9 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Item | Status |
 | --- | --- |
 | Parser capability matrix document at `docs/architecture/parser_capability_matrix.md` | `✅` |
+| File instance/content architecture design and deleted-file policy decision | `🧭` |
+| File instance/content implementation plan | `✅` |
+| Foundational file instance/content runtime slice (runs + instance/content upsert + missing finalization) | `🚧` |
 | Complete Java feature coverage to kilocode-equivalent baseline (parity gate) | `🧭` |
 | Java import parity expansion (package wildcard + static wildcard/member imports) | `✅` |
 | Java call parity expansion (qualified static calls + overload arity resolution) | `✅` |
@@ -75,6 +78,7 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Streaming indexing implementation plan (slice-by-slice execution) | `✅` |
 | Approve incremental indexing implementation contract | `🧭` |
 | Execute streaming indexing slices (metadata contract -> gate -> parse fanout -> embed -> aggregate) | `🧭` |
+| Implement file instance/content separation vertical slice (chunks + embeddings first) | `🧭` |
 | Introduce interfaces for import/call/dependency extraction by language | `🚧` |
 | Implement first Java semantic extractor set | `🚧` |
 | Add integration checks focused on relation creation quality | `🚧` |

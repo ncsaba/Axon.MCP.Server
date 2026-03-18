@@ -83,6 +83,21 @@ class JobStatusEnum(str, Enum):
     RETRYING = "RETRYING"
 
 
+class RepositoryIndexRunStatusEnum(str, Enum):
+    """Repository indexing run status."""
+
+    RUNNING = "RUNNING"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+
+
+class FileLifecycleStateEnum(str, Enum):
+    """Lifecycle state for a file instance."""
+
+    ACTIVE = "ACTIVE"
+    MISSING = "MISSING"
+
+
 class WorkerStatusEnum(str, Enum):
     """Worker status."""
 

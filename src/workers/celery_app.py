@@ -49,6 +49,7 @@ celery_app.conf.update(
         },
         'src.workers.enrichment_worker.enrich_batch': {'queue': 'ai_enrichment'},
         'src.workers.aggregation_worker.aggregate_repository_summary': {'queue': 'repository_aggregation'},
+        'src.workers.file_lifecycle_worker.cleanup_missing_file_instances': {'queue': 'repository_aggregation'},
     },
     
     # Default queue settings
@@ -78,6 +79,11 @@ celery_app.conf.beat_schedule = {
         "task": "src.workers.system_context_worker.generate_context",
         "schedule": crontab(minute=0),  # Every hour
         "args": (None,),
+    },
+    "cleanup-missing-file-instances-daily": {
+        "task": "src.workers.file_lifecycle_worker.cleanup_missing_file_instances",
+        "schedule": crontab(minute=30, hour=2),
+        "args": (),
     },
 }
 

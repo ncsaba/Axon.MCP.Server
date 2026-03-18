@@ -6,6 +6,7 @@ from src.database.models import (
     Repository, File, Symbol, OutgoingApiCall, 
     PublishedEvent, EventSubscription, Relation, ModuleSummary
 )
+from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum, RelationTypeEnum
 from src.api.schemas.statistics import (
     OverviewStatistics, RepositoryStatistics, 
@@ -21,7 +22,7 @@ class StatisticsService:
         
         # Basic counts
         total_repos = await self._get_count(select(func.count(Repository.id)))
-        total_files = await self._get_count(select(func.count(File.id)))
+        total_files = await self._get_count(select(func.count(File.id)).where(active_file_filter()))
         total_symbols = await self._get_count(select(func.count(Symbol.id)))
         
         # Specific symbol kinds
@@ -41,6 +42,7 @@ class StatisticsService:
                 func.count(File.id).label("count"),
                 func.sum(File.size_bytes).label("size")
             )
+            .where(active_file_filter())
             .group_by(File.language)
             .order_by(func.count(File.id).desc())
             .limit(10)
@@ -79,17 +81,17 @@ class StatisticsService:
 
         # Basic counts
         total_files = await self._get_count(
-            select(func.count(File.id)).where(File.repository_id == repository_id)
+            select(func.count(File.id)).where(File.repository_id == repository_id, active_file_filter())
         )
         total_symbols = await self._get_count(
             select(func.count(Symbol.id))
             .join(File)
-            .where(File.repository_id == repository_id)
+            .where(File.repository_id == repository_id, active_file_filter())
         )
         total_endpoints = await self._get_count(
             select(func.count(Symbol.id))
             .join(File)
-            .where(File.repository_id == repository_id, Symbol.kind == SymbolKindEnum.ENDPOINT)
+            .where(File.repository_id == repository_id, active_file_filter(), Symbol.kind == SymbolKindEnum.ENDPOINT)
         )
         total_calls = await self._get_count(
             select(func.count(OutgoingApiCall.id)).where(OutgoingApiCall.repository_id == repository_id)
@@ -109,7 +111,7 @@ class StatisticsService:
         files_no_symbols_stmt = (
             select(func.count(File.id))
             .outerjoin(Symbol, File.id == Symbol.file_id)
-            .where(File.repository_id == repository_id)
+            .where(File.repository_id == repository_id, active_file_filter())
             .group_by(File.id)
             .having(func.count(Symbol.id) == 0)
         )
@@ -118,11 +120,11 @@ class StatisticsService:
         files_with_symbols_subquery = (
             select(distinct(Symbol.file_id))
             .join(File)
-            .where(File.repository_id == repository_id)
+            .where(File.repository_id == repository_id, active_file_filter())
         )
         files_no_symbols = await self._get_count(
             select(func.count(File.id))
-            .where(File.repository_id == repository_id)
+            .where(File.repository_id == repository_id, active_file_filter())
             .where(File.id.not_in(files_with_symbols_subquery))
         )
         
@@ -134,7 +136,7 @@ class StatisticsService:
         sym_dist_stmt = (
             select(Symbol.kind, func.count(Symbol.id))
             .join(File)
-            .where(File.repository_id == repository_id)
+            .where(File.repository_id == repository_id, active_file_filter())
             .group_by(Symbol.kind)
         )
         sym_dist_result = await self.session.execute(sym_dist_stmt)
@@ -153,7 +155,7 @@ class StatisticsService:
                 func.count(File.id).label("count"),
                 func.sum(File.size_bytes).label("size")
             )
-            .where(File.repository_id == repository_id)
+            .where(File.repository_id == repository_id, active_file_filter())
             .group_by(File.language)
         )
         lang_dist_result = await self.session.execute(lang_dist_stmt)
@@ -172,7 +174,7 @@ class StatisticsService:
             select(Relation.relation_type, func.count(Relation.id))
             .join(Symbol, Relation.from_symbol_id == Symbol.id)
             .join(File, Symbol.file_id == File.id)
-            .where(File.repository_id == repository_id)
+            .where(File.repository_id == repository_id, active_file_filter())
             .group_by(Relation.relation_type)
         )
         rel_dist_result = await self.session.execute(rel_dist_stmt)

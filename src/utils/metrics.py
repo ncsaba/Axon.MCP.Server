@@ -170,6 +170,24 @@ streaming_stage_queue_depth = Gauge(
     ["stage"],
 )
 
+file_instance_cleanup_total = Counter(
+    "file_instance_cleanup_total",
+    "Expired missing file instances processed by cleanup",
+    ["result"],
+)
+
+file_content_cleanup_total = Counter(
+    "file_content_cleanup_total",
+    "File contents processed by orphan-content cleanup",
+    ["result"],
+)
+
+file_instance_cleanup_duration_seconds = Histogram(
+    "file_instance_cleanup_duration_seconds",
+    "Cleanup duration for file instance/content reclamation",
+    ["mode"],
+)
+
 
 def track_time(metric: Histogram, labels: dict | None = None) -> Callable:
     """

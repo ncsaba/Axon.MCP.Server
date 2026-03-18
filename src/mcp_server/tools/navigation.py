@@ -6,6 +6,7 @@ from mcp.types import TextContent
 
 from src.config.enums import RelationTypeEnum
 from src.database.models import File, Symbol, Relation
+from src.database.query_helpers import active_file_filter
 from src.database.session import get_async_session
 from src.utils.logging_config import get_logger
 from src.mcp_server.formatters.hierarchy import format_hierarchy_tree
@@ -85,7 +86,7 @@ async def _build_call_hierarchy_tree(
     
     # Get symbol info
     result = await session.execute(
-        select(Symbol, File).join(File, Symbol.file_id == File.id).where(Symbol.id == symbol_id)
+        select(Symbol, File).join(File, Symbol.file_id == File.id).where(Symbol.id == symbol_id, active_file_filter())
     )
     row = result.first()
     if not row:
@@ -99,9 +100,11 @@ async def _build_call_hierarchy_tree(
         result = await session.execute(
             select(Relation, Symbol)
             .join(Symbol, Relation.to_symbol_id == Symbol.id)
+            .join(File, Symbol.file_id == File.id)
             .where(
                 Relation.from_symbol_id == symbol_id,
-                Relation.relation_type == RelationTypeEnum.CALLS
+                Relation.relation_type == RelationTypeEnum.CALLS,
+                active_file_filter(),
             )
         )
     else:
@@ -109,9 +112,11 @@ async def _build_call_hierarchy_tree(
         result = await session.execute(
             select(Relation, Symbol)
             .join(Symbol, Relation.from_symbol_id == Symbol.id)
+            .join(File, Symbol.file_id == File.id)
             .where(
                 Relation.to_symbol_id == symbol_id,
-                Relation.relation_type == RelationTypeEnum.CALLS
+                Relation.relation_type == RelationTypeEnum.CALLS,
+                active_file_filter(),
             )
         )
     
@@ -159,7 +164,8 @@ async def find_callers(
                 .join(File, Symbol.file_id == File.id)
                 .where(
                     Relation.to_symbol_id == symbol_id,
-                    Relation.relation_type == RelationTypeEnum.CALLS
+                    Relation.relation_type == RelationTypeEnum.CALLS,
+                    active_file_filter(),
                 )
                 .limit(limit)
             )
@@ -215,7 +221,8 @@ async def find_callees(
                 .join(File, Symbol.file_id == File.id)
                 .where(
                     Relation.from_symbol_id == symbol_id,
-                    Relation.relation_type == RelationTypeEnum.CALLS
+                    Relation.relation_type == RelationTypeEnum.CALLS,
+                    active_file_filter(),
                 )
                 .limit(limit)
             )

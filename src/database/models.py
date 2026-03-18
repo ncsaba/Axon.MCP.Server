@@ -13,7 +13,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.orm import relationship, declarative_base, synonym
 from pgvector.sqlalchemy import Vector
 from src.config.enums import (
     LanguageEnum,
@@ -22,6 +22,8 @@ from src.config.enums import (
     RelationTypeEnum,
     RepositoryStatusEnum,
     JobStatusEnum,
+    RepositoryIndexRunStatusEnum,
+    FileLifecycleStateEnum,
     WorkerStatusEnum,
     SourceControlProviderEnum,
 )
@@ -74,10 +76,11 @@ class Repository(Base):
 
     # Relationships
     commits = relationship("Commit", back_populates="repository", cascade="all, delete-orphan")
-    files = relationship("File", back_populates="repository", cascade="all, delete-orphan")
+    file_instances = relationship("FileInstance", back_populates="repository", cascade="all, delete-orphan")
     jobs = relationship("Job", back_populates="repository", cascade="all, delete-orphan")
     module_summaries = relationship("ModuleSummary", back_populates="repository", cascade="all, delete-orphan")
     services = relationship("Service", back_populates="repository", cascade="all, delete-orphan")
+    index_runs = relationship("RepositoryIndexRun", back_populates="repository", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_repo_status_updated", "status", "updated_at"),
@@ -132,14 +135,62 @@ class Commit(Base):
 
     # Relationships
     repository = relationship("Repository", back_populates="commits")
-    files = relationship("File", back_populates="commit")
+    file_instances = relationship("FileInstance", back_populates="commit")
     symbols = relationship("Symbol", back_populates="commit")
 
 
-class File(Base):
-    """Source code file."""
+class RepositoryIndexRun(Base):
+    """Repository-scoped indexing run used for missing-file finalization."""
 
-    __tablename__ = "files"
+    __tablename__ = "repository_index_runs"
+
+    id = Column(Integer, primary_key=True)
+    repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_id = Column(Integer, nullable=False)
+    status = Column(value_enum(RepositoryIndexRunStatusEnum), default=RepositoryIndexRunStatusEnum.RUNNING, nullable=False, index=True)
+    started_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    completed_at = Column(DateTime(timezone=True))
+    failure_reason = Column(Text)
+
+    repository = relationship("Repository", back_populates="index_runs")
+
+    __table_args__ = (
+        UniqueConstraint("repository_id", "run_id", name="uq_repository_index_runs_repo_run_id"),
+        Index("idx_repository_index_runs_repo_status", "repository_id", "status"),
+    )
+
+
+class FileContent(Base):
+    """Canonical content identity reusable across file instances."""
+
+    __tablename__ = "file_contents"
+
+    id = Column(Integer, primary_key=True)
+    content_hash = Column(String(64), nullable=False, index=True)
+    language = Column(value_enum(LanguageEnum), nullable=False, index=True)
+    parser_fingerprint = Column(String(255), nullable=False, index=True)
+    size_bytes = Column(Integer, default=0)
+    line_count = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    last_reused_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+    file_instances = relationship("FileInstance", back_populates="current_content")
+    chunks = relationship("Chunk", back_populates="file_content", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "content_hash",
+            "language",
+            "parser_fingerprint",
+            name="uq_file_contents_identity",
+        ),
+        Index("idx_file_contents_hash_lang", "content_hash", "language"),
+    )
+
+class FileInstance(Base):
+    """Source-context file identity."""
+
+    __tablename__ = "file_instances"
 
     id = Column(Integer, primary_key=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -147,21 +198,29 @@ class File(Base):
     path = Column(String(1000), nullable=False)
     language = Column(value_enum(LanguageEnum), nullable=False, index=True)
     size_bytes = Column(Integer, default=0)
+    current_content_id = Column(Integer, ForeignKey("file_contents.id", ondelete="SET NULL"), index=True)
     content_hash = Column(String(64), index=True)
     line_count = Column(Integer, default=0)
     last_modified = Column(DateTime(timezone=True))
+    lifecycle_state = Column(value_enum(FileLifecycleStateEnum), default=FileLifecycleStateEnum.ACTIVE, nullable=False, index=True)
+    last_seen_run_id = Column(Integer, index=True)
+    first_seen_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    last_seen_at = Column(DateTime(timezone=True))
+    missing_since = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
-    repository = relationship("Repository", back_populates="files")
-    commit = relationship("Commit", back_populates="files")
+    repository = relationship("Repository", back_populates="file_instances")
+    commit = relationship("Commit", back_populates="file_instances")
+    current_content = relationship("FileContent", back_populates="file_instances")
     symbols = relationship("Symbol", back_populates="file", cascade="all, delete-orphan")
-    chunks = relationship("Chunk", back_populates="file", cascade="all, delete-orphan")
 
     __table_args__ = (
-        Index("idx_file_repo_path", "repository_id", "path"),
-        Index("idx_file_language_repo", "language", "repository_id"),
+        UniqueConstraint("repository_id", "path", name="uq_file_instances_repo_path"),
+        Index("idx_file_instance_repo_path", "repository_id", "path"),
+        Index("idx_file_instance_language_repo", "language", "repository_id"),
+        Index("idx_file_instance_repo_state", "repository_id", "lifecycle_state"),
     )
 
 
@@ -171,7 +230,8 @@ class Symbol(Base):
     __tablename__ = "symbols"
 
     id = Column(Integer, primary_key=True)
-    file_id = Column(Integer, ForeignKey("files.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_id = synonym("file_instance_id")
     commit_id = Column(Integer, ForeignKey("commits.id", ondelete="SET NULL"), index=True)
     service_id = Column(Integer, ForeignKey("services.id", ondelete="SET NULL"), index=True)  # Service Boundary
     assembly_name = Column(String(255))  # Phase 2.2
@@ -223,7 +283,7 @@ class Symbol(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
-    file = relationship("File", back_populates="symbols")
+    file = relationship("FileInstance", back_populates="symbols")
     commit = relationship("Commit", back_populates="symbols")
     service = relationship("Service", back_populates="symbols")
     embeddings = relationship("Embedding", back_populates="symbol", cascade="all, delete-orphan")
@@ -282,7 +342,9 @@ class Chunk(Base):
     __tablename__ = "chunks"
 
     id = Column(Integer, primary_key=True)
-    file_id = Column(Integer, ForeignKey("files.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_content_id = Column(Integer, ForeignKey("file_contents.id", ondelete="CASCADE"), nullable=False, index=True)
+    file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="SET NULL"), index=True)
+    file_id = synonym("file_instance_id")
     symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="CASCADE"), index=True)
     content = Column(Text, nullable=False)
     content_type = Column(String(50))
@@ -296,7 +358,8 @@ class Chunk(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
-    file = relationship("File", back_populates="chunks")
+    file_content = relationship("FileContent", back_populates="chunks")
+    file = relationship("FileInstance")
     embeddings = relationship("Embedding", back_populates="chunk", cascade="all, delete-orphan")
 
 
@@ -307,7 +370,8 @@ class Document(Base):
     
     id = Column(Integer, primary_key=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    file_id = Column(Integer, ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), index=True)
+    file_id = synonym("file_instance_id")
     path = Column(String(1000), nullable=False)
     doc_type = Column(String(50), index=True)  # 'readme', 'changelog', 'guide', 'api_doc'
     title = Column(String(500))
@@ -331,7 +395,8 @@ class ConfigurationEntry(Base):
     
     id = Column(Integer, primary_key=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    file_id = Column(Integer, ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), index=True)
+    file_id = synonym("file_instance_id")
     config_key = Column(String(500), nullable=False, index=True)  # e.g., "Database:ConnectionString"
     config_value = Column(Text)
     config_type = Column(String(50))  # "string", "number", "boolean", "object", "array"
@@ -356,7 +421,8 @@ class Dependency(Base):
     
     id = Column(Integer, primary_key=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    file_id = Column(Integer, ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), index=True)
+    file_id = synonym("file_instance_id")
     package_name = Column(String(255), nullable=False, index=True)
     package_version = Column(String(100))
     version_constraint = Column(String(100))
@@ -522,7 +588,8 @@ class OutgoingApiCall(Base):
     id = Column(Integer, primary_key=True)
     symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="CASCADE"), index=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    file_id = Column(Integer, ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), index=True)
+    file_id = synonym("file_instance_id")
     
     # HTTP call details
     http_method = Column(String(10), nullable=False, index=True)  # GET, POST, PUT, DELETE, etc.
@@ -554,7 +621,8 @@ class PublishedEvent(Base):
     id = Column(Integer, primary_key=True)
     symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="CASCADE"), index=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    file_id = Column(Integer, ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), index=True)
+    file_id = synonym("file_instance_id")
     
     # Event details
     event_type_name = Column(String(500), nullable=False, index=True)  # UserCreatedEvent, OrderPlacedEvent
@@ -587,7 +655,8 @@ class EventSubscription(Base):
     id = Column(Integer, primary_key=True)
     symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="CASCADE"), nullable=True, index=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    file_id = Column(Integer, ForeignKey("files.id", ondelete="CASCADE"), index=True)
+    file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), index=True)
+    file_id = synonym("file_instance_id")
     
     # Subscription details
     event_type_name = Column(String(500), nullable=False, index=True)  # Event/message type being consumed
@@ -818,3 +887,9 @@ class ServiceRepositoryMapping(Base):
             name="uq_service_mapping_service_repo"
         ),
     )
+
+
+# Compatibility aliases during the file-instance/content transition.
+File = FileInstance
+Repository.files = Repository.file_instances
+Commit.files = Commit.file_instances

@@ -158,6 +158,8 @@ class Settings(BaseSettings):
     metadata_gate_parse_enqueue_chunk_size: int = 100
     parse_task_wait_timeout_seconds: int = 7200
     parse_task_wait_poll_seconds: float = 0.5
+    file_instance_missing_ttl_days: int = 7
+    file_instance_cleanup_batch_size: int = 1000
 
     # Extraction (automated during sync)
     extract_api_endpoints: bool = True  # Extract API endpoints automatically

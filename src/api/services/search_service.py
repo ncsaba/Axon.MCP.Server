@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.schemas.search import SearchResult
 from src.config.enums import LanguageEnum, SymbolKindEnum
 from src.database.models import File, Repository, Symbol, Chunk
+from src.database.query_helpers import active_file_filter
 from src.embeddings.generator import EmbeddingGenerator
 from src.vector_store.pgvector_store import PgVectorStore
 from src.utils.logging_config import get_logger
@@ -283,7 +284,7 @@ class SearchService:
             Repository, File.repository_id == Repository.id
         )
         
-        stmt = stmt.where(or_(*search_conditions))
+        stmt = stmt.where(or_(*search_conditions), active_file_filter())
         
         # Apply filters
         if repository_id:

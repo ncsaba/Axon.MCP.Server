@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.schemas.symbols import RelationEdge, SymbolResponse, SymbolWithRelations
 from src.config.enums import LanguageEnum, SymbolKindEnum
 from src.database.models import File, Relation, Repository, Symbol
+from src.database.query_helpers import active_file_filter
 
 
 class SymbolService:
@@ -61,7 +62,7 @@ class SymbolService:
             select(Symbol, File, Repository)
             .join(File, Symbol.file_id == File.id)
             .join(Repository, File.repository_id == Repository.id)
-            .where(Symbol.id == symbol_id)
+            .where(Symbol.id == symbol_id, active_file_filter())
         )
         result = await self._session.execute(stmt)
         row = result.first()
@@ -82,6 +83,7 @@ class SymbolService:
     ) -> tuple[list[SymbolResponse], int]:
         """Return paginated symbols with optional filters."""
         filters = []
+        filters.append(active_file_filter())
         if repository_id is not None:
             filters.append(File.repository_id == repository_id)
         if file_id is not None:
@@ -138,4 +140,3 @@ class SymbolService:
             )
 
         return SymbolWithRelations(**symbol.model_dump(), relations=edges)
-

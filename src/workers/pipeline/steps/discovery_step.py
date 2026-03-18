@@ -51,7 +51,7 @@ class DiscoveryStep(PipelineStep):
         file_size_limit_bytes = settings.parse_max_file_size_mb * 1024 * 1024
         inventory_provider = ScandirFileInventoryProvider()
 
-        run_id = ctx.metadata.get("inventory_run_id") or ctx.execution_id
+        run_id = ctx.metadata.get("current_run_id") or ctx.metadata.get("inventory_run_id") or ctx.execution_id
         ctx.metadata["inventory_run_id"] = run_id
 
         batch_size = max(1, settings.inventory_batch_size)

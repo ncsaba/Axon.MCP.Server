@@ -7,20 +7,63 @@ from datetime import UTC, datetime
 import asyncio
 import traceback
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, update
 
 from src.workers.celery_app import celery_app
 from src.workers.utils import _run_with_engine_cleanup, _count_symbols
 from src.workers.summary_worker import _generate_module_summaries
 from src.database.session import AsyncSessionLocal
-from src.database.models import Repository, Job, File
-from src.config.enums import RepositoryStatusEnum, JobStatusEnum
+from src.database.models import Repository, Job, File, RepositoryIndexRun
+from src.config.enums import (
+    RepositoryStatusEnum,
+    JobStatusEnum,
+    FileLifecycleStateEnum,
+    RepositoryIndexRunStatusEnum,
+)
 from src.utils.logging_config import get_logger
 from src.utils.redis_logger import RedisLogPublisher
 from src.workers.distributed_lock import get_distributed_lock
 from src.parsers import ParserFactory
 
 logger = get_logger(__name__)
+
+
+async def _allocate_repository_run(session, repository_id: int) -> RepositoryIndexRun:
+    """Allocate the next strictly-increasing run id for a repository."""
+    max_run_result = await session.execute(
+        select(func.max(RepositoryIndexRun.run_id)).where(
+            RepositoryIndexRun.repository_id == repository_id
+        )
+    )
+    next_run_id = int(max_run_result.scalar() or 0) + 1
+    run = RepositoryIndexRun(
+        repository_id=repository_id,
+        run_id=next_run_id,
+        status=RepositoryIndexRunStatusEnum.RUNNING,
+        started_at=datetime.now(UTC),
+    )
+    session.add(run)
+    await session.flush()
+    return run
+
+
+async def _mark_missing_file_instances(session, repository_id: int, current_run_id: int) -> None:
+    """Mark file instances missing when they were not seen in the latest successful run."""
+    now = datetime.now(UTC)
+    await session.execute(
+        update(File)
+        .where(
+            File.repository_id == repository_id,
+            File.lifecycle_state == FileLifecycleStateEnum.ACTIVE,
+            File.last_seen_run_id.is_not(None),
+            File.last_seen_run_id < current_run_id,
+        )
+        .values(
+            lifecycle_state=FileLifecycleStateEnum.MISSING,
+            missing_since=func.coalesce(File.missing_since, now),
+            updated_at=now,
+        )
+    )
 
 
 @celery_app.task(bind=True, name="src.workers.tasks.sync_repository", max_retries=3, time_limit=14400)
@@ -141,6 +184,8 @@ async def _sync_repository_async(task, repository_id: int):
                 # Initialize to None for exception handler
                 repo = None
                 job = None
+                repository_run = None
+                repository_run_id = None
             
                 try:
                     # Get repository
@@ -225,8 +270,10 @@ async def _sync_repository_async(task, repository_id: int):
                 
                     # Update repository status to cloning
                     repo.status = RepositoryStatusEnum.CLONING
+                    repository_run = await _allocate_repository_run(session, repository_id)
                     await session.commit()
                     await session.refresh(job)
+                    repository_run_id = repository_run.id
                     
                     # Store job_id and started_at in local variables to survive session.expunge_all()
                     # This is CRITICAL because expunge_all() on line 444 detaches all objects
@@ -286,6 +333,7 @@ async def _sync_repository_async(task, repository_id: int):
                         metrics=hydrated_metrics
                     )
                     pipeline_ctx.repository = repo
+                    pipeline_ctx.metadata["current_run_id"] = repository_run.run_id
                     
                     # Define Pipeline Steps & Dependencies
                     steps = [
@@ -404,11 +452,26 @@ async def _sync_repository_async(task, repository_id: int):
 
                     # Final metrics sync
                     job.job_metadata.update(pipeline_ctx.metrics.to_dict())
+
+                    await _mark_missing_file_instances(
+                        session,
+                        repository_id=repository_id,
+                        current_run_id=repository_run.run_id,
+                    )
                     
                     # Update repo size
-                    size_stmt = select(func.sum(File.size_bytes)).where(File.repository_id == repository_id)
+                    size_stmt = select(func.sum(File.size_bytes)).where(
+                        File.repository_id == repository_id,
+                        File.lifecycle_state == FileLifecycleStateEnum.ACTIVE,
+                    )
                     size_result = await session.execute(size_stmt)
                     repo.size_bytes = size_result.scalar() or 0
+                    total_files_stmt = select(func.count(File.id)).where(
+                        File.repository_id == repository_id,
+                        File.lifecycle_state == FileLifecycleStateEnum.ACTIVE,
+                    )
+                    total_files_result = await session.execute(total_files_stmt)
+                    repo.total_files = total_files_result.scalar() or 0
                     
                     # Preserve job_started_at logic
                     job_started_at = job_started_at_ts
@@ -451,6 +514,10 @@ async def _sync_repository_async(task, repository_id: int):
                     repo.status = RepositoryStatusEnum.COMPLETED
                     repo.last_synced_at = datetime.now(UTC)
                     repo.total_symbols = await _count_symbols(session, repository_id)
+                    if repository_run_id:
+                        repository_run = await session.get(RepositoryIndexRun, repository_run_id)
+                    repository_run.status = RepositoryIndexRunStatusEnum.SUCCEEDED
+                    repository_run.completed_at = datetime.now(UTC)
                  
                     # CRITICAL: Re-fetch job object because it was detached by session.expunge_all()
                     logger.debug("refetching_job_for_completion_update", job_id=job_id, repository_id=repository_id)
@@ -574,6 +641,12 @@ async def _sync_repository_async(task, repository_id: int):
                             job.duration_seconds = int(duration)
                 
                     # Commit failure state
+                    if repository_run_id:
+                        repository_run = await session.get(RepositoryIndexRun, repository_run_id)
+                    if repository_run:
+                        repository_run.status = RepositoryIndexRunStatusEnum.FAILED
+                        repository_run.completed_at = datetime.now(UTC)
+                        repository_run.failure_reason = error_msg
                     try:
                         await session.commit()
                     except Exception as commit_error:

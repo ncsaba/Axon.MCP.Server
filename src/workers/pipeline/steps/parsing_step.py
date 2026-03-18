@@ -95,7 +95,8 @@ class ParsingStep(PipelineStep):
                     ctx.session,
                     ctx.repository_id,
                     file_path,
-                    ctx.repo_path
+                    ctx.repo_path,
+                    run_id=ctx.metadata.get("current_run_id"),
                 )
             
                 # Extract knowledge

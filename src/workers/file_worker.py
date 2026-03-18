@@ -15,12 +15,14 @@ from src.gitlab.repository_manager import RepositoryManager
 from src.parsers import parse_file
 from src.extractors.knowledge_extractor import KnowledgeExtractor
 from src.database.session import AsyncSessionLocal
-from src.database.models import Repository, File, Chunk
+from src.database.models import Repository, File, FileContent, Chunk
+from src.config.enums import FileLifecycleStateEnum
 from src.repository_sources import get_repository_source_registry
 from src.utils.logging_config import get_logger
 from src.utils.async_compat import maybe_await
 
 logger = get_logger(__name__)
+DEFAULT_PARSER_FINGERPRINT = "tree_sitter_v1"
 
 
 def _read_file_stat(file_path: Path) -> tuple[int, datetime | None]:
@@ -39,7 +41,8 @@ async def create_or_update_file(
     session,
     repository_id: int,
     file_path: Path,
-    repo_path: Path
+    repo_path: Path,
+    run_id: int | None = None,
 ) -> File:
     """
     Create or update file record.
@@ -56,7 +59,52 @@ async def create_or_update_file(
     relative_path = file_path.relative_to(repo_path)
     size_bytes, last_modified = _read_file_stat(file_path)
     
-    # Check if file exists
+    repo_manager = RepositoryManager()
+    language = repo_manager.detect_language(file_path)
+    now = datetime.now(UTC)
+
+    try:
+        content = file_path.read_text(errors='ignore')
+        line_count = len(content.splitlines())
+        content_hash = _calculate_content_hash(content)
+    except Exception as e:
+        error_msg = f"Failed to read file: {str(e)}"
+        logger.warning(
+            "file_read_failed",
+            file_path=str(file_path),
+            error=error_msg
+        )
+        content = ""
+        line_count = 0
+        content_hash = ""
+
+    file_content = None
+    if content_hash:
+        content_result = await session.execute(
+            select(FileContent).where(
+                FileContent.content_hash == content_hash,
+                FileContent.language == language,
+                FileContent.parser_fingerprint == DEFAULT_PARSER_FINGERPRINT,
+            )
+        )
+        file_content = content_result.scalar_one_or_none()
+        if not file_content:
+            file_content = FileContent(
+                content_hash=content_hash,
+                language=language,
+                parser_fingerprint=DEFAULT_PARSER_FINGERPRINT,
+                size_bytes=size_bytes,
+                line_count=line_count,
+                last_reused_at=now,
+            )
+            await maybe_await(session.add(file_content))
+            await session.flush()
+        else:
+            file_content.size_bytes = size_bytes
+            file_content.line_count = line_count
+            file_content.last_reused_at = now
+
+    # Check if file instance exists
     result = await session.execute(
         select(File).where(
             File.repository_id == repository_id,
@@ -66,25 +114,6 @@ async def create_or_update_file(
     file_record = result.scalar_one_or_none()
     
     if not file_record:
-        # Create new file record
-        repo_manager = RepositoryManager()
-        language = repo_manager.detect_language(file_path)
-        
-        try:
-            content = file_path.read_text(errors='ignore')
-            line_count = len(content.splitlines())
-            # Calculate content hash for module summary optimization
-            content_hash = _calculate_content_hash(content)
-        except Exception as e:
-            error_msg = f"Failed to read file: {str(e)}"
-            logger.warning(
-                "file_read_failed",
-                file_path=str(file_path),
-                error=error_msg
-            )
-            line_count = 0
-            content_hash = ""
-        
         file_record = File(
             repository_id=repository_id,
             path=str(relative_path),
@@ -92,30 +121,38 @@ async def create_or_update_file(
             size_bytes=size_bytes,
             last_modified=last_modified,
             line_count=line_count,
-            content_hash=content_hash
+            content_hash=content_hash,
+            current_content_id=file_content.id if file_content else None,
+            first_seen_at=now,
+            last_seen_at=now,
+            last_seen_run_id=run_id,
+            lifecycle_state=FileLifecycleStateEnum.ACTIVE,
         )
         await maybe_await(session.add(file_record))
         await session.flush()
     else:
         # Update existing file record
+        file_record.language = language
         file_record.size_bytes = size_bytes
         file_record.last_modified = last_modified
-        try:
-            content = file_path.read_text(errors='ignore')
-            file_record.line_count = len(content.splitlines())
-            # Recalculate content hash to detect changes
-            new_content_hash = _calculate_content_hash(content)
-            # Only update if hash has changed to prevent unnecessary module summary regeneration
-            if file_record.content_hash != new_content_hash:
-                logger.debug(
-                    "file_content_changed",
-                    file_path=str(file_path),
-                    old_hash=file_record.content_hash,
-                    new_hash=new_content_hash
-                )
-                file_record.content_hash = new_content_hash
-        except Exception:
-            pass
+        file_record.line_count = line_count
+        if file_record.content_hash != content_hash:
+            logger.debug(
+                "file_content_changed",
+                file_path=str(file_path),
+                old_hash=file_record.content_hash,
+                new_hash=content_hash
+            )
+        file_record.content_hash = content_hash
+        file_record.current_content_id = file_content.id if file_content else None
+        file_record.last_seen_at = now
+        file_record.lifecycle_state = FileLifecycleStateEnum.ACTIVE
+        file_record.missing_since = None
+        if run_id is not None:
+            file_record.last_seen_run_id = run_id
+
+    if run_id is not None and file_record.last_seen_run_id != run_id:
+        file_record.last_seen_run_id = run_id
     
     return file_record
 
