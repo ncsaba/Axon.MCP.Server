@@ -28,6 +28,8 @@ Reference analysis:
 | Symbol-linked chunk storage | `✅` | Chunks and embeddings are stored against symbols and files. |
 | Incremental embedding reuse | `✅` | Existing chunk embeddings are skipped or reused by hash. |
 | Vector ANN index on `embeddings.vector` | `✅` | `embeddings.vector` now targets a fixed `vector(1024)` contract for `mxbai-embed-large`, with a direct HNSW index. |
+| Host Ollama integration for local dev | `✅` | Dev-container runtime now targets host Ollama at `host.docker.internal:11434/v1`, and the `mxbai-embed-large` smoke test passes. |
+| Live corpus rebuilt on `1024` embeddings | `✅` | The local DB corpus has been reset and rebuilt with `mxbai-embed-large`, restoring 11,710 embeddings on the fixed contract. |
 | Implementation chunk body inclusion | `🚧` | Chunker supports body extraction, but current ingestion passes `file_content=None`, so body text is often omitted from implementation chunks. |
 | Import/context population | `🛑` | `ChunkContextBuilder._extract_imports()` currently returns an empty list. |
 | Semantic snippet selection | `🚧` | Search previews return the first chunk per symbol, not the best matching chunk. |
@@ -83,7 +85,7 @@ flowchart LR
 
 | Phase | Status | Focus | Risk |
 | --- | --- | --- | --- |
-| S0. Semantic-search DB indexing baseline | `🚧` | Fixed-size ANN indexing now targets `mxbai-embed-large` at `1024`; the remaining work is corpus reset, live re-embedding, and post-reset validation on the new corpus. | `🔥` A partial corpus reset or partial re-embed would leave mixed operational assumptions. |
+| S0. Semantic-search DB indexing baseline | `🚧` | Fixed-size ANN indexing now targets `mxbai-embed-large` at `1024`, host-Ollama access is working, and the local corpus has been rebuilt; the remaining S0 work is planner/latency rerun plus the operator runbook. | `🔥` The main remaining S0 risk is documentation drift around rebuild/runbook behavior, not implementation readiness. |
 | S1. Benchmark baseline and semantic-search contract | `🧭` | Create seed queries, expected outcomes, and evaluation workflow before tuning. | `🔥` Tuning without a benchmark will create churn and regressions. |
 | S2. Chunk corpus quality | `🧭` | Add symbol body text, imports, and explicit fallback-chunking policy. | `🔥` Larger chunks can shift embedding behavior and storage costs. |
 | S3. Semantic-ranking cleanup | `🧭` | Use one coherent semantic reranking contract and remove dead paths. | `🔥` Ranking changes can destabilize existing search behavior. |
@@ -102,7 +104,9 @@ Current implementation status:
 - `✅` API startup ensures the fixed HNSW index exists at runtime
 - `✅` embedding generation now fails fast if the configured model dimension is not `1024`
 - `✅` semantic search now uses the fixed-size vector column directly with a KNN candidate query shape that can use pgvector ANN indexes
-- `🚧` The previous live planner validation was captured on the old `768` corpus; the `1024` contract still needs to be rerun after deleting the old corpus and re-embedding with `mxbai-embed-large`
+- `✅` Local dev runtime is wired to host Ollama and `scripts/test_mxbai_embed_large.py` passes against `mxbai-embed-large`
+- `✅` The old `768` corpus has been deleted and rebuilt on the fixed `1024` contract
+- `🚧` The previous live planner validation was captured on the old `768` corpus; the `1024` contract still needs a fresh planner/latency rerun on the rebuilt corpus
 - `🚧` Rebuild/upgrade behavior is still not captured in an operational runbook
 
 This slice should decide and document:
@@ -365,13 +369,23 @@ Use a small but varied set:
 
 ## Immediate Next Actions
 
-1. Delete the old `768` corpus from the local DB and rebuild it with `mxbai-embed-large`.
-2. Rerun live planner validation under the fixed `1024` contract.
-3. Create the benchmark seed document.
-4. Implement implementation-chunk body inclusion.
-5. Implement import/context population for Python and Java first.
-6. Activate the existing `query_text` semantic reranking path.
-7. Replace first-chunk snippet selection with best-match snippet selection.
+1. Rerun live planner validation under the rebuilt `1024` corpus and record the new latency evidence.
+2. Create the benchmark seed document so ranking changes stop being heuristic-only.
+3. Implement implementation-chunk body inclusion in ingestion.
+4. Implement import/context population for Python and Java first.
+5. Activate the existing `query_text` semantic reranking path.
+6. Replace first-chunk snippet selection with best-match snippet selection.
+
+## Highlighted Next Steps
+
+Recommended execution order from here:
+
+1. `S0B`: rerun `EXPLAIN`/latency validation on the rebuilt `mxbai-embed-large` corpus.
+2. `S1A` and `S1B`: write the benchmark seed and evaluation workflow docs.
+3. `S2A`: improve chunk content by passing real file bodies into chunk construction.
+4. `S2B`: populate imports/file-level context for Python and Java.
+5. `S3A`: turn on the existing `query_text` semantic reranking path.
+6. `S4A`: return the best matching chunk snippet instead of the first chunk.
 
 ## Explicit Answers To Current Questions
 

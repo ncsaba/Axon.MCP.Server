@@ -5,6 +5,7 @@ Note:
 - this validation was captured before the later switch to the `mxbai-embed-large` / fixed-`1024` embedding contract
 - the current code contract has changed and this validation should be treated as historical until rerun on a real `1024` corpus
 - the old `768` corpus should be deleted before rerunning this validation so the post-fix results are not mixed with historical embeddings
+- the old corpus deletion and `1024` rebuild have now been completed; this document remains historical until the planner/latency checks are rerun on that rebuilt corpus
 
 ## Objective
 
