@@ -32,7 +32,8 @@ make lint               # Run linters (flake8, mypy, pylint)
 make test               # Run tests with coverage
 
 # Database
-make migrate            # Run database migrations
+make db-reset           # Reset and recreate the schema (current WIP default)
+make migrate            # Alembic migration path when you explicitly want it
 make seed               # Seed test data
 
 # Docker
@@ -42,6 +43,8 @@ make docker-down        # Stop all services
 # Cleanup
 make clean              # Clean cache and build files
 ```
+
+These two workflows are not mutually exclusive. Alembic remains supported; the current branch simply prefers fresh-schema resets during rapid iteration.
 
 ## Testing
 
@@ -158,4 +161,3 @@ To support a new language (e.g., Python):
 
 2.  **Register the Parser**:
     Update `src/extractors/knowledge_extractor.py` to instantiate `PythonParser` for `.py` files.
-

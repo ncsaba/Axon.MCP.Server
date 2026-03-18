@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from src.database.models import Symbol, Relation, File, Chunk
+from src.database.models import Symbol, Relation, FileInstance as File, Chunk, ChunkSymbolLink
 from src.database.query_helpers import active_file_filter
 from src.config.enums import RelationTypeEnum, SymbolKindEnum
 from src.utils.logging_config import get_logger
@@ -404,7 +404,7 @@ class CallGraphTraverser:
         # Get symbol with file info
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(Symbol.id == symbol_id, active_file_filter())
         )
         row = result.first()
@@ -485,7 +485,8 @@ class CallGraphTraverser:
         """
         result = await self.session.execute(
             select(Chunk.content)
-            .where(Chunk.symbol_id == symbol_id)
+            .join(ChunkSymbolLink, ChunkSymbolLink.chunk_id == Chunk.id)
+            .where(ChunkSymbolLink.symbol_id == symbol_id)
             .order_by(Chunk.id)
             .limit(1)
         )

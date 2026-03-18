@@ -1,7 +1,7 @@
 from typing import List, Dict, Set, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from src.database.models import Symbol, Relation, File
+from src.database.models import Symbol, Relation, FileInstance as File
 from src.config.enums import RelationTypeEnum, SymbolKindEnum
 from src.database.query_helpers import active_file_filter
 from src.utils.logging_config import get_logger
@@ -345,10 +345,10 @@ class RelationshipBuilder:
                     
                     # Get symbols from both files
                     source_symbols = await self.session.execute(
-                        select(Symbol).where(Symbol.file_id == file_id)
+                        select(Symbol).where(Symbol.file_instance_id == file_id)
                     )
                     target_symbols = await self.session.execute(
-                        select(Symbol).where(Symbol.file_id == target_file.id)
+                        select(Symbol).where(Symbol.file_instance_id == target_file.id)
                     )
                     
                     # Create IMPORTS relationship between exported symbols

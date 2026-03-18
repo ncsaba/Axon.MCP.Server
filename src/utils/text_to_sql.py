@@ -82,12 +82,12 @@ class TextToSQLTranslator:
         "symbols": {
             "table": "symbols",
             "columns": ["id", "name", "kind", "fully_qualified_name", "signature", 
-                       "access_modifier", "return_type", "complexity", "file_id"],
+                       "access_modifier", "return_type", "complexity", "file_instance_id"],
             "description": "Code symbols (functions, classes, methods, etc.)"
         },
         "files": {
-            "table": "files",
-            "columns": ["id", "path", "language", "repository_id", "line_count"],
+            "table": "file_instances",
+            "columns": ["id", "path", "language", "repository_id", "size_bytes", "lifecycle_state"],
             "description": "Source code files"
         },
         "relations": {
@@ -122,7 +122,7 @@ class TextToSQLTranslator:
                 sql_template="""
                     SELECT s.id, s.name, s.kind, s.signature, f.path, r.name as repository
                     FROM symbols s
-                    JOIN files f ON s.file_id = f.id
+                    JOIN file_instances f ON s.file_instance_id = f.id
                     JOIN repositories r ON f.repository_id = r.id
                     WHERE s.kind = 'CLASS'
                     AND (LOWER(s.name) LIKE '%controller%' 
@@ -143,7 +143,7 @@ class TextToSQLTranslator:
                     SELECT s.id, s.name, s.signature, s.return_type, 
                            f.path, r.name as repository
                     FROM symbols s
-                    JOIN files f ON s.file_id = f.id
+                    JOIN file_instances f ON s.file_instance_id = f.id
                     JOIN repositories r ON f.repository_id = r.id
                     WHERE s.kind IN ('METHOD', 'FUNCTION')
                     AND s.access_modifier = 'PUBLIC'
@@ -162,7 +162,7 @@ class TextToSQLTranslator:
                 sql_template="""
                     SELECT s.id, s.name, s.kind, s.signature, f.path
                     FROM symbols s
-                    JOIN files f ON s.file_id = f.id
+                    JOIN file_instances f ON s.file_instance_id = f.id
                     WHERE s.kind IN ('METHOD', 'FUNCTION', 'CLASS')
                     AND s.id NOT IN (
                         SELECT DISTINCT to_symbol_id 
@@ -186,7 +186,7 @@ class TextToSQLTranslator:
                     SELECT s.id, s.name, s.complexity, s.signature, 
                            f.path, r.name as repository
                     FROM symbols s
-                    JOIN files f ON s.file_id = f.id
+                    JOIN file_instances f ON s.file_instance_id = f.id
                     JOIN repositories r ON f.repository_id = r.id
                     WHERE s.kind IN ('METHOD', 'FUNCTION')
                     AND s.complexity > :min_complexity
@@ -205,7 +205,7 @@ class TextToSQLTranslator:
                 sql_template="""
                     SELECT s.id, s.name, s.kind, s.signature, f.path
                     FROM symbols s
-                    JOIN files f ON s.file_id = f.id
+                    JOIN file_instances f ON s.file_instance_id = f.id
                     WHERE f.language = :language
                     ORDER BY f.path, s.name
                     LIMIT :limit
@@ -222,7 +222,7 @@ class TextToSQLTranslator:
                 sql_template="""
                     SELECT s.id, s.name, s.kind, s.signature, f.path, r.name as repository
                     FROM symbols s
-                    JOIN files f ON s.file_id = f.id
+                    JOIN file_instances f ON s.file_instance_id = f.id
                     JOIN repositories r ON f.repository_id = r.id
                     WHERE s.id IN (
                         SELECT from_symbol_id 
@@ -246,7 +246,7 @@ class TextToSQLTranslator:
                     SELECT s.id, s.name, COUNT(m.id) as method_count, 
                            f.path, r.name as repository
                     FROM symbols s
-                    JOIN files f ON s.file_id = f.id
+                    JOIN file_instances f ON s.file_instance_id = f.id
                     JOIN repositories r ON f.repository_id = r.id
                     LEFT JOIN symbols m ON m.parent_symbol_id = s.id AND m.kind = 'METHOD'
                     WHERE s.kind = 'CLASS'
@@ -266,7 +266,7 @@ class TextToSQLTranslator:
                 sql_template="""
                     SELECT s.id, s.name, s.kind, s.signature, f.path
                     FROM symbols s
-                    JOIN files f ON s.file_id = f.id
+                    JOIN file_instances f ON s.file_instance_id = f.id
                     WHERE s.kind IN ('METHOD', 'FUNCTION', 'CLASS')
                     AND s.access_modifier = 'PUBLIC'
                     AND (s.documentation IS NULL OR s.documentation = '')
@@ -287,7 +287,7 @@ class TextToSQLTranslator:
                            p.id as parent_id, p.name as parent_name,
                            f.path as child_path
                     FROM symbols s
-                    JOIN files f ON s.file_id = f.id
+                    JOIN file_instances f ON s.file_instance_id = f.id
                     JOIN relations rel ON rel.from_symbol_id = s.id
                     JOIN symbols p ON rel.to_symbol_id = p.id
                     WHERE s.kind = 'CLASS' AND p.kind IN ('CLASS', 'INTERFACE')
@@ -433,7 +433,7 @@ class TextToSQLTranslator:
         sql = f"""
             SELECT s.id, s.name, s.kind, s.signature, f.path, r.name as repository
             FROM symbols s
-            JOIN files f ON s.file_id = f.id
+            JOIN file_instances f ON s.file_instance_id = f.id
             JOIN repositories r ON f.repository_id = r.id
             WHERE {where_clause}
             ORDER BY f.path, s.name

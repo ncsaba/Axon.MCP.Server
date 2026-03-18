@@ -9,7 +9,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.utils.module_summary_generator import ModuleSummaryGenerator
-from src.database.models import ModuleSummary, File
+from src.database.models import ModuleSummary, FileInstance as File
 
 async def test_summary_regeneration():
     print("Starting verification test...")

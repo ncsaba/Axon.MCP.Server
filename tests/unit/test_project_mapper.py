@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import Mock, AsyncMock, MagicMock
 from src.utils.project_mapper import ProjectMapper, DirectoryNode
-from src.database.models import File, Repository
+from src.database.models import FileInstance as File, Repository
 from src.config.enums import LanguageEnum, SourceControlProviderEnum, RepositoryStatusEnum
 
 

@@ -4,7 +4,7 @@ from src.utils.system_context_generator import SystemContextGenerator
 from src.workers.system_context_worker import _generate_context_async
 from src.mcp_server.tools.system_map import get_system_map
 from src.config.enums import LanguageEnum, RepositoryStatusEnum, SymbolKindEnum
-from src.database.models import Repository, File, Symbol
+from src.database.models import Repository, FileInstance as File, Symbol
 
 @pytest.mark.asyncio
 @pytest.mark.integration
@@ -33,7 +33,7 @@ async def test_system_context_generator(async_session):
     await async_session.flush()
 
     symbol = Symbol(
-        file_id=file.id,
+        file_instance_id=file.id,
         language=LanguageEnum.PYTHON,
         kind=SymbolKindEnum.CLASS,
         name="TestClass",

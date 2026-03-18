@@ -7,7 +7,7 @@ from collections import defaultdict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Symbol, File, Relation, Repository
+from src.database.models import Symbol, FileInstance as File, Relation, Repository
 from src.database.query_helpers import active_file_filter
 from src.database.session import AsyncSessionLocal
 from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum
@@ -76,7 +76,7 @@ class CallGraphBuilder:
         # Build query for symbols
         query = (
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -263,7 +263,7 @@ class CallGraphBuilder:
                     result = await session.execute(
                         select(Symbol)
                         .where(
-                            Symbol.file_id == file.id,
+                            Symbol.file_instance_id == file.id,
                             Symbol.kind.in_([SymbolKindEnum.VARIABLE, SymbolKindEnum.PROPERTY])
                         )
                     )

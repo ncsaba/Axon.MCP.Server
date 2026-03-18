@@ -254,7 +254,79 @@ def upgrade() -> None:
     op.create_index(op.f("ix_services_repository_id"), "services", ["repository_id"], unique=False)
     op.create_index(op.f("ix_services_service_type"), "services", ["service_type"], unique=False)
     op.create_table(
-        "files",
+        "repository_index_runs",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("repository_id", sa.Integer(), nullable=False),
+        sa.Column("run_id", sa.Integer(), nullable=False),
+        sa.Column(
+            "status",
+            sa.Enum("RUNNING", "SUCCEEDED", "FAILED", name="repositoryindexrunstatusenum"),
+            nullable=False,
+        ),
+        sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("failure_reason", sa.Text(), nullable=True),
+        sa.ForeignKeyConstraint(["repository_id"], ["repositories.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("repository_id", "run_id", name="uq_repository_index_runs_repo_run_id"),
+    )
+    op.create_index(
+        "idx_repository_index_runs_repo_status",
+        "repository_index_runs",
+        ["repository_id", "status"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_repository_index_runs_repository_id"),
+        "repository_index_runs",
+        ["repository_id"],
+        unique=False,
+    )
+    op.create_index(op.f("ix_repository_index_runs_status"), "repository_index_runs", ["status"], unique=False)
+    op.create_table(
+        "file_contents",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("content_hash", sa.String(length=64), nullable=False),
+        sa.Column(
+            "language",
+            sa.Enum(
+                "JAVASCRIPT",
+                "TYPESCRIPT",
+                "VUE",
+                "PYTHON",
+                "GO",
+                "JAVA",
+                "MARKDOWN",
+                "SQL",
+                "UNKNOWN",
+                name="languageenum",
+            ),
+            nullable=False,
+        ),
+        sa.Column("parser_fingerprint", sa.String(length=255), nullable=False),
+        sa.Column("size_bytes", sa.Integer(), nullable=True),
+        sa.Column("line_count", sa.Integer(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("last_reused_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint(
+            "content_hash",
+            "language",
+            "parser_fingerprint",
+            name="uq_file_contents_identity",
+        ),
+    )
+    op.create_index("idx_file_contents_hash_lang", "file_contents", ["content_hash", "language"], unique=False)
+    op.create_index(op.f("ix_file_contents_content_hash"), "file_contents", ["content_hash"], unique=False)
+    op.create_index(op.f("ix_file_contents_language"), "file_contents", ["language"], unique=False)
+    op.create_index(
+        op.f("ix_file_contents_parser_fingerprint"),
+        "file_contents",
+        ["parser_fingerprint"],
+        unique=False,
+    )
+    op.create_table(
+        "file_instances",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("repository_id", sa.Integer(), nullable=False),
         sa.Column("commit_id", sa.Integer(), nullable=True),
@@ -276,21 +348,52 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("size_bytes", sa.Integer(), nullable=True),
+        sa.Column("current_content_id", sa.Integer(), nullable=True),
         sa.Column("content_hash", sa.String(length=64), nullable=True),
         sa.Column("line_count", sa.Integer(), nullable=True),
         sa.Column("last_modified", sa.DateTime(timezone=True), nullable=True),
+        sa.Column(
+            "lifecycle_state",
+            sa.Enum("ACTIVE", "MISSING", name="filelifecyclestateenum"),
+            nullable=False,
+        ),
+        sa.Column("last_seen_run_id", sa.Integer(), nullable=True),
+        sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("missing_since", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["commit_id"], ["commits.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["current_content_id"], ["file_contents.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["repository_id"], ["repositories.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("repository_id", "path", name="uq_file_instances_repo_path"),
     )
-    op.create_index("idx_file_language_repo", "files", ["language", "repository_id"], unique=False)
-    op.create_index("idx_file_repo_path", "files", ["repository_id", "path"], unique=False)
-    op.create_index(op.f("ix_files_commit_id"), "files", ["commit_id"], unique=False)
-    op.create_index(op.f("ix_files_content_hash"), "files", ["content_hash"], unique=False)
-    op.create_index(op.f("ix_files_language"), "files", ["language"], unique=False)
-    op.create_index(op.f("ix_files_repository_id"), "files", ["repository_id"], unique=False)
+    op.create_index("idx_file_instance_language_repo", "file_instances", ["language", "repository_id"], unique=False)
+    op.create_index("idx_file_instance_repo_path", "file_instances", ["repository_id", "path"], unique=False)
+    op.create_index("idx_file_instance_repo_state", "file_instances", ["repository_id", "lifecycle_state"], unique=False)
+    op.create_index(op.f("ix_file_instances_commit_id"), "file_instances", ["commit_id"], unique=False)
+    op.create_index(op.f("ix_file_instances_content_hash"), "file_instances", ["content_hash"], unique=False)
+    op.create_index(
+        op.f("ix_file_instances_current_content_id"),
+        "file_instances",
+        ["current_content_id"],
+        unique=False,
+    )
+    op.create_index(op.f("ix_file_instances_language"), "file_instances", ["language"], unique=False)
+    op.create_index(
+        op.f("ix_file_instances_last_seen_run_id"),
+        "file_instances",
+        ["last_seen_run_id"],
+        unique=False,
+    )
+    op.create_index(
+        op.f("ix_file_instances_lifecycle_state"),
+        "file_instances",
+        ["lifecycle_state"],
+        unique=False,
+    )
+    op.create_index(op.f("ix_file_instances_repository_id"), "file_instances", ["repository_id"], unique=False)
     op.create_table(
         "service_repository_mappings",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -365,7 +468,7 @@ def upgrade() -> None:
         "configuration_entries",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("repository_id", sa.Integer(), nullable=False),
-        sa.Column("file_id", sa.Integer(), nullable=True),
+        sa.Column("file_instance_id", sa.Integer(), nullable=True),
         sa.Column("config_key", sa.String(length=500), nullable=False),
         sa.Column("config_value", sa.Text(), nullable=True),
         sa.Column("config_type", sa.String(length=50), nullable=True),
@@ -375,7 +478,7 @@ def upgrade() -> None:
         sa.Column("line_number", sa.Integer(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_instance_id"], ["file_instances.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["repository_id"], ["repositories.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -386,7 +489,12 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_configuration_entries_environment"), "configuration_entries", ["environment"], unique=False
     )
-    op.create_index(op.f("ix_configuration_entries_file_id"), "configuration_entries", ["file_id"], unique=False)
+    op.create_index(
+        op.f("ix_configuration_entries_file_instance_id"),
+        "configuration_entries",
+        ["file_instance_id"],
+        unique=False,
+    )
     op.create_index(
         op.f("ix_configuration_entries_repository_id"), "configuration_entries", ["repository_id"], unique=False
     )
@@ -394,7 +502,7 @@ def upgrade() -> None:
         "dependencies",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("repository_id", sa.Integer(), nullable=False),
-        sa.Column("file_id", sa.Integer(), nullable=True),
+        sa.Column("file_instance_id", sa.Integer(), nullable=True),
         sa.Column("package_name", sa.String(length=255), nullable=False),
         sa.Column("package_version", sa.String(length=100), nullable=True),
         sa.Column("version_constraint", sa.String(length=100), nullable=True),
@@ -405,21 +513,21 @@ def upgrade() -> None:
         sa.Column("file_path", sa.String(length=1000), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_instance_id"], ["file_instances.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["repository_id"], ["repositories.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("idx_dep_package", "dependencies", ["package_name"], unique=False)
     op.create_index("idx_dep_repo_type", "dependencies", ["repository_id", "dependency_type"], unique=False)
     op.create_index(op.f("ix_dependencies_dependency_type"), "dependencies", ["dependency_type"], unique=False)
-    op.create_index(op.f("ix_dependencies_file_id"), "dependencies", ["file_id"], unique=False)
+    op.create_index(op.f("ix_dependencies_file_instance_id"), "dependencies", ["file_instance_id"], unique=False)
     op.create_index(op.f("ix_dependencies_package_name"), "dependencies", ["package_name"], unique=False)
     op.create_index(op.f("ix_dependencies_repository_id"), "dependencies", ["repository_id"], unique=False)
     op.create_table(
         "documents",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("repository_id", sa.Integer(), nullable=False),
-        sa.Column("file_id", sa.Integer(), nullable=True),
+        sa.Column("file_instance_id", sa.Integer(), nullable=True),
         sa.Column("path", sa.String(length=1000), nullable=False),
         sa.Column("doc_type", sa.String(length=50), nullable=True),
         sa.Column("title", sa.String(length=500), nullable=True),
@@ -429,19 +537,19 @@ def upgrade() -> None:
         sa.Column("doc_metadata", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_instance_id"], ["file_instances.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["repository_id"], ["repositories.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("idx_document_path", "documents", ["path"], unique=False)
     op.create_index("idx_document_repo_type", "documents", ["repository_id", "doc_type"], unique=False)
     op.create_index(op.f("ix_documents_doc_type"), "documents", ["doc_type"], unique=False)
-    op.create_index(op.f("ix_documents_file_id"), "documents", ["file_id"], unique=False)
+    op.create_index(op.f("ix_documents_file_instance_id"), "documents", ["file_instance_id"], unique=False)
     op.create_index(op.f("ix_documents_repository_id"), "documents", ["repository_id"], unique=False)
     op.create_table(
         "symbols",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("file_id", sa.Integer(), nullable=False),
+        sa.Column("file_instance_id", sa.Integer(), nullable=False),
         sa.Column("commit_id", sa.Integer(), nullable=True),
         sa.Column("service_id", sa.Integer(), nullable=True),
         sa.Column("assembly_name", sa.String(length=255), nullable=True),
@@ -530,7 +638,7 @@ def upgrade() -> None:
         sa.Column("linq_pattern", sa.String(length=100), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["commit_id"], ["commits.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["file_id"], ["files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_instance_id"], ["file_instances.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["parent_symbol_id"], ["symbols.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["service_id"], ["services.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
@@ -539,7 +647,7 @@ def upgrade() -> None:
     op.create_index("idx_symbol_fqn", "symbols", ["fully_qualified_name"], unique=False)
     op.create_index("idx_symbol_name_kind", "symbols", ["name", "kind"], unique=False)
     op.create_index(op.f("ix_symbols_commit_id"), "symbols", ["commit_id"], unique=False)
-    op.create_index(op.f("ix_symbols_file_id"), "symbols", ["file_id"], unique=False)
+    op.create_index(op.f("ix_symbols_file_instance_id"), "symbols", ["file_instance_id"], unique=False)
     op.create_index(op.f("ix_symbols_fully_qualified_name"), "symbols", ["fully_qualified_name"], unique=False)
     op.create_index(op.f("ix_symbols_kind"), "symbols", ["kind"], unique=False)
     op.create_index(op.f("ix_symbols_language"), "symbols", ["language"], unique=False)
@@ -549,8 +657,7 @@ def upgrade() -> None:
     op.create_table(
         "chunks",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("file_id", sa.Integer(), nullable=False),
-        sa.Column("symbol_id", sa.Integer(), nullable=True),
+        sa.Column("file_content_id", sa.Integer(), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
         sa.Column("content_type", sa.String(length=50), nullable=True),
         sa.Column("chunk_subtype", sa.String(length=50), nullable=True),
@@ -561,21 +668,37 @@ def upgrade() -> None:
         sa.Column("parent_chunk_id", sa.Integer(), nullable=True),
         sa.Column("context_metadata", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_content_id"], ["file_contents.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["parent_chunk_id"], ["chunks.id"], ondelete="SET NULL"),
-        sa.ForeignKeyConstraint(["symbol_id"], ["symbols.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_chunks_content_hash"), "chunks", ["content_hash"], unique=False)
-    op.create_index(op.f("ix_chunks_file_id"), "chunks", ["file_id"], unique=False)
+    op.create_index(op.f("ix_chunks_file_content_id"), "chunks", ["file_content_id"], unique=False)
     op.create_index(op.f("ix_chunks_parent_chunk_id"), "chunks", ["parent_chunk_id"], unique=False)
-    op.create_index(op.f("ix_chunks_symbol_id"), "chunks", ["symbol_id"], unique=False)
+    op.create_table(
+        "chunk_symbol_links",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("chunk_id", sa.Integer(), nullable=False),
+        sa.Column("symbol_id", sa.Integer(), nullable=False),
+        sa.Column("file_instance_id", sa.Integer(), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["chunk_id"], ["chunks.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_instance_id"], ["file_instances.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["symbol_id"], ["symbols.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("chunk_id", "symbol_id", name="uq_chunk_symbol_links_chunk_symbol"),
+    )
+    op.create_index("idx_chunk_symbol_links_symbol_chunk", "chunk_symbol_links", ["symbol_id", "chunk_id"], unique=False)
+    op.create_index("idx_chunk_symbol_links_file_symbol", "chunk_symbol_links", ["file_instance_id", "symbol_id"], unique=False)
+    op.create_index(op.f("ix_chunk_symbol_links_chunk_id"), "chunk_symbol_links", ["chunk_id"], unique=False)
+    op.create_index(op.f("ix_chunk_symbol_links_symbol_id"), "chunk_symbol_links", ["symbol_id"], unique=False)
+    op.create_index(op.f("ix_chunk_symbol_links_file_instance_id"), "chunk_symbol_links", ["file_instance_id"], unique=False)
     op.create_table(
         "event_subscriptions",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("symbol_id", sa.Integer(), nullable=True),
         sa.Column("repository_id", sa.Integer(), nullable=False),
-        sa.Column("file_id", sa.Integer(), nullable=True),
+        sa.Column("file_instance_id", sa.Integer(), nullable=True),
         sa.Column("event_type_name", sa.String(length=500), nullable=False),
         sa.Column("messaging_library", sa.String(length=100), nullable=True),
         sa.Column("queue_name", sa.String(length=500), nullable=True),
@@ -584,7 +707,7 @@ def upgrade() -> None:
         sa.Column("handler_class_name", sa.String(length=500), nullable=True),
         sa.Column("handler_metadata", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_instance_id"], ["file_instances.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["repository_id"], ["repositories.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["symbol_id"], ["symbols.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -597,7 +720,12 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_event_subscriptions_event_type_name"), "event_subscriptions", ["event_type_name"], unique=False
     )
-    op.create_index(op.f("ix_event_subscriptions_file_id"), "event_subscriptions", ["file_id"], unique=False)
+    op.create_index(
+        op.f("ix_event_subscriptions_file_instance_id"),
+        "event_subscriptions",
+        ["file_instance_id"],
+        unique=False,
+    )
     op.create_index(
         op.f("ix_event_subscriptions_messaging_library"), "event_subscriptions", ["messaging_library"], unique=False
     )
@@ -610,7 +738,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("symbol_id", sa.Integer(), nullable=True),
         sa.Column("repository_id", sa.Integer(), nullable=False),
-        sa.Column("file_id", sa.Integer(), nullable=True),
+        sa.Column("file_instance_id", sa.Integer(), nullable=True),
         sa.Column("http_method", sa.String(length=10), nullable=False),
         sa.Column("url_pattern", sa.String(length=2000), nullable=False),
         sa.Column("call_type", sa.String(length=50), nullable=False),
@@ -619,7 +747,7 @@ def upgrade() -> None:
         sa.Column("is_dynamic_url", sa.Integer(), nullable=True),
         sa.Column("context_metadata", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_instance_id"], ["file_instances.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["repository_id"], ["repositories.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["symbol_id"], ["symbols.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -630,7 +758,12 @@ def upgrade() -> None:
     op.create_index("idx_api_call_type", "outgoing_api_calls", ["call_type"], unique=False)
     op.create_index("idx_api_call_url", "outgoing_api_calls", ["url_pattern"], unique=False)
     op.create_index(op.f("ix_outgoing_api_calls_call_type"), "outgoing_api_calls", ["call_type"], unique=False)
-    op.create_index(op.f("ix_outgoing_api_calls_file_id"), "outgoing_api_calls", ["file_id"], unique=False)
+    op.create_index(
+        op.f("ix_outgoing_api_calls_file_instance_id"),
+        "outgoing_api_calls",
+        ["file_instance_id"],
+        unique=False,
+    )
     op.create_index(op.f("ix_outgoing_api_calls_http_method"), "outgoing_api_calls", ["http_method"], unique=False)
     op.create_index(op.f("ix_outgoing_api_calls_repository_id"), "outgoing_api_calls", ["repository_id"], unique=False)
     op.create_index(op.f("ix_outgoing_api_calls_symbol_id"), "outgoing_api_calls", ["symbol_id"], unique=False)
@@ -640,7 +773,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("symbol_id", sa.Integer(), nullable=True),
         sa.Column("repository_id", sa.Integer(), nullable=False),
-        sa.Column("file_id", sa.Integer(), nullable=True),
+        sa.Column("file_instance_id", sa.Integer(), nullable=True),
         sa.Column("event_type_name", sa.String(length=500), nullable=False),
         sa.Column("messaging_library", sa.String(length=100), nullable=True),
         sa.Column("topic_name", sa.String(length=500), nullable=True),
@@ -649,7 +782,7 @@ def upgrade() -> None:
         sa.Column("line_number", sa.Integer(), nullable=True),
         sa.Column("event_metadata", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(["file_id"], ["files.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["file_instance_id"], ["file_instances.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["repository_id"], ["repositories.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["symbol_id"], ["symbols.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -659,7 +792,12 @@ def upgrade() -> None:
     op.create_index("idx_published_event_topic", "published_events", ["topic_name"], unique=False)
     op.create_index("idx_published_event_type", "published_events", ["event_type_name"], unique=False)
     op.create_index(op.f("ix_published_events_event_type_name"), "published_events", ["event_type_name"], unique=False)
-    op.create_index(op.f("ix_published_events_file_id"), "published_events", ["file_id"], unique=False)
+    op.create_index(
+        op.f("ix_published_events_file_instance_id"),
+        "published_events",
+        ["file_instance_id"],
+        unique=False,
+    )
     op.create_index(
         op.f("ix_published_events_messaging_library"), "published_events", ["messaging_library"], unique=False
     )
@@ -745,20 +883,16 @@ def upgrade() -> None:
         "embeddings",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("chunk_id", sa.Integer(), nullable=False),
-        sa.Column("symbol_id", sa.Integer(), nullable=True),
         sa.Column("model_name", sa.String(length=100), nullable=False),
         sa.Column("model_version", sa.String(length=50), nullable=True),
         sa.Column("dimension", sa.Integer(), nullable=False),
         sa.Column("vector", pgvector.sqlalchemy.Vector(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(["chunk_id"], ["chunks.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["symbol_id"], ["symbols.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index("idx_embedding_chunk", "embeddings", ["chunk_id"], unique=False)
-    op.create_index("idx_embedding_symbol", "embeddings", ["symbol_id"], unique=False)
     op.create_index(op.f("ix_embeddings_chunk_id"), "embeddings", ["chunk_id"], unique=False)
-    op.create_index(op.f("ix_embeddings_symbol_id"), "embeddings", ["symbol_id"], unique=False)
     op.create_table(
         "event_links",
         sa.Column("id", sa.Integer(), nullable=False),
@@ -808,9 +942,7 @@ def downgrade() -> None:
     op.drop_index("idx_event_link_pub_repo", table_name="event_links")
     op.drop_index("idx_event_link_confidence", table_name="event_links")
     op.drop_table("event_links")
-    op.drop_index(op.f("ix_embeddings_symbol_id"), table_name="embeddings")
     op.drop_index(op.f("ix_embeddings_chunk_id"), table_name="embeddings")
-    op.drop_index("idx_embedding_symbol", table_name="embeddings")
     op.drop_index("idx_embedding_chunk", table_name="embeddings")
     op.drop_table("embeddings")
     op.drop_index(op.f("ix_api_endpoint_links_target_symbol_id"), table_name="api_endpoint_links")
@@ -834,7 +966,7 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_published_events_symbol_id"), table_name="published_events")
     op.drop_index(op.f("ix_published_events_repository_id"), table_name="published_events")
     op.drop_index(op.f("ix_published_events_messaging_library"), table_name="published_events")
-    op.drop_index(op.f("ix_published_events_file_id"), table_name="published_events")
+    op.drop_index(op.f("ix_published_events_file_instance_id"), table_name="published_events")
     op.drop_index(op.f("ix_published_events_event_type_name"), table_name="published_events")
     op.drop_index("idx_published_event_type", table_name="published_events")
     op.drop_index("idx_published_event_topic", table_name="published_events")
@@ -845,7 +977,7 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_outgoing_api_calls_symbol_id"), table_name="outgoing_api_calls")
     op.drop_index(op.f("ix_outgoing_api_calls_repository_id"), table_name="outgoing_api_calls")
     op.drop_index(op.f("ix_outgoing_api_calls_http_method"), table_name="outgoing_api_calls")
-    op.drop_index(op.f("ix_outgoing_api_calls_file_id"), table_name="outgoing_api_calls")
+    op.drop_index(op.f("ix_outgoing_api_calls_file_instance_id"), table_name="outgoing_api_calls")
     op.drop_index(op.f("ix_outgoing_api_calls_call_type"), table_name="outgoing_api_calls")
     op.drop_index("idx_api_call_url", table_name="outgoing_api_calls")
     op.drop_index("idx_api_call_type", table_name="outgoing_api_calls")
@@ -856,7 +988,7 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_event_subscriptions_symbol_id"), table_name="event_subscriptions")
     op.drop_index(op.f("ix_event_subscriptions_repository_id"), table_name="event_subscriptions")
     op.drop_index(op.f("ix_event_subscriptions_messaging_library"), table_name="event_subscriptions")
-    op.drop_index(op.f("ix_event_subscriptions_file_id"), table_name="event_subscriptions")
+    op.drop_index(op.f("ix_event_subscriptions_file_instance_id"), table_name="event_subscriptions")
     op.drop_index(op.f("ix_event_subscriptions_event_type_name"), table_name="event_subscriptions")
     op.drop_index("idx_event_sub_type", table_name="event_subscriptions")
     op.drop_index("idx_event_sub_symbol", table_name="event_subscriptions")
@@ -864,9 +996,14 @@ def downgrade() -> None:
     op.drop_index("idx_event_sub_queue", table_name="event_subscriptions")
     op.drop_index("idx_event_sub_library", table_name="event_subscriptions")
     op.drop_table("event_subscriptions")
-    op.drop_index(op.f("ix_chunks_symbol_id"), table_name="chunks")
+    op.drop_index(op.f("ix_chunk_symbol_links_file_instance_id"), table_name="chunk_symbol_links")
+    op.drop_index(op.f("ix_chunk_symbol_links_symbol_id"), table_name="chunk_symbol_links")
+    op.drop_index(op.f("ix_chunk_symbol_links_chunk_id"), table_name="chunk_symbol_links")
+    op.drop_index("idx_chunk_symbol_links_file_symbol", table_name="chunk_symbol_links")
+    op.drop_index("idx_chunk_symbol_links_symbol_chunk", table_name="chunk_symbol_links")
+    op.drop_table("chunk_symbol_links")
     op.drop_index(op.f("ix_chunks_parent_chunk_id"), table_name="chunks")
-    op.drop_index(op.f("ix_chunks_file_id"), table_name="chunks")
+    op.drop_index(op.f("ix_chunks_file_content_id"), table_name="chunks")
     op.drop_index(op.f("ix_chunks_content_hash"), table_name="chunks")
     op.drop_table("chunks")
     op.drop_index(op.f("ix_symbols_service_id"), table_name="symbols")
@@ -875,27 +1012,27 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_symbols_language"), table_name="symbols")
     op.drop_index(op.f("ix_symbols_kind"), table_name="symbols")
     op.drop_index(op.f("ix_symbols_fully_qualified_name"), table_name="symbols")
-    op.drop_index(op.f("ix_symbols_file_id"), table_name="symbols")
+    op.drop_index(op.f("ix_symbols_file_instance_id"), table_name="symbols")
     op.drop_index(op.f("ix_symbols_commit_id"), table_name="symbols")
     op.drop_index("idx_symbol_name_kind", table_name="symbols")
     op.drop_index("idx_symbol_fqn", table_name="symbols")
     op.drop_index("idx_symbol_complexity", table_name="symbols")
     op.drop_table("symbols")
     op.drop_index(op.f("ix_documents_repository_id"), table_name="documents")
-    op.drop_index(op.f("ix_documents_file_id"), table_name="documents")
+    op.drop_index(op.f("ix_documents_file_instance_id"), table_name="documents")
     op.drop_index(op.f("ix_documents_doc_type"), table_name="documents")
     op.drop_index("idx_document_repo_type", table_name="documents")
     op.drop_index("idx_document_path", table_name="documents")
     op.drop_table("documents")
     op.drop_index(op.f("ix_dependencies_repository_id"), table_name="dependencies")
     op.drop_index(op.f("ix_dependencies_package_name"), table_name="dependencies")
-    op.drop_index(op.f("ix_dependencies_file_id"), table_name="dependencies")
+    op.drop_index(op.f("ix_dependencies_file_instance_id"), table_name="dependencies")
     op.drop_index(op.f("ix_dependencies_dependency_type"), table_name="dependencies")
     op.drop_index("idx_dep_repo_type", table_name="dependencies")
     op.drop_index("idx_dep_package", table_name="dependencies")
     op.drop_table("dependencies")
     op.drop_index(op.f("ix_configuration_entries_repository_id"), table_name="configuration_entries")
-    op.drop_index(op.f("ix_configuration_entries_file_id"), table_name="configuration_entries")
+    op.drop_index(op.f("ix_configuration_entries_file_instance_id"), table_name="configuration_entries")
     op.drop_index(op.f("ix_configuration_entries_environment"), table_name="configuration_entries")
     op.drop_index(op.f("ix_configuration_entries_config_key"), table_name="configuration_entries")
     op.drop_index("idx_config_secret", table_name="configuration_entries")
@@ -915,13 +1052,26 @@ def downgrade() -> None:
     op.drop_index("idx_service_mapping_docker_service", table_name="service_repository_mappings")
     op.drop_index("idx_service_mapping_confidence", table_name="service_repository_mappings")
     op.drop_table("service_repository_mappings")
-    op.drop_index(op.f("ix_files_repository_id"), table_name="files")
-    op.drop_index(op.f("ix_files_language"), table_name="files")
-    op.drop_index(op.f("ix_files_content_hash"), table_name="files")
-    op.drop_index(op.f("ix_files_commit_id"), table_name="files")
-    op.drop_index("idx_file_repo_path", table_name="files")
-    op.drop_index("idx_file_language_repo", table_name="files")
-    op.drop_table("files")
+    op.drop_index(op.f("ix_file_instances_repository_id"), table_name="file_instances")
+    op.drop_index(op.f("ix_file_instances_lifecycle_state"), table_name="file_instances")
+    op.drop_index(op.f("ix_file_instances_last_seen_run_id"), table_name="file_instances")
+    op.drop_index(op.f("ix_file_instances_language"), table_name="file_instances")
+    op.drop_index(op.f("ix_file_instances_current_content_id"), table_name="file_instances")
+    op.drop_index(op.f("ix_file_instances_content_hash"), table_name="file_instances")
+    op.drop_index(op.f("ix_file_instances_commit_id"), table_name="file_instances")
+    op.drop_index("idx_file_instance_repo_state", table_name="file_instances")
+    op.drop_index("idx_file_instance_repo_path", table_name="file_instances")
+    op.drop_index("idx_file_instance_language_repo", table_name="file_instances")
+    op.drop_table("file_instances")
+    op.drop_index(op.f("ix_file_contents_parser_fingerprint"), table_name="file_contents")
+    op.drop_index(op.f("ix_file_contents_language"), table_name="file_contents")
+    op.drop_index(op.f("ix_file_contents_content_hash"), table_name="file_contents")
+    op.drop_index("idx_file_contents_hash_lang", table_name="file_contents")
+    op.drop_table("file_contents")
+    op.drop_index(op.f("ix_repository_index_runs_status"), table_name="repository_index_runs")
+    op.drop_index(op.f("ix_repository_index_runs_repository_id"), table_name="repository_index_runs")
+    op.drop_index("idx_repository_index_runs_repo_status", table_name="repository_index_runs")
+    op.drop_table("repository_index_runs")
     op.drop_index(op.f("ix_services_service_type"), table_name="services")
     op.drop_index(op.f("ix_services_repository_id"), table_name="services")
     op.drop_index(op.f("ix_services_name"), table_name="services")

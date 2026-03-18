@@ -4,7 +4,7 @@ Layer detection utility for identifying architectural layers in code.
 Detects common architectural patterns like MVC, Clean Architecture, and N-tier.
 """
 from typing import Optional
-from src.database.models import Symbol, File
+from src.database.models import Symbol, FileInstance as File
 from src.config.enums import SymbolKindEnum
 
 

@@ -3,7 +3,7 @@
 from typing import List, Dict, Any, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import File, PublishedEvent, EventSubscription
+from src.database.models import FileInstance as File, PublishedEvent, EventSubscription
 from src.config.enums import LanguageEnum
 from src.utils.logging_config import get_logger
 from src.parsers.javascript_parser import JavaScriptParser
@@ -57,7 +57,7 @@ class EventExtractor:
                     published.append(
                         PublishedEvent(
                             repository_id=file.repository_id,
-                            file_id=file.id,
+                            file_instance_id=file.id,
                             event_type_name=event.get("event_type_name", "UnknownEvent"),
                             messaging_library=event.get("messaging_library", "unknown"),
                             topic_name=event.get("topic_name"),
@@ -70,7 +70,7 @@ class EventExtractor:
                     subscribed.append(
                         EventSubscription(
                             repository_id=file.repository_id,
-                            file_id=file.id,
+                            file_instance_id=file.id,
                             event_type_name=event.get("event_type_name", "UnknownEvent"),
                             messaging_library=event.get("messaging_library", "unknown"),
                             queue_name=event.get("queue_name"),

@@ -2,7 +2,7 @@
 import unittest
 from unittest.mock import MagicMock, AsyncMock
 from src.extractors.config_extractor import ConfigExtractor
-from src.database.models import File
+from src.database.models import FileInstance as File
 
 class TestConfigExtractor(unittest.TestCase):
     def setUp(self):

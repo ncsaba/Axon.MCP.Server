@@ -170,7 +170,7 @@ async def test_symbols_list(async_session):
         assert create_response.status_code in [200, 201]
         repo_id = create_response.json()["id"]
 
-        from src.database.models import File, Symbol
+        from src.database.models import FileInstance as File, Symbol
 
         file_record = File(
             repository_id=repo_id,
@@ -183,7 +183,7 @@ async def test_symbols_list(async_session):
         await async_session.flush()
 
         symbol = Symbol(
-            file_id=file_record.id,
+            file_instance_id=file_record.id,
             language=LanguageEnum.PYTHON,
             kind=SymbolKindEnum.FUNCTION,
             name="process_order",
@@ -245,7 +245,7 @@ async def test_symbols_by_repository(async_session):
         assert create_response_2.status_code in [200, 201]
         repo_id_2 = create_response_2.json()["id"]
 
-        from src.database.models import File, Symbol
+        from src.database.models import FileInstance as File, Symbol
 
         file_1 = File(
             repository_id=repo_id_1,
@@ -265,7 +265,7 @@ async def test_symbols_by_repository(async_session):
         await async_session.flush()
 
         symbol_1 = Symbol(
-            file_id=file_1.id,
+            file_instance_id=file_1.id,
             language=LanguageEnum.PYTHON,
             kind=SymbolKindEnum.FUNCTION,
             name="repo_a_func",
@@ -273,7 +273,7 @@ async def test_symbols_by_repository(async_session):
             end_line=3,
         )
         symbol_2 = Symbol(
-            file_id=file_2.id,
+            file_instance_id=file_2.id,
             language=LanguageEnum.PYTHON,
             kind=SymbolKindEnum.FUNCTION,
             name="repo_b_func",

@@ -9,7 +9,7 @@ from unittest.mock import patch, AsyncMock, MagicMock, Mock
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from src.database.models import Repository, File, Chunk, Job
+from src.database.models import Repository, FileInstance as File, Chunk, Job
 from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.config.enums import (
     RepositoryStatusEnum,
@@ -55,7 +55,6 @@ def mock_chunk():
     """Mock chunk."""
     chunk = MagicMock(spec=Chunk)
     chunk.id = 1
-    chunk.file_id = 1
     chunk.content = "def test_function():\n    return True"
     chunk.token_count = 10
     return chunk

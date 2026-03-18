@@ -4,7 +4,7 @@ from typing import List, Dict, Optional, Set, Tuple, Any
 from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
-from src.database.models import Symbol, Relation, File, Chunk, Dependency
+from src.database.models import Symbol, Relation, FileInstance as File, Chunk, ChunkSymbolLink, Dependency
 from src.parsers.base_parser import ParseResult, ParsedSymbol
 from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum
 from src.utils.logging_config import get_logger
@@ -93,7 +93,7 @@ class KnowledgeExtractor:
             try:
                 # Query existing symbols with enrichment for this file
                 enrichment_query = select(Symbol.fully_qualified_name, Symbol.name, Symbol.ai_enrichment).where(
-                    Symbol.file_id == file_id,
+                    Symbol.file_instance_id == file_id,
                     Symbol.ai_enrichment.isnot(None)
                 )
                 result = await self.session.execute(enrichment_query)
@@ -111,10 +111,10 @@ class KnowledgeExtractor:
 
             # Delete existing symbols and dependencies for this file (for re-parsing)
             await self.session.execute(
-                delete(Symbol).where(Symbol.file_id == file_id)
+                delete(Symbol).where(Symbol.file_instance_id == file_id)
             )
             await self.session.execute(
-                delete(Dependency).where(Dependency.file_id == file_id)
+                delete(Dependency).where(Dependency.file_instance_id == file_id)
             )
             
             # Create symbol map for relationship building
@@ -157,14 +157,7 @@ class KnowledgeExtractor:
                         file_id,
                         file_content=source_file_content,
                     )
-                    for chunk in chunks:
-                        await maybe_await(self.session.add(chunk))
-                        chunks_created += 1
-                    
-                    # Flush chunks immediately to ensure FK constraint validation happens now
-                    # This prevents deferred constraint violations from corrupting the session
-                    if chunks:
-                        await self.session.flush()
+                    chunks_created += await self._persist_symbol_chunks(symbol, chunks, file_id)
                     
                 except Exception as e:
                     error_msg = f"Failed to create symbol: {str(e)}"
@@ -277,13 +270,7 @@ class KnowledgeExtractor:
                         file_id,
                         file_content=source_file_content,
                     )
-                    for chunk in chunks:
-                        await maybe_await(self.session.add(chunk))
-                        chunks_created += 1
-                    
-                    # Flush chunks immediately to ensure FK constraint validation happens now
-                    if chunks:
-                        await self.session.flush()
+                    chunks_created += await self._persist_symbol_chunks(l_symbol, chunks, file_id)
                         
                 except Exception as e:
                     logger.error(
@@ -390,7 +377,7 @@ class KnowledgeExtractor:
         return_type = truncate_string(parsed.return_type, 1000, "symbol.return_type")
         
         symbol = Symbol(
-            file_id=file_id,
+            file_instance_id=file_id,
             commit_id=commit_id,
             assembly_name=assembly_name,
             language=language,
@@ -478,9 +465,7 @@ class KnowledgeExtractor:
                 content_hash = hashlib.sha256(content.encode()).hexdigest()
                 
                 chunk = Chunk(
-                    file_instance_id=file_id,
                     file_content_id=file.current_content_id,
-                    symbol_id=symbol.id,
                     content=content,
                     content_type=chunk_dict['content_type'],
                     chunk_subtype=chunk_dict.get('chunk_subtype'),
@@ -551,9 +536,7 @@ class KnowledgeExtractor:
             return []
         
         chunk = Chunk(
-            file_instance_id=file_id,
             file_content_id=file.current_content_id,
-            symbol_id=symbol.id,
             content=content,
             content_type="signature_with_docs",
             token_count=len(content.split()),
@@ -563,6 +546,36 @@ class KnowledgeExtractor:
         )
         
         return [chunk]
+
+    async def _persist_symbol_chunks(
+        self,
+        symbol: Symbol,
+        chunks: List[Chunk],
+        file_id: int,
+    ) -> int:
+        """Persist chunks and association rows for symbol-backed retrieval."""
+        if not chunks:
+            return 0
+
+        for chunk in chunks:
+            await maybe_await(self.session.add(chunk))
+
+        # Materialize chunk IDs before creating link rows.
+        await self.session.flush()
+
+        for chunk in chunks:
+            await maybe_await(
+                self.session.add(
+                    ChunkSymbolLink(
+                        chunk_id=chunk.id,
+                        symbol_id=symbol.id,
+                        file_instance_id=file_id,
+                    )
+                )
+            )
+
+        await self.session.flush()
+        return len(chunks)
     
     async def _build_relationships(
         self,
@@ -738,14 +751,14 @@ class KnowledgeExtractor:
                 # Collect from primary
                 if primary.partial_definition_files:
                     definition_files.update(primary.partial_definition_files)
-                definition_files.add(primary.file_id)
+                definition_files.add(primary.file_instance_id)
                 
                 if primary.merged_from_partial_ids:
                     merged_ids.update(primary.merged_from_partial_ids)
                 
                 # Collect from others
                 for other in others:
-                    definition_files.add(other.file_id)
+                    definition_files.add(other.file_instance_id)
                     merged_ids.add(other.id)
                     # Also collect if they had their own lists (recursive merge)
                     if other.partial_definition_files:

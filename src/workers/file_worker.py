@@ -15,7 +15,7 @@ from src.gitlab.repository_manager import RepositoryManager
 from src.parsers import parse_file
 from src.extractors.knowledge_extractor import KnowledgeExtractor
 from src.database.session import AsyncSessionLocal
-from src.database.models import Repository, File, FileContent, Chunk
+from src.database.models import Repository, FileInstance as File, FileContent, Chunk
 from src.config.enums import FileLifecycleStateEnum
 from src.repository_sources import get_repository_source_registry
 from src.utils.logging_config import get_logger

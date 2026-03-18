@@ -10,7 +10,7 @@ help:
 	@echo "  make test-integration - Run integration tests only (real infra)"
 	@echo "  make lint          - Run linters"
 	@echo "  make format        - Format code"
-	@echo "  make migrate       - Run database migrations"
+	@echo "  make migrate       - Run database migrations (optional/manual, not the default WIP path)"
 	@echo "  make db-reset      - Deliberately reset the PostgreSQL schema and recreate tables"
 	@echo "  make api-start     - Start API server (production)"
 	@echo "  make api-dev       - Start API server (development with reload)"

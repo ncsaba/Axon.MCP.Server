@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.schemas.symbols import RelationEdge, SymbolResponse, SymbolWithRelations
 from src.config.enums import LanguageEnum, SymbolKindEnum
-from src.database.models import File, Relation, Repository, Symbol
+from src.database.models import FileInstance as File, Relation, Repository, Symbol
 from src.database.query_helpers import active_file_filter
 
 
@@ -60,7 +60,7 @@ class SymbolService:
     async def get_symbol(self, symbol_id: int) -> Optional[SymbolResponse]:
         stmt: Select = (
             select(Symbol, File, Repository)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .join(Repository, File.repository_id == Repository.id)
             .where(Symbol.id == symbol_id, active_file_filter())
         )
@@ -87,7 +87,7 @@ class SymbolService:
         if repository_id is not None:
             filters.append(File.repository_id == repository_id)
         if file_id is not None:
-            filters.append(Symbol.file_id == file_id)
+            filters.append(Symbol.file_instance_id == file_id)
         if language is not None:
             filters.append(Symbol.language == language)
         if symbol_kind is not None:
@@ -95,7 +95,7 @@ class SymbolService:
 
         stmt: Select = (
             select(Symbol, File, Repository)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .join(Repository, File.repository_id == Repository.id)
             .order_by(Symbol.id.asc())
             .offset(offset)
@@ -103,7 +103,7 @@ class SymbolService:
         )
         count_stmt: Select = (
             select(func.count(Symbol.id))
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
         )
 
         if filters:

@@ -23,10 +23,10 @@ file instance / file content separation work on branch
 | `FileInstance` vs `FileContent` split | `✅` | File lifecycle and content identity are now separate and should be treated as the baseline model. |
 | Active-only lifecycle filtering for user-facing reads | `✅` | Retrieval/search/navigation code should assume `MISSING` file instances must be excluded unless a path is explicitly lifecycle-aware. |
 | Parse/embed orchestration via `changed_content_ids` | `✅` | New incremental semantic work should prefer content IDs, not changed chunk IDs, as the update signal. |
-| `Chunk.file_instance_id` | `🚧` | Still present, but transitional only. Do not deepen dependency on it. |
-| `Chunk.symbol_id` | `🚧` | Still present, but is now a known blocker to true shared-chunk reuse. Treat it as temporary. |
-| `Embedding.symbol_id` | `🚧` | Still present, but likely to become derived/optional once chunk sharing is finalized. |
-| True many-instance shared chunks | `🛑` | Not fully implemented yet; upcoming schema work will likely add an association layer. |
+| `Chunk.file_instance_id` | `✅` | Removed from the ORM/runtime baseline; symbol/file context now comes from `ChunkSymbolLink`. |
+| `Chunk.symbol_id` | `✅` | Removed from the ORM/runtime baseline; do not reintroduce direct chunk-to-symbol ownership. |
+| `Embedding.symbol_id` | `✅` | Removed from the ORM/runtime baseline; embeddings are chunk-owned only. |
+| True many-instance shared chunks | `🚧` | Association-backed shape is landed in code; remaining work is validation/cleanup, not core schema direction. |
 
 ## Mental Model To Use
 
@@ -47,8 +47,8 @@ flowchart TD
     FC --> C
     C --> E
 
-    C -. temporary legacy linkage .-> S
-    C -. temporary legacy linkage .-> FI
+    C -->|via ChunkSymbolLink| S
+    C -->|via ChunkSymbolLink| FI
 ```
 
 Interpretation:
@@ -56,8 +56,7 @@ Interpretation:
 1. `FileInstance` owns path, repository, lifecycle state, and run tracking.
 2. `FileContent` owns reusable content identity.
 3. `Symbol` is instance-scoped.
-4. `Chunk` should be treated as content-derived, even if some runtime paths still
-   expose legacy symbol/file links.
+4. `Chunk` should be treated as content-derived only.
 5. `Embedding` should be treated as chunk-derived, not file-derived.
 
 ## Compatibility Assessment
@@ -72,7 +71,7 @@ Interpretation:
 | Activating `query_text` reranking in semantic search | `✅` | Safe if it does not add new persistence coupling. |
 | Import/context population in chunk text | `✅` | Improves corpus quality without changing ownership assumptions. |
 | Implementation body inclusion in chunk text | `✅` | Safe if implemented as better chunk content, not new symbol/file ownership coupling. |
-| Snippet-selection improvements | `🚧` | Safe if phrased as "best associated chunk", risky if hardcoded to permanent `Chunk.symbol_id` ownership. |
+| Snippet-selection improvements | `✅` | Safe when phrased as "best associated chunk" and implemented through chunk links. |
 | New incremental semantic-refresh logic | `🚧` | Must use `changed_content_ids`, not `changed_chunk_ids`, as the durable update signal. |
 | New persistence/query logic built around `Chunk.file_instance_id` | `🛑` | Conflicts with planned removal of chunk-to-instance dependency. |
 | New persistence/query logic built around `Chunk.symbol_id` as permanent architecture | `🛑` | Conflicts with planned association-table cut for true shared chunks. |
@@ -137,9 +136,9 @@ change again when shared-chunk schema work lands:
 
 ### Coordinate before coding
 
-1. Any change that adds new uses of `Chunk.symbol_id`.
-2. Any change that adds new uses of `Chunk.file_instance_id`.
-3. Any change that modifies `Embedding.symbol_id` semantics.
+1. Any change that reintroduces direct chunk-to-symbol ownership.
+2. Any change that reintroduces direct chunk-to-file-instance ownership.
+3. Any change that adds symbol ownership back to embeddings.
 4. Any schema change involving chunks, embeddings, or symbol/chunk joins.
 
 ## Concrete Doc Drift To Keep In Mind

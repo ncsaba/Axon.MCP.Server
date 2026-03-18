@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
 from src.database.session import get_db_session as get_db
-from src.database.models import File, Symbol, Repository
+from src.database.models import FileInstance as File, Symbol, Repository
 from src.database.query_helpers import active_file_filter
 from src.workers.enrichment_worker import enrich_batch
 from src.utils.logging_config import get_logger

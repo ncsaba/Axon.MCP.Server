@@ -5,8 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from sqlalchemy import select
 
+from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.config.enums import LanguageEnum, RepositoryStatusEnum
-from src.database.models import Chunk, Embedding, File, FileContent, Repository
+from src.database.models import Chunk, Embedding, FileInstance as File, FileContent, Repository
 from src.embeddings.generator import EmbeddingResult
 from src.workers.file_worker import DEFAULT_PARSER_FINGERPRINT
 from src.workers.embedding_worker import _generate_embeddings_async
@@ -55,7 +56,6 @@ async def test_embedding_reused_for_same_chunk_hash(async_session):
     await async_session.flush()
 
     chunk1 = Chunk(
-        file_id=file_row.id,
         file_content_id=file_row.current_content_id,
         content=content,
         content_type="signature_with_docs",
@@ -76,10 +76,10 @@ async def test_embedding_reused_for_same_chunk_hash(async_session):
         return_value=[
             EmbeddingResult(
                 chunk_id=chunk1_id,
-                vector=[0.1, 0.2, 0.3],
+                vector=[0.1] * FIXED_EMBEDDING_DIMENSION,
                 model_name="test-model",
                 model_version="1.0",
-                dimension=3,
+                dimension=FIXED_EMBEDDING_DIMENSION,
             )
         ]
     )
@@ -92,7 +92,6 @@ async def test_embedding_reused_for_same_chunk_hash(async_session):
     assert generator_instance.generate_embeddings.await_count == 1
 
     chunk2 = Chunk(
-        file_id=file_row.id,
         file_content_id=file_row.current_content_id,
         content=content,
         content_type="signature_with_docs",

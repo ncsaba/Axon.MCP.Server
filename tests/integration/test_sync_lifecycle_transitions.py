@@ -15,7 +15,7 @@ from src.config.enums import (
     RepositoryStatusEnum,
     SourceControlProviderEnum,
 )
-from src.database.models import File, Job, Repository, RepositoryIndexRun
+from src.database.models import FileInstance as File, Job, Repository, RepositoryIndexRun
 from src.workers.sync_worker import _sync_repository_async
 
 

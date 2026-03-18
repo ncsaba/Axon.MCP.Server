@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock
 from src.embeddings.symbol_chunker import SymbolChunker, ChunkConfig
 from src.embeddings.chunk_context import ChunkContext
-from src.database.models import Symbol, File
+from src.database.models import Symbol, FileInstance as File
 from src.config.enums import SymbolKindEnum, LanguageEnum
 
 

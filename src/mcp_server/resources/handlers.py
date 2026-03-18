@@ -2,7 +2,7 @@ import json
 from typing import Any, Dict, List
 from sqlalchemy import select, func
 
-from src.database.models import File, Repository, Symbol
+from src.database.models import FileInstance as File, Repository, Symbol
 from src.database.query_helpers import active_file_filter
 from src.database.session import get_async_session
 from src.utils.logging_config import get_logger
@@ -104,11 +104,11 @@ async def read_mcp_resource(uri: str) -> Dict[str, Any]:
                 file_ids = [file.id for file, _ in files_data]
                 symbol_counts_result = await session.execute(
                     select(
-                        Symbol.file_id,
+                        Symbol.file_instance_id,
                         func.count(Symbol.id).label('count')
                     )
-                    .where(Symbol.file_id.in_(file_ids))
-                    .group_by(Symbol.file_id)
+                    .where(Symbol.file_instance_id.in_(file_ids))
+                    .group_by(Symbol.file_instance_id)
                 ) if file_ids else None
                 symbol_counts = {row.file_id: row.count for row in symbol_counts_result} if symbol_counts_result else {}
                 
@@ -158,11 +158,11 @@ async def read_mcp_resource(uri: str) -> Dict[str, Any]:
                 file_ids = [f.id for f in files]
                 symbol_counts_result = await session.execute(
                     select(
-                        Symbol.file_id,
+                        Symbol.file_instance_id,
                         func.count(Symbol.id).label('count')
                     )
-                    .where(Symbol.file_id.in_(file_ids))
-                    .group_by(Symbol.file_id)
+                    .where(Symbol.file_instance_id.in_(file_ids))
+                    .group_by(Symbol.file_instance_id)
                 ) if file_ids else None
                 symbol_counts = {row.file_id: row.count for row in symbol_counts_result} if symbol_counts_result else {}
                 

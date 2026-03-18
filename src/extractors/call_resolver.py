@@ -4,7 +4,7 @@ from typing import Optional, List, Dict
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Symbol, File, Relation
+from src.database.models import Symbol, FileInstance as File, Relation
 from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum, RelationTypeEnum
 from src.extractors.call_analyzer import Call
@@ -259,7 +259,7 @@ class CallResolver:
         # Query for CLASS, INTERFACE, STRUCT, ENUM
         result = await self.session.execute(
             select(Symbol)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == file.repository_id,
                 active_file_filter(),
@@ -283,7 +283,7 @@ class CallResolver:
         # Fallback: Try simple name match if unique
         result = await self.session.execute(
             select(Symbol)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == file.repository_id,
                 active_file_filter(),
@@ -313,7 +313,7 @@ class CallResolver:
         # Get class symbol
         result = await self.session.execute(
             select(Symbol)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -330,7 +330,7 @@ class CallResolver:
         # Find member
         result = await self.session.execute(
             select(Symbol)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -358,7 +358,7 @@ class CallResolver:
                 
         result = await self.session.execute(
             select(Symbol)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -371,7 +371,7 @@ class CallResolver:
         for class_symbol in class_symbols:
             result = await self.session.execute(
                 select(Symbol)
-                .join(File, Symbol.file_id == File.id)
+                .join(File, Symbol.file_instance_id == File.id)
                 .where(
                     File.repository_id == repository_id,
                     active_file_filter(),
@@ -396,7 +396,7 @@ class CallResolver:
     ) -> Optional[Symbol]:
         """Find method in the same file."""
         filters = [
-            Symbol.file_id == file_id,
+            Symbol.file_instance_id == file_id,
             Symbol.name == method_name,
             Symbol.kind.in_([SymbolKindEnum.METHOD, SymbolKindEnum.FUNCTION])
         ]
@@ -418,7 +418,7 @@ class CallResolver:
         # First, get the parent class symbol
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -475,7 +475,7 @@ class CallResolver:
         # 1. Try exact match on Fully Qualified Name first (most accurate)
         result = await self.session.execute(
             select(Symbol)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -489,7 +489,7 @@ class CallResolver:
         if not class_symbols:
             result = await self.session.execute(
                 select(Symbol)
-                .join(File, Symbol.file_id == File.id)
+                .join(File, Symbol.file_instance_id == File.id)
                 .where(
                     File.repository_id == repository_id,
                     active_file_filter(),
@@ -531,7 +531,7 @@ class CallResolver:
         """
         result = await self.session.execute(
             select(Symbol)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),

@@ -55,8 +55,9 @@ make dev-install
 # Start PostgreSQL and Redis (or use Docker for just these)
 docker-compose -f docker/docker-compose.yml up -d postgres redis
 
-# Run database migrations
-alembic upgrade head
+# For the current WIP cycle, prefer a fresh schema from the ORM baseline.
+# Alembic is still available if you explicitly want the migration path.
+python scripts/reset_db.py --yes
 
 # Start API server
 uvicorn src.api.main:app --host 0.0.0.0 --port 8080 --reload
@@ -81,9 +82,13 @@ cp .env.example .env
 # Start services with Docker Compose
 make docker-up
 
-# Run database migrations
-make migrate
+# Optional Alembic path:
+# make migrate
+# Current WIP default for this branch:
+make db-reset
 
 # Verify installation
 curl http://localhost:8080/api/v1/health
 ```
+
+Both workflows remain valid. For current development on this fork, use `make db-reset` when you want a clean schema quickly; use `make migrate` only when you intentionally want to exercise the Alembic path.

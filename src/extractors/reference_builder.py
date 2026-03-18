@@ -1,7 +1,7 @@
 from typing import List, Dict, Set, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from src.database.models import Symbol, Relation, File
+from src.database.models import Symbol, Relation, FileInstance as File
 from src.database.query_helpers import active_file_filter
 from src.config.enums import RelationTypeEnum, SymbolKindEnum
 from src.extractors.call_resolver import CallResolver
@@ -67,7 +67,7 @@ class ReferenceBuilder:
                     try:
                         # Get symbols for this file with their structured_docs
                         symbols_result = await self.session.execute(
-                            select(Symbol).where(Symbol.file_id == file.id)
+                            select(Symbol).where(Symbol.file_instance_id == file.id)
                         )
                         db_symbols = symbols_result.scalars().all()
                         
@@ -304,7 +304,7 @@ class ReferenceBuilder:
             
             result = await self.session.execute(
                 select(Symbol).where(
-                    Symbol.file_id == file_id,
+                    Symbol.file_instance_id == file_id,
                     Symbol.name == name,
                     Symbol.kind == kind,
                     Symbol.start_line == start_line

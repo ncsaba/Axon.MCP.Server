@@ -5,7 +5,7 @@ import pytest
 
 from src.api.services.symbol_service import SymbolService
 from src.config.enums import LanguageEnum, RelationTypeEnum, SymbolKindEnum
-from src.database.models import File, Relation, Repository, Symbol
+from src.database.models import FileInstance as File, Relation, Repository, Symbol
 
 
 @pytest.mark.asyncio
@@ -14,7 +14,7 @@ async def test_get_symbol_normalizes_legacy_tuple_parameters():
 
     symbol = Symbol(
         id=42,
-        file_id=11,
+        file_instance_id=11,
         language=LanguageEnum.PYTHON,
         kind=SymbolKindEnum.FUNCTION,
         name="do_work",
@@ -43,7 +43,7 @@ async def test_get_symbol_with_relations_returns_ordered_edges():
 
     base_symbol = Symbol(
         id=10,
-        file_id=1,
+        file_instance_id=1,
         language=LanguageEnum.PYTHON,
         kind=SymbolKindEnum.FUNCTION,
         name="entrypoint",
@@ -72,7 +72,7 @@ async def test_get_symbol_with_relations_returns_ordered_edges():
 
     target_a = Symbol(
         id=13,
-        file_id=1,
+        file_instance_id=1,
         language=LanguageEnum.PYTHON,
         kind=SymbolKindEnum.FUNCTION,
         name="helper_a",
@@ -82,7 +82,7 @@ async def test_get_symbol_with_relations_returns_ordered_edges():
     )
     target_b = Symbol(
         id=15,
-        file_id=1,
+        file_instance_id=1,
         language=LanguageEnum.PYTHON,
         kind=SymbolKindEnum.CLASS,
         name="HelperB",

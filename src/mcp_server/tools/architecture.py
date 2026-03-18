@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from mcp.types import TextContent
 
-from src.database.models import Symbol, File, Repository, Relation, OutgoingApiCall, ApiEndpointLink, PublishedEvent, EventLink, EventSubscription, Service
+from src.database.models import Symbol, FileInstance as File, Repository, Relation, OutgoingApiCall, ApiEndpointLink, PublishedEvent, EventLink, EventSubscription, Service
 from src.database.query_helpers import active_file_filter
 from src.database.session import get_async_session
 from src.config.enums import SymbolKindEnum, RelationTypeEnum
@@ -250,7 +250,7 @@ async def trace_request_flow(
             # The details are in structured_docs: {http_method, route, controller, action, ...}
             query = (
                 select(Symbol, File)
-                .join(File, Symbol.file_id == File.id)
+                .join(File, Symbol.file_instance_id == File.id)
                 .where(
                     File.repository_id == repository_id,
                     active_file_filter(),
@@ -312,7 +312,7 @@ async def trace_request_flow(
             controller_method_result = await session.execute(
                 select(Symbol)
                 .where(
-                    Symbol.file_id == matching_symbol.file_id,
+                    Symbol.file_instance_id == matching_symbol.file_instance_id,
                     Symbol.kind == SymbolKindEnum.METHOD,
                     Symbol.start_line == matching_symbol.start_line
                 )
@@ -330,7 +330,7 @@ async def trace_request_flow(
                     method_result = await session.execute(
                         select(Symbol)
                         .where(
-                            Symbol.file_id == matching_symbol.file_id,
+                            Symbol.file_instance_id == matching_symbol.file_instance_id,
                             Symbol.kind == SymbolKindEnum.METHOD,
                             Symbol.name == ep_action
                         )

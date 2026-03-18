@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from src.vector_store.pgvector_store import PgVectorStore
 from src.embeddings.generator import EmbeddingResult
-from src.database.models import Embedding, Chunk, Symbol, File, Repository
+from src.database.models import Embedding, Chunk, Symbol, FileInstance as File, Repository
 from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.config.enums import SymbolKindEnum, LanguageEnum
 

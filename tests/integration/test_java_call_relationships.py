@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from src.config.enums import LanguageEnum, RelationTypeEnum, RepositoryStatusEnum, SourceControlProviderEnum, SymbolKindEnum
 from src.config.settings import get_settings
-from src.database.models import File, Relation, Repository, Symbol
+from src.database.models import FileInstance as File, Relation, Repository, Symbol
 from src.extractors.call_graph_builder import CallGraphBuilder
 
 
@@ -60,7 +60,7 @@ async def test_java_call_relationships_are_created(async_session):
     await async_session.flush()
 
     helper_symbol = Symbol(
-        file_id=file.id,
+        file_instance_id=file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.METHOD,
         name="helper",
@@ -70,7 +70,7 @@ async def test_java_call_relationships_are_created(async_session):
         end_line=3,
     )
     run_symbol = Symbol(
-        file_id=file.id,
+        file_instance_id=file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.METHOD,
         name="run",
@@ -153,7 +153,7 @@ async def test_java_static_call_relationships_are_created(async_session):
     await async_session.flush()
 
     run_symbol = Symbol(
-        file_id=app_file.id,
+        file_instance_id=app_file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.METHOD,
         name="run",
@@ -163,7 +163,7 @@ async def test_java_static_call_relationships_are_created(async_session):
         end_line=4,
     )
     constants_class_symbol = Symbol(
-        file_id=constants_file.id,
+        file_instance_id=constants_file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.CLASS,
         name="Constants",
@@ -172,7 +172,7 @@ async def test_java_static_call_relationships_are_created(async_session):
         end_line=4,
     )
     default_limit_symbol = Symbol(
-        file_id=constants_file.id,
+        file_instance_id=constants_file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.METHOD,
         name="defaultLimit",
@@ -239,7 +239,7 @@ async def test_java_overloaded_call_prefers_matching_arity(async_session):
     await async_session.flush()
 
     helper_no_arg_symbol = Symbol(
-        file_id=file.id,
+        file_instance_id=file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.METHOD,
         name="helper",
@@ -250,7 +250,7 @@ async def test_java_overloaded_call_prefers_matching_arity(async_session):
         end_line=3,
     )
     helper_one_arg_symbol = Symbol(
-        file_id=file.id,
+        file_instance_id=file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.METHOD,
         name="helper",
@@ -261,7 +261,7 @@ async def test_java_overloaded_call_prefers_matching_arity(async_session):
         end_line=4,
     )
     run_symbol = Symbol(
-        file_id=file.id,
+        file_instance_id=file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.METHOD,
         name="run",

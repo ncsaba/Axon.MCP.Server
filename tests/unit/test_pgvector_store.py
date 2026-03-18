@@ -36,7 +36,6 @@ async def test_store_embeddings_success(vector_store, mock_session):
     # Mock chunk - use simple MagicMock to avoid InvalidSpecError
     mock_chunk = MagicMock()
     mock_chunk.id = 1
-    mock_chunk.symbol_id = 10
     
     # Mock for batch query (uses scalars() now)
     mock_chunks_result = MagicMock()
@@ -356,7 +355,6 @@ async def test_store_multiple_embeddings(vector_store, mock_session):
     for i in range(3):
         mock_chunk = MagicMock()
         mock_chunk.id = i + 1
-        mock_chunk.symbol_id = (i + 1) * 10
         mock_chunks.append(mock_chunk)
     
     # Mock batch query with all chunks
@@ -404,7 +402,6 @@ async def test_store_embeddings_rejects_wrong_dimension(vector_store, mock_sessi
     """Test storing embeddings rejects vectors outside the fixed contract."""
     mock_chunk = MagicMock()
     mock_chunk.id = 1
-    mock_chunk.symbol_id = 10
     mock_chunks_result = MagicMock()
     mock_chunks_result.scalars.return_value = [mock_chunk]
     mock_session.execute.return_value = mock_chunks_result

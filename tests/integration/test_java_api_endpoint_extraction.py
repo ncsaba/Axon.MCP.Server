@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from src.config.enums import LanguageEnum, RepositoryStatusEnum, SourceControlProviderEnum, SymbolKindEnum
 from src.config.settings import get_settings
-from src.database.models import File, Repository, Symbol
+from src.database.models import FileInstance as File, Repository, Symbol
 from src.extractors.api_extractor import ApiEndpointExtractor
 
 
@@ -76,7 +76,7 @@ async def test_java_api_endpoints_are_extracted_and_saved(async_session):
 
     result = await async_session.execute(
         select(Symbol).where(
-            Symbol.file_id == file.id,
+            Symbol.file_instance_id == file.id,
             Symbol.kind == SymbolKindEnum.ENDPOINT,
             Symbol.name == "GET /api/users/{id}",
         )

@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
-from src.database.models import Embedding, Chunk, Symbol, File, Repository
+from src.database.models import Embedding, Chunk, ChunkSymbolLink, Symbol, FileInstance as File, Repository
 from src.database.query_helpers import active_file_filter
 from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.embeddings.generator import EmbeddingResult
@@ -75,7 +75,6 @@ class PgVectorStore:
                 # Create embedding record
                 embedding = Embedding(
                     chunk_id=result.chunk_id,
-                    symbol_id=chunk.symbol_id,
                     model_name=result.model_name,
                     model_version=result.model_version,
                     dimension=result.dimension,
@@ -166,10 +165,17 @@ class PgVectorStore:
         # Using ORDER BY distance + LIMIT keeps the query in a shape that pgvector ANN indexes can use.
         vector_limit = max(limit * 10, 50)
         
-        candidate_stmt = select(
-            Embedding.symbol_id,
-            vector_score_expr.label("vector_score"),
-        ).where(Embedding.dimension == FIXED_EMBEDDING_DIMENSION)
+        candidate_stmt = (
+            select(
+                ChunkSymbolLink.symbol_id.label("symbol_id"),
+                vector_score_expr.label("vector_score"),
+            )
+            .join(
+                ChunkSymbolLink,
+                ChunkSymbolLink.chunk_id == Embedding.chunk_id,
+            )
+            .where(Embedding.dimension == FIXED_EMBEDDING_DIMENSION)
+        )
 
         if query_model_name:
             candidate_stmt = candidate_stmt.where(Embedding.model_name == query_model_name)
@@ -195,7 +201,7 @@ class PgVectorStore:
             vector_subq,
             Symbol.id == vector_subq.c.symbol_id
         ).join(
-            File, Symbol.file_id == File.id
+            File, Symbol.file_instance_id == File.id
         ).join(
             Repository, File.repository_id == Repository.id
         ).where(
@@ -225,7 +231,7 @@ class PgVectorStore:
                 File,
                 Repository
             ).join(
-                File, Symbol.file_id == File.id
+                File, Symbol.file_instance_id == File.id
             ).join(
                 Repository, File.repository_id == Repository.id
             ).where(
@@ -455,11 +461,14 @@ class PgVectorStore:
             if index_type == "ivfflat":
                 # FIXED: Use parameterized query to prevent SQL injection
                 await self.session.execute(
-                    text("""
-                        CREATE INDEX %s 
-                        ON embeddings USING ivfflat (vector vector_cosine_ops) 
+                    text(
+                        """
+                        CREATE INDEX %s
+                        ON embeddings USING ivfflat (vector vector_cosine_ops)
                         WITH (lists = :lists)
-                    """ % index_name),
+                        """
+                        % index_name
+                    ),
                     {"lists": lists}
                 )
                 # FIXED: Analyze table so Postgres can use the IVFFlat index
@@ -470,8 +479,8 @@ class PgVectorStore:
             elif index_type == "hnsw":
                 await self.session.execute(text(
                     f"""
-                    CREATE INDEX {index_name} 
-                    ON embeddings USING hnsw (vector vector_cosine_ops) 
+                    CREATE INDEX {index_name}
+                    ON embeddings USING hnsw (vector vector_cosine_ops)
                     WITH (m = 16, ef_construction = 64)
                     """
                 ))

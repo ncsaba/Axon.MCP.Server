@@ -11,7 +11,7 @@ from sqlalchemy import select
 from src.workers.celery_app import celery_app
 from src.workers.utils import _run_with_engine_cleanup
 from src.database.session import AsyncSessionLocal
-from src.database.models import Chunk, Embedding, File
+from src.database.models import Chunk, ChunkSymbolLink, Embedding, FileInstance as File, Symbol
 from src.database.query_helpers import active_file_filter
 from src.embeddings.generator import EmbeddingGenerator, EmbeddingResult
 from src.vector_store.pgvector_store import PgVectorStore
@@ -39,8 +39,11 @@ async def _generate_repository_embeddings(
     # Get all chunks for repository
     result = await session.execute(
         select(Chunk)
-        .join(File)
+        .join(ChunkSymbolLink, ChunkSymbolLink.chunk_id == Chunk.id)
+        .join(Symbol, Symbol.id == ChunkSymbolLink.symbol_id)
+        .join(File, Symbol.file_instance_id == File.id)
         .where(File.repository_id == repository_id, active_file_filter())
+        .distinct()
     )
     chunks = result.scalars().all()
     

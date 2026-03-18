@@ -7,7 +7,7 @@ from src.api.dependencies import get_db_session
 from src.database.models import (
     Repository, Service, OutgoingApiCall, 
     PublishedEvent, EventSubscription, ApiEndpointLink, 
-    EventLink, ConfigurationEntry, File
+    EventLink, ConfigurationEntry, FileInstance as File
 )
 from src.database.query_helpers import active_file_filter
 from src.database.session import AsyncSession

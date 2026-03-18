@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Symbol, File, Relation
+from src.database.models import Symbol, FileInstance as File, Relation
 from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum, RelationTypeEnum, AccessModifierEnum
 from src.utils.logging_config import get_logger
@@ -149,7 +149,7 @@ class PatternDetector:
         
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -223,7 +223,7 @@ class PatternDetector:
         
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -271,7 +271,7 @@ class PatternDetector:
         
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -325,7 +325,7 @@ class PatternDetector:
         
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -379,7 +379,7 @@ class PatternDetector:
         # Detect controllers
         controllers_result = await self.session.execute(
             select(func.count(Symbol.id))
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -402,7 +402,7 @@ class PatternDetector:
         # Detect services
         services_result = await self.session.execute(
             select(func.count(Symbol.id))
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -425,7 +425,7 @@ class PatternDetector:
         # Detect repositories
         repos_result = await self.session.execute(
             select(func.count(Symbol.id))
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -466,7 +466,7 @@ class PatternDetector:
                 File.id,
                 func.count(methods_alias.id).label('method_count')
             )
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .outerjoin(
                 methods_alias,
                 Symbol.fully_qualified_name == methods_alias.parent_name
@@ -508,7 +508,7 @@ class PatternDetector:
         result = await self.session.execute(
             select(Relation)
             .join(Symbol, Relation.from_symbol_id == Symbol.id)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),

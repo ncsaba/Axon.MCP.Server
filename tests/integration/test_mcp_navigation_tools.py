@@ -3,7 +3,7 @@
 import pytest
 from src.mcp_server.tools.repository import get_file_content
 
-from src.database.models import Repository, File, Symbol
+from src.database.models import Repository, FileInstance as File, Symbol
 from src.config.enums import SymbolKindEnum, LanguageEnum, RelationTypeEnum
 
 

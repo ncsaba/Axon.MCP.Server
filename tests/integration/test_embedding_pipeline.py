@@ -1,12 +1,24 @@
 import pytest
 from unittest.mock import patch, MagicMock
-import json
+import numpy as np
 from src.embeddings.generator import EmbeddingGenerator
 from src.embeddings.cache import EmbeddingCache
 from src.embeddings.chunking import TextChunker
+from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.config.settings import get_settings
 
 settings = get_settings()
+
+
+def _mock_local_embedding_model():
+    model = MagicMock()
+    model.get_sentence_embedding_dimension.return_value = FIXED_EMBEDDING_DIMENSION
+
+    def encode(texts):
+        return np.array([[0.1] * FIXED_EMBEDDING_DIMENSION for _ in texts])
+
+    model.encode.side_effect = encode
+    return model
 
 
 @pytest.mark.integration
@@ -17,10 +29,18 @@ settings = get_settings()
 @pytest.mark.asyncio
 async def test_end_to_end_embedding_generation():
     """Test complete embedding generation pipeline."""
-    # Mock Redis
-    with patch("src.embeddings.cache.redis") as mock_redis:
+    with patch("src.embeddings.cache.redis") as mock_redis, patch(
+        "src.embeddings.generator.get_settings"
+    ) as mock_get_settings, patch(
+        "sentence_transformers.SentenceTransformer"
+    ) as mock_st:
         mock_client = MagicMock()
         mock_redis.from_url.return_value = mock_client
+        mock_settings = mock_get_settings.return_value
+        mock_settings.embedding_provider = "local"
+        mock_settings.local_embedding_model = "custom-local-1024"
+        mock_settings.embedding_batch_size = 100
+        mock_st.return_value = _mock_local_embedding_model()
         
         # Mock storage
         storage = {}
@@ -61,8 +81,14 @@ async def test_end_to_end_embedding_generation():
 async def test_local_embedding_generation():
     """Test local model embedding generation."""
     # Override to use local model
-    with pytest.MonkeyPatch.context() as m:
-        m.setattr(settings, "embedding_provider", "local")
+    with patch("src.embeddings.generator.get_settings") as mock_get_settings, patch(
+        "sentence_transformers.SentenceTransformer"
+    ) as mock_st:
+        mock_settings = mock_get_settings.return_value
+        mock_settings.embedding_provider = "local"
+        mock_settings.local_embedding_model = "custom-local-1024"
+        mock_settings.embedding_batch_size = 100
+        mock_st.return_value = _mock_local_embedding_model()
         
         generator = EmbeddingGenerator()
         
@@ -84,33 +110,49 @@ async def test_local_embedding_generation():
 async def test_chunking_and_embedding():
     """Test text chunking followed by embedding generation."""
     chunker = TextChunker(max_tokens=50, overlap=10)
-    generator = EmbeddingGenerator()
+    with patch("src.embeddings.generator.get_settings") as mock_get_settings, patch(
+        "sentence_transformers.SentenceTransformer"
+    ) as mock_st:
+        mock_settings = mock_get_settings.return_value
+        mock_settings.embedding_provider = "local"
+        mock_settings.local_embedding_model = "custom-local-1024"
+        mock_settings.embedding_batch_size = 100
+        mock_st.return_value = _mock_local_embedding_model()
+        generator = EmbeddingGenerator()
     
-    # Long text that needs chunking
-    long_text = " ".join([f"This is sentence number {i}." for i in range(100)])
+        # Long text that needs chunking
+        long_text = " ".join([f"This is sentence number {i}." for i in range(100)])
     
-    # Chunk the text
-    text_chunks = chunker.chunk_text(long_text)
-    assert len(text_chunks) > 1  # Should be split into multiple chunks
+        # Chunk the text
+        text_chunks = chunker.chunk_text(long_text)
+        assert len(text_chunks) > 1  # Should be split into multiple chunks
     
-    # Convert to format expected by generator
-    chunks = [{'id': i, 'content': chunk} for i, chunk in enumerate(text_chunks)]
+        # Convert to format expected by generator
+        chunks = [{'id': i, 'content': chunk} for i, chunk in enumerate(text_chunks)]
     
-    # Generate embeddings
-    results = await generator.generate_embeddings(chunks)
+        # Generate embeddings
+        results = await generator.generate_embeddings(chunks)
     
-    assert len(results) == len(text_chunks)
-    assert all(len(r.vector) == generator.dimension for r in results)
+        assert len(results) == len(text_chunks)
+        assert all(len(r.vector) == generator.dimension for r in results)
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
 async def test_cache_hit_rate():
     """Test that caching reduces redundant embedding generation."""
-    # Mock Redis
-    with patch("src.embeddings.cache.redis") as mock_redis:
+    with patch("src.embeddings.cache.redis") as mock_redis, patch(
+        "src.embeddings.generator.get_settings"
+    ) as mock_get_settings, patch(
+        "sentence_transformers.SentenceTransformer"
+    ) as mock_st:
         mock_client = MagicMock()
         mock_redis.from_url.return_value = mock_client
+        mock_settings = mock_get_settings.return_value
+        mock_settings.embedding_provider = "local"
+        mock_settings.local_embedding_model = "custom-local-1024"
+        mock_settings.embedding_batch_size = 100
+        mock_st.return_value = _mock_local_embedding_model()
         
         # Mock storage
         storage = {}
@@ -152,23 +194,31 @@ async def test_batch_processing_performance():
     """Test performance of batch processing."""
     import time
     
-    generator = EmbeddingGenerator()
+    with patch("src.embeddings.generator.get_settings") as mock_get_settings, patch(
+        "sentence_transformers.SentenceTransformer"
+    ) as mock_st:
+        mock_settings = mock_get_settings.return_value
+        mock_settings.embedding_provider = "local"
+        mock_settings.local_embedding_model = "custom-local-1024"
+        mock_settings.embedding_batch_size = 100
+        mock_st.return_value = _mock_local_embedding_model()
+        generator = EmbeddingGenerator()
     
-    # Create a large batch
-    chunks = [
-        {'id': i, 'content': f'This is test content number {i}'}
-        for i in range(100)
-    ]
+        # Create a large batch
+        chunks = [
+            {'id': i, 'content': f'This is test content number {i}'}
+            for i in range(100)
+        ]
     
-    start_time = time.time()
-    results = await generator.generate_embeddings(chunks)
-    duration = time.time() - start_time
+        start_time = time.time()
+        results = await generator.generate_embeddings(chunks)
+        duration = time.time() - start_time
     
-    assert len(results) == 100
-    assert duration < 60  # Should complete within 60 seconds for local model
+        assert len(results) == 100
+        assert duration < 60  # Should complete within 60 seconds for mocked local model
     
-    print(f"Generated {len(results)} embeddings in {duration:.2f} seconds")
-    print(f"Average: {duration/len(results):.3f} seconds per embedding")
+        print(f"Generated {len(results)} embeddings in {duration:.2f} seconds")
+        print(f"Average: {duration/len(results):.3f} seconds per embedding")
 
 
 @pytest.mark.integration
@@ -221,4 +271,3 @@ class MyClass:
     
     # Verify chunks contain code
     assert all(chunk.strip() for chunk in chunks)
-

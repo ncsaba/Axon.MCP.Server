@@ -42,6 +42,6 @@ LOG_FORMAT=json
 ## Configuration Files
 
 - **`.env`**: Environment-specific configuration
-- **`alembic.ini`**: Database migration settings
+- **`alembic.ini`**: Alembic migration settings for the migration-based workflow
 - **`docker-compose.yml`**: Docker service definitions
 - **`pyproject.toml`**: Python project metadata

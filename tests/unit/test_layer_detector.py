@@ -5,7 +5,7 @@ Tests the heuristics-based detection of architectural layers.
 """
 import pytest
 from src.utils.layer_detector import LayerDetector
-from src.database.models import Symbol, File
+from src.database.models import Symbol, FileInstance as File
 from src.config.enums import SymbolKindEnum
 
 

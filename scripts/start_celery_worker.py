@@ -27,20 +27,6 @@ sys.path.insert(0, str(project_root))
 from src.workers.celery_app import celery_app
 
 
-def run_auto_migrations():
-    """Run auto-migrations before starting worker."""
-    try:
-        from scripts.auto_migrate import run_all_migrations
-        print("Running auto-migrations...")
-        success = asyncio.run(run_all_migrations())
-        if success:
-            print("✓ Auto-migrations completed successfully")
-        else:
-            print("⚠ Auto-migrations failed, but worker will continue")
-    except Exception as e:
-        print(f"⚠ Auto-migrations error: {e}, but worker will continue")
-
-
 def main():
     """Start Celery worker."""
     parser = argparse.ArgumentParser(
@@ -77,8 +63,8 @@ def main():
     
     args = parser.parse_args()
     
-    # Run auto-migrations before starting worker
-    run_auto_migrations()
+    # Schema setup is handled separately in this WIP fork. The worker should not
+    # auto-run migrations on startup.
     
     # Build worker arguments
     worker_args = [
@@ -104,4 +90,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import Mock, MagicMock, AsyncMock
 from src.utils.module_identifier import ModuleIdentifier, ModuleInfo
-from src.database.models import File
+from src.database.models import FileInstance as File
 from src.config.enums import LanguageEnum, SymbolKindEnum
 
 

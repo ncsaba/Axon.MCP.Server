@@ -12,9 +12,9 @@
 
 | Priority | Status | Scope |
 | --- | --- | --- |
-| 1. Query-surface classification | `🚧` | Broad active-only audit is largely complete; remaining callers are mostly deliberate write-path/lifecycle code that should stay explicit. |
-| 2. User-facing read-path cleanup | `🚧` | Main API/MCP/search/navigation/link/traversal surfaces now exclude `MISSING` instances by default; remaining work is final spot-checking rather than broad patching. |
-| 3. Chunk/content consolidation | `🚧` | Final closure work is reducing transitional alias usage and deciding whether any additional chunk lookups should move from instance-owned reads toward fully content-owned semantics. |
+| 1. Shared-chunk association model | `🧭` | The broad lifecycle/query cleanup is landed; the branch is now blocked on removing temporary chunk-to-symbol and chunk-to-instance ownership. |
+| 2. Retrieval/snippet cutover to association model | `🧭` | Search, symbols, traversal, and vector retrieval still need the schema/model cut to stop depending on transitional chunk ownership. |
+| 3. Branch doc closure | `🚧` | Canonical docs should describe lifecycle/query correctness as landed and keep only the true shared-chunk blocker open. |
 | 4. Broader language-platform work | `🚧` | Keep Java strategy and parser-platform work secondary to the current lifecycle branch until this slice stabilizes. |
 
 ## Objective
@@ -33,7 +33,8 @@ Implement the content/instance split with the smallest validated vertical slices
 
 | Decision | Status | Notes |
 | --- | --- | --- |
-| Database reset is acceptable | `✅` | No backward-compatibility migration is required for this fork |
+| Fresh-schema reset is preferred in the current WIP cycle | `✅` | Drop/recreate is the fastest path for this branch while the schema is still unstable |
+| Alembic remains a valid alternative | `✅` | Migration tooling stays available; it is simply not the default workflow for this implementation wave |
 | Final symbols remain instance-scoped | `✅` | Path and repository context are fundamental |
 | Shared content artifacts start with chunks + embeddings | `✅` | First reusable layer |
 | Missing detection uses successful increasing run IDs | `✅` | No full in-memory file-list reconciliation |
@@ -187,12 +188,12 @@ Recommendation:
 
 | Slice | Status | Outcome |
 | --- | --- | --- |
-| 1. Schema reset and model rewrite | `🚧` | core ORM entities landed; broader query-surface rewrite still pending |
-| 2. Run allocation and stamping | `🚧` | sync/discovery/gate path now stamps `last_seen_run_id` |
-| 3. Content upsert and linking | `🚧` | file upsert now creates/links canonical content rows |
-| 4. Content-owned chunks and embedding reuse | `🧭` | shared chunk/embedding materialization works |
-| 5. Missing finalization pass | `🚧` | successful syncs now mark older active instances as `MISSING` |
-| 6. TTL cleanup and orphan content GC | `🚧` | cleanup worker/task landed; broader integration validation still pending |
+| 1. Schema reset and model rewrite | `✅` | Core ORM entities and compatibility aliasing landed |
+| 2. Run allocation and stamping | `✅` | Sync/discovery/gate path stamps `last_seen_run_id` |
+| 3. Content upsert and linking | `✅` | File upsert now creates/links canonical content rows |
+| 4. Content-owned chunks and embedding reuse | `✅` | Shared chunk materialization, link-backed retrieval, and chunk-owned embeddings are landed in the current ORM/runtime baseline |
+| 5. Missing finalization pass | `✅` | Successful syncs now mark older active instances as `MISSING` |
+| 6. TTL cleanup and orphan content GC | `✅` | Cleanup worker/task and lifecycle validation landed |
 
 ## Current Increment (2026-03-18)
 
@@ -205,20 +206,20 @@ Recommendation:
 | Stamp `last_seen_run_id` during discovery/metadata gate and parsing paths | `✅` | Current run ID is threaded through pipeline metadata |
 | Finalize missing rows only after successful sync completion | `✅` | Failed runs skip missing-mark behavior |
 | Count repository file size/count/symbol totals from active instances | `✅` | Sync completion path now filters to active rows |
-| Apply active-instance filtering in main API/MCP read paths | `🚧` | Repository stats, symbol APIs, and main MCP repository/search/navigation tools now default to active rows |
-| Move chunks to fully shared content-scoped ownership | `🚧` | Transitional chunk model keeps instance linkage while `file_content_id` is introduced |
+| Apply active-instance filtering in main API/MCP read paths | `✅` | Repository stats, symbol APIs, MCP repository/search/navigation, retrieval, and late traversal surfaces now default to active rows |
+| Move chunks to fully shared content-scoped ownership | `✅` | Runtime now uses `file_content_id` plus `ChunkSymbolLink`; chunk/embed ownership no longer depends on instance-scoped legacy columns |
 | Add TTL cleanup worker for expired missing instances and orphan content reclamation | `✅` | Celery task + beat schedule + cleanup metrics are now present |
 
-## Next Validation Increment (2026-03-18)
+## Completed Validation Increment (2026-03-18)
 
-`🧭` next action for the current branch.
+`✅` completed for the current branch wave.
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Integration validation for `ACTIVE -> MISSING -> ACTIVE` lifecycle transitions | `🧭` | Add focused DB-backed tests for successful run finalization, failed-run no-op behavior, and reintroduction |
-| TTL cleanup verification for expired missing instances | `🧭` | Assert bounded deletion of missing rows and safe orphan `file_contents` reclamation |
-| Remaining active-instance read-path cleanup | `🧭` | Use `src/database/query_helpers.py` as the default user-facing filter pattern |
-| `DEBUG=release` settings hardening | `🧭` | Remove validation friction caused by non-boolean debug env values |
+| Integration validation for `ACTIVE -> MISSING -> ACTIVE` lifecycle transitions | `✅` | Focused DB-backed tests now cover successful run finalization, failed-run no-op behavior, and reintroduction |
+| TTL cleanup verification for expired missing instances | `✅` | Lifecycle tests now assert bounded deletion and safe orphan `file_contents` reclamation |
+| Remaining active-instance read-path cleanup | `✅` | `src/database/query_helpers.py` is now the standard pattern across user-facing reads and late retrieval/traversal paths |
+| `DEBUG=release` settings hardening | `✅` | Non-boolean debug alias normalization is landed and covered by unit validation |
 
 ### Validation Targets
 
@@ -232,9 +233,8 @@ Recommendation:
 
 ### Execution Notes
 
-- Start by adding focused integration tests for lifecycle transitions and cleanup behavior.
-- Use those tests to identify remaining `File` query surfaces that should default to active-instance filtering.
-- Keep chunk/content consolidation out of this increment unless validation exposes a correctness bug that must be fixed immediately.
+- This validation wave is complete.
+- The reset-schema full suite now passes, so the remaining work is doc closure rather than another schema blocker.
 
 ## Current Execution Batch (2026-03-18)
 
@@ -243,13 +243,13 @@ Recommendation:
 | Item | Status | Notes |
 | --- | --- | --- |
 | Update canonical docs to reflect branch priority | `✅` | Wrapper + roadmap docs now identify instance/content separation as the highest-priority track. |
-| Classify remaining query surfaces from session handover inventory | `🚧` | High-value user-facing, extractor, worker, retrieval, and traversal surfaces are now classified and patched; remaining `File` callers are mostly intentional write-path/lifecycle code plus final low-risk spot checks. |
+| Classify remaining query surfaces from session handover inventory | `✅` | High-value user-facing, extractor, worker, retrieval, and traversal surfaces have been classified; remaining `File` callers are intentional write-path/lifecycle code or future schema-cut targets. |
 | Patch first user-facing/operator-facing read paths | `✅` | `sample_service.py`, `symbols.py`, `module_summary_generator.py`, and `aggregation_worker.py` now exclude `MISSING` instances by default in direct file-backed reads. |
 | Patch repository-wide extractor/resolver scans that should stay active-only | `✅` | `outgoing_call_extractor.py`, `reference_builder.py`, `call_graph_builder.py`, `call_resolver.py`, `import_resolver.py`, `api_extractor.py`, `config_extractor.py`, and `docker_compose_extractor.py` now resolve against active file instances only. |
 | Patch unambiguous worker/pipeline scans that should stay active-only | `✅` | `embedding_worker.py` and `pipeline/steps/combined_extraction_step.py` now exclude `MISSING` instances during repository-wide processing scans. |
 | Capture mixed worker semantics explicitly | `✅` | `inventory_worker.py`, `file_worker.py`, `file_lifecycle_worker.py`, and `sync_worker.py` remain deliberate write-path/lifecycle code; `incremental_sync.py` has been aligned with the new lifecycle model rather than left as a legacy hard-delete path. |
-| Tighten transitional chunk/content surfaces | `🚧` | Runtime now uses explicit `Chunk.file_instance_id` in the patched worker paths and hybrid retrieval is lifecycle-safe; the next closure step moves parse/embed orchestration from instance-owned `changed_chunk_ids` toward content-owned `changed_content_ids` so embedding refresh no longer depends on chunk-to-instance linkage. |
-| Define final shared-chunk association model | `🧭` | Full chunk sharing is now blocked on schema shape, not on more query cleanup: `Chunk.symbol_id` and `Embedding.symbol_id` still bind content artifacts to instance-scoped symbols. The next slice must introduce an association layer before `Chunk.file_instance_id` can be removed safely. |
+| Tighten transitional chunk/content surfaces | `✅` | Parse/embed orchestration now uses `changed_content_ids`, embedding refresh resolves chunks from `file_content_id`, and hybrid retrieval is lifecycle-safe. |
+| Define final shared-chunk association model | `✅` | Shared chunk association now uses `ChunkSymbolLink`; content artifacts no longer carry instance-scoped symbol/file ownership in the ORM runtime. |
 | Close late retrieval/traversal leaks | `✅` | Pattern detectors, relationship builder, vector search, link service endpoint lookups, and call graph traversal now default to active file instances in repository/user-facing reads. |
 | Focused verification after classification/fixes | `✅` | `py_compile` passed for all completed cleanup batches so far. |
 
@@ -321,15 +321,17 @@ Current execution batch:
 
 ## Final Chunk-Sharing Cut (Next Required Design Slice)
 
-This branch has now reached the point where the remaining work is primarily schema/model design.
+This branch has now reached the point where the remaining work is primarily validation capture and doc closure, not another schema/model design cut.
 
-### Confirmed blocker
+### Status
 
-The current runtime can no longer safely push chunk sharing further with small query edits because:
+The earlier blocker has now been removed in the ORM/runtime baseline:
 
-1. `Chunk` is content-owned in intent, but still carries `symbol_id` and `file_instance_id`.
-2. `Embedding` also stores `symbol_id`, which assumes a chunk corresponds to one instance-scoped symbol.
-3. Search/snippet/traversal paths currently fetch source previews directly through `Chunk.symbol_id`.
+1. `Chunk` no longer stores `symbol_id` or `file_instance_id`.
+2. `Embedding` no longer stores `symbol_id`.
+3. Search/snippet/traversal paths fetch source previews through `ChunkSymbolLink`.
+
+Remaining work is no longer schema decoupling. The reset-schema baseline and the full unit + integration suite now pass on the current worktree; what remains is doc closure and branch-status cleanup.
 
 ### Required target shape
 
@@ -341,6 +343,49 @@ The current runtime can no longer safely push chunk sharing further with small q
 | `Embedding` | pure chunk-owned vector artifact |
 | `ChunkSymbolLink` | association from shared chunk to instance-scoped symbol/file context |
 
+## Current Implementation Increment (2026-03-18)
+
+`✅` completed for the current code slice.
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Add `ChunkSymbolLink` association model | `✅` | A join table now exists so retrieval uses chunk links rather than chunk-owned symbol/file fields. |
+| Backfill link rows during chunk creation | `✅` | `KnowledgeExtractor` now creates association rows during chunk persistence. |
+| Cut snippet/source retrieval over to link joins | `✅` | `search_service.py`, `mcp_server/tools/symbols.py`, and `utils/call_graph_traversal.py` now read snippet/source chunks through chunk links. |
+| Cut vector retrieval over to link-backed symbol resolution | `✅` | `pgvector_store.py` now groups vector matches by `ChunkSymbolLink.symbol_id` instead of `Embedding.symbol_id`. |
+| Remove transitional chunk/embed ownership columns from ORM/runtime | `✅` | `Chunk.symbol_id`, `Chunk.file_instance_id`, and `Embedding.symbol_id` are removed from the ORM baseline and runtime writes. |
+| Validate reset-schema runtime end-to-end | `✅` | The current worktree passed a clean DB reset followed by `pytest tests/ -v -rs` with the local Postgres env configured. |
+
+### Verification
+
+- `✅` `python -m py_compile` passed for:
+  - `src/database/models.py`
+  - `src/extractors/knowledge_extractor.py`
+  - `src/api/services/search_service.py`
+  - `src/mcp_server/tools/symbols.py`
+  - `src/utils/call_graph_traversal.py`
+  - `src/vector_store/pgvector_store.py`
+
+## Legacy-Removal Slice (2026-03-18)
+
+`🚧` partial completion for the current execution slice.
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Replace ORM compatibility names with canonical instance names | `✅` | The model-level `File = FileInstance` alias is removed; source imports now bind explicitly to `FileInstance as File` where local naming has not been cleaned up yet. |
+| Remove `file_id` synonyms from ORM models | `✅` | `Symbol`, `Chunk`, `Document`, `ConfigurationEntry`, `Dependency`, `OutgoingApiCall`, `PublishedEvent`, and `EventSubscription` now expose only `file_instance_id` in the ORM model layer. |
+| Keep semantic “file ID” task contracts explicit where still valid | `✅` | Worker task arguments and external response fields may still use `file_id` terminology, but internal ORM access no longer depends on compatibility synonyms. |
+| Remove transitional chunk/embed ownership columns from the ORM baseline | `✅` | The ORM/runtime now uses `ChunkSymbolLink` for symbol/file context and keeps chunks/embeddings content/chunk-owned. |
+| Align optional Alembic baseline with the current ORM schema | `✅` | The retained baseline migration now creates `repository_index_runs`, `file_contents`, `file_instances`, and `file_instance_id`-based dependents instead of the old `files`/`file_id` shape. |
+
+### Verification
+
+- `✅` `python -m compileall -q src`
+- `✅` `python -m compileall -q tests`
+- `✅` `python -m py_compile src/database/migrations/versions/cd4ad910d3fe_baseline_schema.py`
+- `✅` `python scripts/reset_db.py --yes`
+- `✅` `pytest tests/ -v -rs`
+
 ### Execution order
 
 1. Add a new association table/model, e.g. `chunk_symbol_links`:
@@ -351,16 +396,16 @@ The current runtime can no longer safely push chunk sharing further with small q
    - reuse or create chunks by `file_content_id + content_hash + content_type + range`
    - create per-symbol association rows instead of storing ownership on `Chunk`
 3. Update embedding storage/search:
-   - stop treating `Embedding.symbol_id` as canonical ownership
+   - treat embeddings as chunk-owned only
    - join from embeddings/chunks back to symbols through the association table
 4. Update snippet/source retrieval:
    - `search_service.py`
    - `mcp_server/tools/symbols.py`
    - `utils/call_graph_traversal.py`
-5. Only after that, remove runtime dependency on:
-   - `Chunk.file_instance_id`
-   - `Chunk.symbol_id`
-   - optionally `Embedding.symbol_id`
+5. After that, validate the final model and close the docs:
+   - chunk context comes from `ChunkSymbolLink`
+   - embeddings remain chunk-owned only
+   - no runtime dependency on `Chunk.file_instance_id`, `Chunk.symbol_id`, or `Embedding.symbol_id`
 
 ### Why this is the correct stopping point for the current slice
 

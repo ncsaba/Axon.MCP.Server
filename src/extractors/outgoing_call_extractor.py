@@ -4,7 +4,7 @@ from typing import List, Any, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import File, OutgoingApiCall
+from src.database.models import FileInstance as File, OutgoingApiCall
 from src.database.query_helpers import active_file_filter
 from src.config.enums import LanguageEnum
 from src.utils.logging_config import get_logger
@@ -64,7 +64,7 @@ class OutgoingCallExtractor:
                 calls.append(
                     OutgoingApiCall(
                         repository_id=file.repository_id,
-                        file_id=file.id,
+                        file_instance_id=file.id,
                         http_method=api_call.get("http_method", "UNKNOWN"),
                         url_pattern=api_call.get("url_pattern", ""),
                         call_type=api_call.get("call_type", "frontend_to_backend"),

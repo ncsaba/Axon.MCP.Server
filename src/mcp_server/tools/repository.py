@@ -4,7 +4,7 @@ from sqlalchemy import select, func, and_
 from mcp.types import TextContent
 
 from src.config.enums import SymbolKindEnum
-from src.database.models import File, Repository, Symbol
+from src.database.models import FileInstance as File, Repository, Symbol
 from src.database.query_helpers import active_file_filter
 from src.database.session import get_async_session
 from src.repository_sources import get_repository_source_registry
@@ -124,11 +124,11 @@ async def get_file_tree(
             file_ids = [f.id for f in files]
             symbol_counts_result = await session.execute(
                 select(
-                    Symbol.file_id,
+                    Symbol.file_instance_id,
                     func.count(Symbol.id).label('count')
                 )
-                .where(Symbol.file_id.in_(file_ids))
-                .group_by(Symbol.file_id)
+                .where(Symbol.file_instance_id.in_(file_ids))
+                .group_by(Symbol.file_instance_id)
             ) if file_ids else None
             symbol_counts = {row.file_id: row.count for row in symbol_counts_result} if symbol_counts_result else {}
             
@@ -273,7 +273,7 @@ async def get_file_content(
             
             # Get symbols in this file
             result = await session.execute(
-                select(Symbol).where(Symbol.file_id == file_record.id).order_by(Symbol.start_line)
+                select(Symbol).where(Symbol.file_instance_id == file_record.id).order_by(Symbol.start_line)
             )
             symbols = result.scalars().all()
             
@@ -341,7 +341,7 @@ async def list_symbols_in_file(
                 return [TextContent(type="text", text=f"File '{file_path}' not found in repository")]
             
             # Build filters
-            filters = [Symbol.file_id == file_record.id]
+            filters = [Symbol.file_instance_id == file_record.id]
             
             if symbol_kinds:
                 try:

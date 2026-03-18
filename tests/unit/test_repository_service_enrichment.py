@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime
 from src.api.services.repository_service import RepositoryService
 from src.api.schemas.repositories import RepositoryResponse
-from src.database.models import File, Commit
+from src.database.models import FileInstance as File, Commit
 from src.config.enums import RepositoryStatusEnum, SourceControlProviderEnum, LanguageEnum
 
 @pytest.mark.asyncio

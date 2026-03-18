@@ -4,7 +4,7 @@ from sqlalchemy import select, func
 
 from src.database.models import (
     OutgoingApiCall, PublishedEvent, EventSubscription, 
-    Symbol, File, ModuleSummary
+    Symbol, FileInstance as File, ModuleSummary
 )
 from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum
@@ -40,7 +40,7 @@ class SampleService:
         """Get 5 random outgoing API call samples."""
         stmt = (
             select(OutgoingApiCall, File.path)
-            .join(File, OutgoingApiCall.file_id == File.id)
+            .join(File, OutgoingApiCall.file_instance_id == File.id)
             .where(OutgoingApiCall.repository_id == repository_id, active_file_filter())
             .order_by(func.random())
             .limit(5)
@@ -64,7 +64,7 @@ class SampleService:
         """Get 5 random published event samples."""
         stmt = (
             select(PublishedEvent, File.path)
-            .join(File, PublishedEvent.file_id == File.id)
+            .join(File, PublishedEvent.file_instance_id == File.id)
             .where(PublishedEvent.repository_id == repository_id, active_file_filter())
             .order_by(func.random())
             .limit(5)
@@ -87,7 +87,7 @@ class SampleService:
         """Get 5 random event subscription samples."""
         stmt = (
             select(EventSubscription, File.path)
-            .join(File, EventSubscription.file_id == File.id)
+            .join(File, EventSubscription.file_instance_id == File.id)
             .where(EventSubscription.repository_id == repository_id, active_file_filter())
             .order_by(func.random())
             .limit(5)
@@ -111,7 +111,7 @@ class SampleService:
         """Get 5 random endpoint samples."""
         stmt = (
             select(Symbol, File.path)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 Symbol.kind == SymbolKindEnum.ENDPOINT,

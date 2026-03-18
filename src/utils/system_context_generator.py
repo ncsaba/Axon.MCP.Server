@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
 from sqlalchemy.orm import selectinload
 
-from src.database.models import Repository, Symbol, File
+from src.database.models import Repository, Symbol, FileInstance as File
 from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum
 from src.utils.logging_config import get_logger

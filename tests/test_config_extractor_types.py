@@ -2,7 +2,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, AsyncMock, patch
 from src.extractors.config_extractor import ConfigExtractor
-from src.database.models import Repository, File
+from src.database.models import Repository, FileInstance as File
 from src.config.enums import SourceControlProviderEnum
 
 @pytest.mark.asyncio
