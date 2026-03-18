@@ -10,7 +10,7 @@ from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.requests import Request
 from starlette.types import Receive, Scope, Send
 
-from src.api.auth import get_current_user_mcp
+from src.api.auth import _extract_bearer_token, get_current_user_mcp
 from src.config.settings import get_settings
 from src.mcp_server.server import mcp
 from src.utils.logging_config import get_logger
@@ -84,6 +84,7 @@ async def _authorize_mcp_request(request: Request) -> Dict[str, Any]:
     return await get_current_user_mcp(
         api_key=request.headers.get("X-API-Key"),
         cookie_token=request.cookies.get("access_token"),
+        bearer_token=_extract_bearer_token(request.headers.get("Authorization")),
     )
 
 

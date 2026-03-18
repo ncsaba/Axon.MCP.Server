@@ -202,6 +202,35 @@ def upgrade() -> None:
     op.create_index(op.f("ix_jobs_repository_id"), "jobs", ["repository_id"], unique=False)
     op.create_index(op.f("ix_jobs_status"), "jobs", ["status"], unique=False)
     op.create_table(
+        "personal_access_tokens",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("name", sa.String(length=255), nullable=False),
+        sa.Column("token_hash", sa.String(length=64), nullable=False),
+        sa.Column("token_prefix", sa.String(length=24), nullable=False),
+        sa.Column("subject", sa.String(length=255), nullable=False),
+        sa.Column("display_name", sa.String(length=255), nullable=True),
+        sa.Column("role", sa.String(length=32), nullable=False),
+        sa.Column("created_by_auth_method", sa.String(length=50), nullable=True),
+        sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("revoked_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("idx_personal_access_token_expires", "personal_access_tokens", ["expires_at"], unique=False)
+    op.create_index(
+        "idx_personal_access_token_subject_revoked",
+        "personal_access_tokens",
+        ["subject", "revoked_at"],
+        unique=False,
+    )
+    op.create_index(op.f("ix_personal_access_tokens_subject"), "personal_access_tokens", ["subject"], unique=False)
+    op.create_index(op.f("ix_personal_access_tokens_token_hash"), "personal_access_tokens", ["token_hash"], unique=True)
+    op.create_index(
+        op.f("ix_personal_access_tokens_token_prefix"), "personal_access_tokens", ["token_prefix"], unique=False
+    )
+    op.create_table(
         "module_summaries",
         sa.Column("id", sa.Integer(), nullable=False),
         sa.Column("repository_id", sa.Integer(), nullable=False),

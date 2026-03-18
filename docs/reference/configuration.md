@@ -35,9 +35,14 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 API_SECRET_KEY=your_secure_api_secret_key_here_min_32_chars
 JWT_SECRET_KEY=your_secure_jwt_secret_key_here_min_64_chars
 AUTH_ENABLED=true
+REST_AUTH_METHODS=api_key,local_jwt
 ADMIN_API_KEY=replace_me
 READ_ONLY_API_KEYS='[]'
 MCP_AUTH_ENABLED=true
+MCP_AUTH_METHODS=api_key,local_jwt,personal_token
+KEYCLOAK_ISSUER_URL=
+KEYCLOAK_JWKS_URL=
+KEYCLOAK_AUDIENCES='[]'
 
 # Logging
 LOG_LEVEL=INFO
@@ -56,16 +61,29 @@ LOG_FORMAT=json
 Current shipped auth controls:
 
 - `AUTH_ENABLED`: when `false`, REST/API route auth is bypassed entirely
+- `REST_AUTH_METHODS`: accepted REST auth methods such as `api_key`, `local_jwt`, `keycloak_jwt`, and `personal_token`
 - `ADMIN_API_KEY`: shared admin API key for service access
 - `READ_ONLY_API_KEYS`: optional list of read-only API keys
 - `JWT_SECRET_KEY`: local JWT validation for browser/cookie auth
 - `MCP_AUTH_ENABLED`: separate auth switch for MCP HTTP
+- `MCP_AUTH_METHODS`: accepted MCP auth methods such as `api_key`, `local_jwt`, `keycloak_jwt`, and `personal_token`
+- `KEYCLOAK_*`: Keycloak issuer, JWKS, audience, and role-mapping settings when `keycloak_jwt` is enabled
+- `KEYCLOAK_CLIENT_ID`: required for the browser login redirect/callback flow
+- `KEYCLOAK_CLIENT_SECRET`: optional confidential-client secret for Keycloak code exchange
+- `KEYCLOAK_REDIRECT_URI`: optional externally visible callback override
+- `KEYCLOAK_SCOPES`: scopes requested during browser login; defaults to `openid,profile,email`
 
 Current status:
 - local API-key and local JWT auth are implemented
+- accepted auth methods are configurable independently for REST and MCP
+- Keycloak bearer-token validation is supported when `keycloak_jwt` is enabled and configured
+- Keycloak browser login/session handoff is supported when `KEYCLOAK_CLIENT_ID` is configured
+- personal access tokens can be created, listed, and revoked through the REST auth endpoints
 - full auth bypass is configurable
-- Keycloak/OIDC auth is not implemented yet
-- personalized MCP tokens are not implemented yet
+
+Explicitly deferred:
+- richer local user/account records for external identities
+- audit trails for Keycloak login activity and MCP token usage
 
 See:
 - `docs/architecture/authentication_and_mcp_token_plan.md`

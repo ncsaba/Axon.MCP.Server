@@ -28,6 +28,29 @@ def test_default_cors_origins_are_explicit_not_wildcard():
     assert "http://127.0.0.1:3000" in settings.api_cors_origins
 
 
+def test_default_auth_methods_include_api_key_and_local_jwt():
+    settings = _make_settings()
+
+    assert settings.rest_auth_methods == ["api_key", "local_jwt"]
+    assert settings.mcp_auth_methods == ["api_key", "local_jwt"]
+
+
+def test_auth_methods_accept_csv_configuration():
+    settings = _make_settings(
+        rest_auth_methods="api_key,keycloak_jwt",
+        mcp_auth_methods="keycloak_jwt",
+    )
+
+    assert settings.rest_auth_methods == ["api_key", "keycloak_jwt"]
+    assert settings.mcp_auth_methods == ["keycloak_jwt"]
+
+
+def test_keycloak_scopes_accept_csv_configuration():
+    settings = _make_settings(keycloak_scopes="openid,profile,email")
+
+    assert settings.keycloak_scopes == ["openid", "profile", "email"]
+
+
 def test_testing_environment_allows_missing_secrets(monkeypatch):
     monkeypatch.delenv("gitlab_token", raising=False)
     monkeypatch.delenv("api_secret_key", raising=False)
@@ -68,3 +91,17 @@ def test_debug_release_alias_is_treated_as_false():
     )
 
     assert settings.debug is False
+
+
+def test_jwt_secret_not_required_when_local_jwt_disabled():
+    settings = Settings(
+        environment="development",
+        database_url="sqlite+aiosqlite:///./test.db",
+        gitlab_token="gitlab-real-token",
+        api_secret_key="api-secret-real",
+        jwt_secret_key="",
+        rest_auth_methods=["api_key", "keycloak_jwt"],
+        mcp_auth_methods=["api_key"],
+    )
+
+    assert settings.jwt_secret_key == ""

@@ -66,11 +66,17 @@ async def _lifespan(_: FastAPI):
         )
 
     # Validate auth configuration
-    if settings.auth_enabled and not settings.admin_api_key and not settings.read_only_api_keys:
+    if settings.auth_enabled and not settings.rest_auth_methods:
+        logger.warning(
+            "auth_methods_not_configured",
+            message="AUTH_ENABLED=true but REST_AUTH_METHODS is empty; authenticated REST access will always fail.",
+        )
+
+    if settings.auth_enabled and "api_key" in settings.rest_auth_methods and not settings.admin_api_key and not settings.read_only_api_keys:
         logger.warning(
             "auth_misconfiguration",
-            message="AUTH_ENABLED=true but no API keys configured! "
-                    "Set ADMIN_API_KEY or disable auth with AUTH_ENABLED=false"
+            message="API key auth is enabled for REST but no API keys are configured. "
+                    "Set ADMIN_API_KEY / READ_ONLY_API_KEYS, remove api_key from REST_AUTH_METHODS, or disable auth."
         )
 
     # Validate MCP HTTP auth posture
@@ -81,14 +87,41 @@ async def _lifespan(_: FastAPI):
                     "Set MCP_AUTH_ENABLED=true for shared or network-exposed deployments."
         )
 
-    # Validate JWT configuration
-    if not settings.jwt_secret_key:
+    if "local_jwt" in settings.rest_auth_methods and not settings.jwt_secret_key:
         logger.error(
             "jwt_secret_key_missing",
-            message="JWT_SECRET_KEY is required! Generate with: "
+            message="JWT_SECRET_KEY is required when local_jwt auth is enabled for REST. Generate with: "
                     "python -c 'import secrets; print(secrets.token_urlsafe(64))'"
         )
         raise RuntimeError("JWT_SECRET_KEY not configured")
+
+    if settings.mcp_transport == "http" and settings.mcp_auth_enabled and not settings.mcp_auth_methods:
+        logger.warning(
+            "mcp_auth_methods_not_configured",
+            message="MCP auth is enabled but MCP_AUTH_METHODS is empty; authenticated MCP access will always fail.",
+        )
+
+    if settings.mcp_transport == "http" and settings.mcp_auth_enabled and "local_jwt" in settings.mcp_auth_methods and not settings.jwt_secret_key:
+        logger.error(
+            "mcp_jwt_secret_key_missing",
+            message="JWT_SECRET_KEY is required when local_jwt auth is enabled for MCP HTTP."
+        )
+        raise RuntimeError("JWT_SECRET_KEY not configured")
+
+    keycloak_needed = (
+        "keycloak_jwt" in settings.rest_auth_methods
+        or (
+            settings.mcp_transport == "http"
+            and settings.mcp_auth_enabled
+            and "keycloak_jwt" in settings.mcp_auth_methods
+        )
+    )
+    if keycloak_needed and not settings.keycloak_issuer_url:
+        logger.error(
+            "keycloak_issuer_missing",
+            message="KEYCLOAK_ISSUER_URL is required when keycloak_jwt auth is enabled."
+        )
+        raise RuntimeError("KEYCLOAK_ISSUER_URL not configured")
 
     # Initialize database tables on first startup
     try:

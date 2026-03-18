@@ -72,11 +72,38 @@
     margin: 0 auto;
 }
 
+.secondaryButton {
+    width: auto;
+    min-width: 120px;
+    padding: 0.75rem 1.5rem;
+    background-color: #111827;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+    display: block;
+    margin: 0.75rem auto 0;
+}
+
 .submitButton:hover:not(:disabled) {
     background-color: #1d4ed8;
 }
 
-.submitButton:disabled {
+.secondaryButton:hover:not(:disabled) {
+    background-color: #1f2937;
+}
+
+.submitButton:disabled,
+.secondaryButton:disabled {
     background-color: #9ca3af;
     cursor: not-allowed;
+}
+
+.helperText {
+    text-align: center;
+    color: #4b5563;
+    font-size: 0.95rem;
 }

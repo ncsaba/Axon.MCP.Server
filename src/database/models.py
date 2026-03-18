@@ -527,6 +527,31 @@ class Worker(Base):
     )
 
 
+class PersonalAccessToken(Base):
+    """User-scoped personal access token for non-interactive clients such as MCP."""
+
+    __tablename__ = "personal_access_tokens"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    token_prefix = Column(String(24), nullable=False, index=True)
+    subject = Column(String(255), nullable=False, index=True)
+    display_name = Column(String(255))
+    role = Column(String(32), nullable=False, default="readonly")
+    created_by_auth_method = Column(String(50))
+    last_used_at = Column(DateTime(timezone=True))
+    expires_at = Column(DateTime(timezone=True))
+    revoked_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("idx_personal_access_token_subject_revoked", "subject", "revoked_at"),
+        Index("idx_personal_access_token_expires", "expires_at"),
+    )
+
+
 class ModuleSummary(Base):
     """AI-generated summaries of code modules for quick understanding."""
 

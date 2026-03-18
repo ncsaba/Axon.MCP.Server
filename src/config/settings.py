@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from typing import Optional
@@ -71,6 +72,22 @@ class Settings(BaseSettings):
             return False
         return value
 
+    @staticmethod
+    def _parse_listish(value):
+        """Normalize JSON-array or comma-separated env input into a list."""
+        if value is None or value == "":
+            return []
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return []
+            if raw.startswith("["):
+                return json.loads(raw)
+            return [item.strip() for item in raw.split(",") if item.strip()]
+        return value
+
     # GitLab
     gitlab_url: str = "https://gitlab.com"
     gitlab_token: str = ""
@@ -138,11 +155,25 @@ class Settings(BaseSettings):
     read_only_api_keys: list[str] = []  # List of read-only keys
     admin_password: str = ""  # Password for UI login (cookie-based)
     mcp_auth_enabled: bool = True  # Secure-by-default for MCP HTTP transport; override only for trusted local clients
+    rest_auth_methods: list[str] = ["api_key", "local_jwt"]
+    mcp_auth_methods: list[str] = ["api_key", "local_jwt"]
 
     jwt_secret_key: str = ""
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 7
+    keycloak_issuer_url: Optional[str] = None
+    keycloak_jwks_url: Optional[str] = None
+    keycloak_audiences: list[str] = []
+    keycloak_client_id: Optional[str] = None
+    keycloak_client_secret: Optional[str] = None
+    keycloak_redirect_uri: Optional[str] = None
+    keycloak_scopes: list[str] = ["openid", "profile", "email"]
+    keycloak_username_claim: str = "preferred_username"
+    keycloak_role_claim: str = "realm_access.roles"
+    keycloak_admin_roles: list[str] = ["admin"]
+    keycloak_read_only_roles: list[str] = ["readonly"]
+    keycloak_default_role: str = "readonly"
 
     # Logging
     log_level: str = "INFO"
@@ -188,6 +219,35 @@ class Settings(BaseSettings):
     tracing_enabled: bool = False
     tracing_endpoint: Optional[str] = None
 
+    @field_validator(
+        "read_only_api_keys",
+        "rest_auth_methods",
+        "mcp_auth_methods",
+        "keycloak_audiences",
+        "keycloak_scopes",
+        "keycloak_admin_roles",
+        "keycloak_read_only_roles",
+        mode="before",
+    )
+    @classmethod
+    def _parse_list_fields(cls, value):
+        return cls._parse_listish(value)
+
+    @field_validator("rest_auth_methods", "mcp_auth_methods", mode="after")
+    @classmethod
+    def _normalize_auth_methods(cls, value: list[str]) -> list[str]:
+        supported = {"api_key", "local_jwt", "keycloak_jwt", "personal_token"}
+        normalized = []
+        for item in value:
+            auth_method = str(item).strip().lower()
+            if not auth_method:
+                continue
+            if auth_method not in supported:
+                raise ValueError(f"Unsupported auth method: {item}")
+            if auth_method not in normalized:
+                normalized.append(auth_method)
+        return normalized
+
     @model_validator(mode="after")
     def validate_required_secrets(self) -> "Settings":
         """Require critical secrets outside explicit test environments."""
@@ -217,9 +277,17 @@ class Settings(BaseSettings):
             for name, value in (
                 ("gitlab_token", self.gitlab_token),
                 ("api_secret_key", self.api_secret_key),
-                ("jwt_secret_key", self.jwt_secret_key),
+                (
+                    "jwt_secret_key",
+                    self.jwt_secret_key,
+                ) if (
+                    "local_jwt" in self.rest_auth_methods
+                    or "local_jwt" in self.mcp_auth_methods
+                ) else (None, None),
             )
-            if not str(value).strip() or str(value).strip().lower() in insecure_placeholders
+            if name is not None and (
+                not str(value).strip() or str(value).strip().lower() in insecure_placeholders
+            )
         ]
         if missing:
             missing_fields = ", ".join(missing)

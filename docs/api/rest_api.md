@@ -12,7 +12,7 @@ The Axon MCP Server provides a comprehensive REST API for programmatic access to
 
 ## 🔐 Authentication
 
-The API supports two authentication methods:
+The API accepts one or more configured authentication methods:
 
 ### 1. API Key (Service-to-Service)
 Use this for scripts, CI/CD pipelines, or external tools.
@@ -23,7 +23,7 @@ X-API-Key: <your_admin_api_key>
 ```
 
 ### 2. JWT Token (Browser/User)
-Used by the frontend dashboard. Tokens are typically stored in HTTP-only cookies.
+Used by the frontend dashboard. Tokens can be Axon-issued local JWTs or Keycloak-issued JWTs and are typically stored in HTTP-only cookies.
 
 **Header:**
 ```http
@@ -107,6 +107,38 @@ Get representative repository sample data.
 Status note:
 - Repository registration is API-driven, not config-only.
 - Periodic polling for new commits is not exposed as a repository API yet; sync is currently triggered manually or by internal worker flows.
+
+### 🔐 Authentication
+
+#### `POST /auth/login`
+Login with the local admin password and receive the local JWT cookie when `local_jwt` is enabled for REST.
+
+#### `GET /auth/methods`
+Return the browser-login methods currently available to the UI.
+
+#### `GET /auth/keycloak/login`
+Start the Keycloak browser login redirect flow.
+
+#### `GET /auth/keycloak/callback`
+Complete the Keycloak auth-code callback and establish the browser session cookie.
+
+#### `POST /auth/logout`
+Clear the local session cookie.
+
+#### `POST /auth/mcp-tokens`
+Create a personal MCP access token for the authenticated user.
+
+#### `GET /auth/mcp-tokens`
+List the authenticated user's personal MCP access tokens.
+
+#### `DELETE /auth/mcp-tokens/{token_id}`
+Revoke one of the authenticated user's personal MCP access tokens.
+
+Current auth status:
+- REST and MCP each accept one or more configured auth methods.
+- Available methods currently include shared API keys, local JWT, Keycloak JWT, and personal tokens.
+- Browser login can use either the local password flow or the Keycloak redirect/callback flow, depending on configuration.
+- Personal tokens are intended primarily for MCP/non-interactive client use.
 
 ---
 

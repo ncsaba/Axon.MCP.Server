@@ -87,8 +87,9 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Streaming indexing implementation plan (slice-by-slice execution) | `✅` |
 | Implement provider-neutral repository registration (`GIT`/`GITHUB`) | `🧭` |
 | Add scheduled repository polling + incremental commit-diff orchestration | `🧭` |
-| Implement Keycloak-backed REST auth | `🧭` |
-| Implement personalized MCP token issuance/revocation | `🧭` |
+| Implement Keycloak-backed REST auth | `✅` |
+| Implement Keycloak browser login/session flow | `✅` |
+| Implement personalized MCP token issuance/revocation | `✅` |
 | Approve incremental indexing implementation contract | `🧭` |
 | Execute streaming indexing slices (metadata contract -> gate -> parse fanout -> embed -> aggregate) | `🧭` |
 | Implement file instance/content separation vertical slice (chunks + embeddings first) | `✅` |

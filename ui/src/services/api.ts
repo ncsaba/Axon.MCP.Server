@@ -44,6 +44,22 @@ export async function login(password: string): Promise<void> {
   await api.post("/api/v1/auth/login", { password });
 }
 
+export type AuthMethodsResponse = {
+  local_password_enabled: boolean;
+  keycloak_login_enabled: boolean;
+  rest_auth_methods: string[];
+};
+
+export async function getAuthMethods(): Promise<AuthMethodsResponse> {
+  const response = await api.get<AuthMethodsResponse>("/api/v1/auth/methods");
+  return response.data;
+}
+
+export function beginKeycloakLogin(nextPath = "/"): void {
+  const target = `${baseURL}/api/v1/auth/keycloak/login?next=${encodeURIComponent(nextPath)}`;
+  window.location.href = target;
+}
+
 export async function logout(): Promise<void> {
   await api.post("/api/v1/auth/logout");
   window.location.href = "/login";
