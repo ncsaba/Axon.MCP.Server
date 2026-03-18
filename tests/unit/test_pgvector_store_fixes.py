@@ -46,15 +46,8 @@ async def test_symbol_deduplication_in_search(vector_store, mock_session):
     mock_repo.id = 100
     mock_repo.name = "test-repo"
     
-    # Mock query result - uses .all() method
-    mock_row = MagicMock()
-    mock_row.Symbol = mock_symbol
-    mock_row.vector_score = 0.92  # Best similarity from multiple chunks
-    mock_row.File = mock_file
-    mock_row.Repository = mock_repo
-    
     mock_result = MagicMock()
-    mock_result.all.return_value = [mock_row]
+    mock_result.all.return_value = [(mock_symbol, 0.92, mock_file, mock_repo)]
     mock_session.execute.return_value = mock_result
     
     query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
@@ -94,15 +87,8 @@ async def test_search_with_file_repo_join(vector_store, mock_session):
     mock_repo.id = 100
     mock_repo.name = "test-repo"
     
-    # Mock query result with all objects - uses .all() method
-    mock_row = MagicMock()
-    mock_row.Symbol = mock_symbol
-    mock_row.vector_score = 0.85
-    mock_row.File = mock_file
-    mock_row.Repository = mock_repo
-    
     mock_result = MagicMock()
-    mock_result.all.return_value = [mock_row]
+    mock_result.all.return_value = [(mock_symbol, 0.85, mock_file, mock_repo)]
     mock_session.execute.return_value = mock_result
     
     query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
@@ -151,15 +137,8 @@ async def test_multiple_chunks_best_similarity(vector_store, mock_session):
     mock_repo.id = 100
     mock_repo.name = "test-repo"
     
-    # Mock result showing best similarity (0.9 from func.max)
-    mock_row = MagicMock()
-    mock_row.Symbol = mock_symbol
-    mock_row.vector_score = 0.9  # Max of [0.7, 0.9, 0.8]
-    mock_row.File = mock_file
-    mock_row.Repository = mock_repo
-    
     mock_result = MagicMock()
-    mock_result.all.return_value = [mock_row]
+    mock_result.all.return_value = [(mock_symbol, 0.9, mock_file, mock_repo)]
     mock_session.execute.return_value = mock_result
     
     query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
@@ -187,14 +166,8 @@ async def test_repository_filter_with_include_file_repo(vector_store, mock_sessi
     mock_repo = MagicMock()
     mock_repo.id = 100
     
-    mock_row = MagicMock()
-    mock_row.Symbol = mock_symbol
-    mock_row.vector_score = 0.85
-    mock_row.File = mock_file
-    mock_row.Repository = mock_repo
-    
     mock_result = MagicMock()
-    mock_result.all.return_value = [mock_row]
+    mock_result.all.return_value = [(mock_symbol, 0.85, mock_file, mock_repo)]
     mock_session.execute.return_value = mock_result
     
     query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION

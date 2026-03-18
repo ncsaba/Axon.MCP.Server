@@ -37,17 +37,17 @@ It exists to stop search tuning from being heuristic-only.
 | `DS-01` | `dasc-ds-recommender` | Exact identifier | `similar items` | Item-item similarity implementation or symbol | Top-3 useful |
 | `DS-02` | `dasc-ds-recommender` | Natural-language intent | `find recommendation scoring logic` | Core ranking/recommendation implementation | Top-3 useful |
 | `DS-03` | `dasc-ds-recommender` | Framework usage | `where are API routes defined` | API/router/controller symbols | Top-5 useful |
-| `DS-04` | `dasc-ds-recommender` | Import/dependency context | `uses postgres` | DB service, repository layer, or config/docs | Top-5 useful |
+| `DS-04` | `dasc-ds-recommender` | Import/dependency context | `uses mongo` | Mongo repositories, Mongo config, or DB architecture docs | Top-5 useful |
 | `DS-05` | `dasc-ds-recommender` | Docs-backed | `how do we configure recommender settings` | Config files, env docs, or setup symbols | Top-5 useful |
 | `DS-06` | `dasc-ds-recommender` | Search-to-context | `find the entrypoint for recommendation requests` | Service or API entrypoint that chains into context tools | Top-3 useful and follow-up success |
 | `JV-01` | `jverein` | Exact identifier | `SEPA` | SEPA-related class, module, or package | Top-3 useful |
-| `JV-02` | `jverein` | Java semantics | `where is dependency injection configured` | Spring/Guice-style setup, factory, or bootstrap class | Top-5 useful |
-| `JV-03` | `jverein` | Java semantics | `where are HTTP endpoints defined` | Controller/resource classes or endpoint annotations | Top-5 useful |
-| `JV-04` | `jverein` | Java semantics | `import csv members` | Import workflow, parser, or service classes | Top-5 useful |
+| `JV-02` | `jverein` | Framework wiring | `where is database service wired into jameica` | DB service interface/implementation or Jameica wiring surface | Top-5 useful |
+| `JV-03` | `jverein` | GUI surface | `find Jameica GUI views` | Jameica GUI view classes under the plugin UI layer | Top-5 useful |
+| `JV-04` | `jverein` | Java semantics | `import member csv data` | Member CSV import workflow, parser, or service classes | Top-5 useful |
 | `JV-05` | `jverein` | Java semantics | `database configuration` | Persistence config, datasource setup, or repository layer | Top-5 useful |
-| `JV-06` | `jverein` | Java semantics | `scheduled jobs` | Scheduler, timer, or background task classes | Top-5 useful |
-| `JV-07` | `jverein` | Framework usage | `uses swing` | UI classes or imports referencing Swing | Top-5 useful |
-| `JV-08` | `jverein` | Search-to-context | `find the member booking flow entrypoint` | Entrypoint/controller/service result that chains into context tools | Top-5 useful and follow-up success |
+| `JV-06` | `jverein` | Background work | `background tasks` | Background task/thread classes or reminder/task providers | Top-5 useful |
+| `JV-07` | `jverein` | Framework usage | `uses jameica` | Jameica/Hibiscus integration symbols or imports | Top-5 useful |
+| `JV-08` | `jverein` | Search-to-context | `find member import flow entrypoint` | Import flow entrypoint/service result that chains into context tools | Top-5 useful and follow-up success |
 
 ## Review Notes
 
@@ -64,9 +64,10 @@ Rules:
 
 ## Current Environment Constraint
 
-The 2026-03-18 local DB snapshot has the correct embedding corpus but does not currently expose active `file_instances`.
+The 2026-03-18 local DB snapshot now has the corrected embedding corpus on active `file_instances`.
 
 That means:
 
 - this seed set is ready
-- usefulness scoring should be run after the corpus is refreshed into the active lifecycle model
+- usefulness scoring can now be run against the refreshed active lifecycle model
+- the full live non-`axon-src` seed baseline is recorded in `docs/validation/semantic_search_benchmark_20260318.md`

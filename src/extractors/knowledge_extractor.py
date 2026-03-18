@@ -12,6 +12,7 @@ from src.utils.async_compat import maybe_await
 from src.utils.data_validation import truncate_string
 from src.embeddings.symbol_chunker import SymbolChunker, ChunkConfig
 from src.embeddings.chunk_context import ChunkContextBuilder
+from src.embeddings.fallback_chunking import FileFallbackChunker
 from src.extractors.relationship_builder import RelationshipBuilder
 import hashlib
 import json
@@ -51,6 +52,7 @@ class KnowledgeExtractor:
         self.session = session
         self.chunker = SymbolChunker(ChunkConfig())
         self.context_builder = ChunkContextBuilder(session)
+        self.fallback_chunker = FileFallbackChunker()
     
     async def extract_and_persist(
         self,
@@ -182,6 +184,32 @@ class KnowledgeExtractor:
                             created_symbols.remove(symbol)
                     except (NameError, UnboundLocalError):
                         pass  # symbol was never created
+
+            if (
+                not created_symbols
+                and file_obj is not None
+                and file_obj.current_content_id is not None
+                and source_file_content
+            ):
+                fallback_symbol = await self._create_fallback_file_symbol(
+                    file_obj=file_obj,
+                    file_content=source_file_content,
+                )
+                if fallback_symbol is not None:
+                    await maybe_await(self.session.add(fallback_symbol))
+                    await self.session.flush()
+                    created_symbols.append(fallback_symbol)
+                    symbols_created += 1
+
+                    fallback_chunks = self._create_fallback_chunks_for_file(
+                        file_obj=file_obj,
+                        file_content=source_file_content,
+                    )
+                    chunks_created += await self._persist_symbol_chunks(
+                        fallback_symbol,
+                        fallback_chunks,
+                        file_id,
+                    )
             
             # PHASE 2: Cleanup pass - fix remaining NULL parent_symbol_id
             # This catches cases where child was created before parent in parse order
@@ -449,7 +477,11 @@ class KnowledgeExtractor:
         
         try:
             # Build rich context for symbol
-            context = await self.context_builder.build_context(symbol, file)
+            context = await self.context_builder.build_context(
+                symbol,
+                file,
+                file_content=file_content,
+            )
             
             # Create chunks using SymbolChunker
             # Some tests use async test doubles for this method; support both sync and async implementations.
@@ -546,6 +578,77 @@ class KnowledgeExtractor:
         )
         
         return [chunk]
+
+    async def _create_fallback_file_symbol(
+        self,
+        file_obj: File,
+        file_content: str,
+    ) -> Optional[Symbol]:
+        """Create an explicit file-backed symbol when parser output is empty."""
+        policy = self.fallback_chunker.get_policy(file_obj.path)
+        if policy is None:
+            return None
+
+        line_count = max(1, len(file_content.splitlines()))
+        parsed_symbol = ParsedSymbol(
+            kind=SymbolKindEnum.MODULE,
+            name=Path(file_obj.path).name,
+            fully_qualified_name=f"file::{file_obj.path}",
+            start_line=1,
+            end_line=line_count,
+            start_column=0,
+            end_column=0,
+            signature=f"File: {file_obj.path}",
+            documentation=(
+                f"Fallback semantic file symbol for {policy.category} content "
+                f"when no code symbols are available."
+            ),
+            structured_docs={
+                "fallback_file_symbol": True,
+                "fallback_category": policy.category,
+                "source_path": file_obj.path,
+            },
+        )
+        return await self._create_symbol(
+            parsed_symbol,
+            file_obj.id,
+            commit_id=file_obj.commit_id,
+            language=file_obj.language,
+            assembly_name=None,
+        )
+
+    def _create_fallback_chunks_for_file(
+        self,
+        file_obj: File,
+        file_content: str,
+    ) -> List[Chunk]:
+        """Create bounded file-level chunks for parser-empty files."""
+        if not file_obj.current_content_id:
+            return []
+
+        chunks: List[Chunk] = []
+        chunk_dicts = self.fallback_chunker.create_chunks_for_file(
+            file_path=file_obj.path,
+            file_content=file_content,
+        )
+        for chunk_dict in chunk_dicts:
+            content = chunk_dict["content"]
+            content_hash = hashlib.sha256(content.encode()).hexdigest()
+            chunks.append(
+                Chunk(
+                    file_content_id=file_obj.current_content_id,
+                    content=content,
+                    content_type=chunk_dict["content_type"],
+                    chunk_subtype=chunk_dict.get("chunk_subtype"),
+                    context_metadata=chunk_dict.get("context_metadata"),
+                    token_count=len(content.split()),
+                    start_line=chunk_dict.get("start_line", 1),
+                    end_line=chunk_dict.get("end_line", 1),
+                    content_hash=content_hash,
+                )
+            )
+
+        return chunks
 
     async def _persist_symbol_chunks(
         self,

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from src.config.enums import LanguageEnum, SymbolKindEnum
 
@@ -38,6 +38,9 @@ class SearchResult(BaseModel):
     # Search metadata
     score: float
     match_type: str = "keyword"  # "semantic", "keyword", or "hybrid"
+    snippet_match_type: Optional[str] = None
+    match_reason: Optional[str] = None
+    follow_up_tools: list[str] = Field(default_factory=list)
     updated_at: datetime
     
     # Helpful URLs for getting full content (NEW)
@@ -53,5 +56,4 @@ class SearchRequest(BaseModel):
     language: Optional[LanguageEnum] = None
     symbol_kind: Optional[SymbolKindEnum] = None
     hybrid: bool = True
-
 

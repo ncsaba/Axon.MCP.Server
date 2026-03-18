@@ -50,8 +50,8 @@ async def test_keyword_search(search_service, mock_session):
     mock_repo.name = "test-repo"
     
     mock_result = MagicMock()
-    # Implementation uses select(Symbol, File, Repository) which returns 3 items
-    mock_result.all.return_value = [(mock_symbol, mock_file, mock_repo)]
+    # Implementation now selects chunk content too for chunk-aware keyword matching
+    mock_result.all.return_value = [(mock_symbol, mock_file, mock_repo, None)]
     mock_session.execute.return_value = mock_result
     
     results = await search_service._keyword_search("test", 10, None, None, None)
@@ -105,12 +105,379 @@ async def test_semantic_search(search_service, mock_session):
     assert len(results) >= 0
     search_service.vector_store.search_similar.assert_awaited_once()
     kwargs = search_service.vector_store.search_similar.await_args.kwargs
+    assert kwargs["query_text"] == "test function"
     assert kwargs["filters"]["embedding_model_name"] == "mxbai-embed-large"
     assert kwargs["filters"]["embedding_model_version"] == "1.0"
     assert kwargs["filters"]["embedding_dimension"] == FIXED_EMBEDDING_DIMENSION
     if len(results) > 0:
         assert results[0].match_type == "semantic"
         assert results[0].score > 0
+
+
+@pytest.mark.asyncio
+async def test_get_code_snippets_prefers_best_keyword_matching_chunk():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+
+    result = MagicMock()
+    result.all.return_value = [
+        (1, "generic setup chunk", "implementation", 10),
+        (1, "recommendation scoring logic lives here", "implementation", 11),
+    ]
+    mock_session.execute.return_value = result
+
+    snippets = await service._get_code_snippets([1], query="recommendation scoring")
+
+    assert snippets[1].content == "recommendation scoring logic lives here"
+    assert snippets[1].match_type == "text"
+
+
+@pytest.mark.asyncio
+async def test_get_code_snippets_prefers_semantic_chunk_before_fallback():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+
+    semantic_result = MagicMock()
+    semantic_result.all.return_value = [
+        (1, "semantically matched chunk", 0.97),
+    ]
+    fallback_result = MagicMock()
+    fallback_result.all.return_value = [
+        (1, "first stored chunk", "implementation", 5),
+    ]
+    mock_session.execute.side_effect = [semantic_result, fallback_result]
+
+    snippets = await service._get_code_snippets(
+        [1],
+        query="test function",
+        query_vector=[0.1] * FIXED_EMBEDDING_DIMENSION,
+        embedding_model_name="mxbai-embed-large",
+        embedding_model_version="1.0",
+    )
+
+    assert snippets[1].content == "semantically matched chunk"
+    assert snippets[1].match_type == "semantic"
+
+
+@pytest.mark.asyncio
+async def test_keyword_search_scores_chunk_content_matches():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+        service._get_code_snippets = AsyncMock(return_value={})
+
+    mock_symbol = MagicMock()
+    mock_symbol.id = 1
+    mock_symbol.name = "UnrelatedName"
+    mock_symbol.kind = SymbolKindEnum.CLASS
+    mock_symbol.language = LanguageEnum.JAVA
+    mock_symbol.signature = ""
+    mock_symbol.fully_qualified_name = "example.UnrelatedName"
+    mock_symbol.start_line = 1
+    mock_symbol.end_line = 10
+    mock_symbol.documentation = ""
+    mock_symbol.created_at = datetime.now(timezone.utc)
+
+    mock_file = MagicMock()
+    mock_file.id = 1
+    mock_file.path = "src/example/Ui.java"
+
+    mock_repo = MagicMock()
+    mock_repo.id = 1
+    mock_repo.name = "jverein"
+
+    mock_result = MagicMock()
+    mock_result.all.return_value = [
+        (mock_symbol, mock_file, mock_repo, "Imports: javax.swing.JButton"),
+    ]
+    mock_session.execute.return_value = mock_result
+
+    results = await service._keyword_search("uses swing", 5, None, None, None)
+
+    assert len(results) == 1
+    assert results[0].score > 0
+
+
+def test_tokenize_query_normalizes_natural_language_scaffolding():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+
+    tokens = service._tokenize_query("find similar items using postgres")
+
+    assert "find" not in tokens
+    assert "using" not in tokens
+    assert "items" in tokens
+    assert "item" in tokens
+    assert "postgres" in tokens
+
+
+def test_config_dependency_intent_boost_prefers_config_artifacts():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+
+    mock_symbol = MagicMock()
+    mock_symbol.name = "JVereinDBService"
+    mock_symbol.fully_qualified_name = "de.jost_net.JVerein.rmi.JVereinDBService"
+    mock_symbol.documentation = "Provides database service access for Jameica."
+    mock_symbol.kind = SymbolKindEnum.INTERFACE
+
+    boost = service._calculate_query_intent_boost(
+        symbol=mock_symbol,
+        file_path="src/de/jost_net/JVerein/rmi/JVereinDBService.java",
+        chunk_content="import de.willuhn.datasource.rmi.DBService;\nimport de.willuhn.jameica.system.Settings;",
+        query_intents={"config_dependency"},
+    )
+
+    assert boost > 0
+
+
+def test_api_intent_boost_prefers_controllers_over_test_files():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+
+    controller_symbol = MagicMock()
+    controller_symbol.name = "JobQueueController"
+    controller_symbol.fully_qualified_name = "de.webtrekk.ds.recommender.controller.JobQueueController"
+    controller_symbol.documentation = "REST controller for job queue operations."
+    controller_symbol.kind = SymbolKindEnum.CLASS
+
+    test_symbol = MagicMock()
+    test_symbol.name = "OldNewComparisonTests"
+    test_symbol.fully_qualified_name = "de.webtrekk.ds.recommender.service.recoservice.OldNewComparisonTests"
+    test_symbol.documentation = "Tests the old and new comparison flow."
+    test_symbol.kind = SymbolKindEnum.METHOD
+
+    controller_boost = service._calculate_query_intent_boost(
+        symbol=controller_symbol,
+        file_path="src/main/java/de/webtrekk/ds/recommender/controller/JobQueueController.java",
+        chunk_content="import de.webtrekk.common.rest.RestModule;",
+        query_intents={"api_surface"},
+        query_tokens=["api", "route"],
+    )
+    test_boost = service._calculate_query_intent_boost(
+        symbol=test_symbol,
+        file_path="src/test/java/de/webtrekk/ds/recommender/service/recoservice/OldNewComparisonTests.java",
+        chunk_content="assertEquals(...)",
+        query_intents={"api_surface"},
+        query_tokens=["api", "route"],
+    )
+
+    assert controller_boost > test_boost
+
+
+def test_framework_intent_boost_prefers_exact_framework_matches():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+
+    framework_symbol = MagicMock()
+    framework_symbol.name = "JVereinPlugin"
+    framework_symbol.fully_qualified_name = "de.jost_net.JVerein.JVereinPlugin"
+    framework_symbol.documentation = "Jameica plugin bootstrap."
+    framework_symbol.kind = SymbolKindEnum.CLASS
+
+    unrelated_symbol = MagicMock()
+    unrelated_symbol.name = "SpendenView"
+    unrelated_symbol.fully_qualified_name = "de.jost_net.JVerein.gui.view.SpendenView"
+    unrelated_symbol.documentation = "GUI view."
+    unrelated_symbol.kind = SymbolKindEnum.CLASS
+
+    framework_boost = service._calculate_query_intent_boost(
+        symbol=framework_symbol,
+        file_path="plugin.xml",
+        chunk_content='class="de.jost_net.JVerein.JVereinPlugin" xmlns="http://www.willuhn.de/schema/jameica-plugin"',
+        query_intents={"framework_usage"},
+        query_tokens=["jameica", "plugin", "wiring"],
+    )
+    unrelated_boost = service._calculate_query_intent_boost(
+        symbol=unrelated_symbol,
+        file_path="src/de/jost_net/JVerein/gui/view/SpendenView.java",
+        chunk_content="import org.eclipse.swt.widgets.Composite;",
+        query_intents={"framework_usage"},
+        query_tokens=["jameica", "plugin", "wiring"],
+    )
+
+    assert framework_boost > unrelated_boost
+
+
+def test_member_flow_intent_boost_prefers_import_member_paths():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+
+    flow_symbol = MagicMock()
+    flow_symbol.name = "importMitglied"
+    flow_symbol.fully_qualified_name = "de.jost_net.JVerein.io.Import.importMitglied"
+    flow_symbol.documentation = "Imports a new member."
+    flow_symbol.kind = SymbolKindEnum.METHOD
+
+    unrelated_symbol = MagicMock()
+    unrelated_symbol.name = "EmailValidator"
+    unrelated_symbol.fully_qualified_name = "de.jost_net.JVerein.util.EmailValidator"
+    unrelated_symbol.documentation = "Validates e-mail addresses."
+    unrelated_symbol.kind = SymbolKindEnum.CLASS
+
+    flow_boost = service._calculate_query_intent_boost(
+        symbol=flow_symbol,
+        file_path="src/de/jost_net/JVerein/io/Import.java",
+        chunk_content="this method imports a new member from the specified data source",
+        query_intents={"member_booking_flow"},
+        query_tokens=["member", "import", "flow", "entrypoint"],
+    )
+    unrelated_boost = service._calculate_query_intent_boost(
+        symbol=unrelated_symbol,
+        file_path="src/de/jost_net/JVerein/util/EmailValidator.java",
+        chunk_content="isValid(String email)",
+        query_intents={"member_booking_flow"},
+        query_tokens=["member", "import", "flow", "entrypoint"],
+    )
+
+    assert flow_boost > unrelated_boost
+
+
+def test_ui_surface_intent_boost_prefers_view_classes():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+
+    view_symbol = MagicMock()
+    view_symbol.name = "SpendenView"
+    view_symbol.fully_qualified_name = "de.jost_net.JVerein.gui.view.SpendenView"
+    view_symbol.documentation = "GUI view."
+    view_symbol.kind = SymbolKindEnum.CLASS
+
+    framework_symbol = MagicMock()
+    framework_symbol.name = "DBSupportMySqlImpl"
+    framework_symbol.fully_qualified_name = "de.jost_net.JVerein.server.DBSupportMySqlImpl"
+    framework_symbol.documentation = "Uses Jameica database support."
+    framework_symbol.kind = SymbolKindEnum.CLASS
+
+    view_boost = service._calculate_query_intent_boost(
+        symbol=view_symbol,
+        file_path="src/de/jost_net/JVerein/gui/view/SpendenView.java",
+        chunk_content="extends AbstractView",
+        query_intents={"ui_surface", "framework_usage"},
+        query_tokens=["jameica", "views"],
+    )
+    framework_boost = service._calculate_query_intent_boost(
+        symbol=framework_symbol,
+        file_path="src/de/jost_net/JVerein/server/DBSupportMySqlImpl.java",
+        chunk_content="@see de.willuhn.jameica.hbci.server.DBSupportMySql",
+        query_intents={"ui_surface", "framework_usage"},
+        query_tokens=["jameica", "views"],
+    )
+
+    assert view_boost > framework_boost
+
+
+def test_scoring_logic_intent_boost_prefers_optimizer_symbols_over_docs():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+
+    scoring_symbol = MagicMock()
+    scoring_symbol.name = "ARMObjectiveFunction"
+    scoring_symbol.fully_qualified_name = "de.webtrekk.ds.recommender.service.optimizer.ARMObjectiveFunction"
+    scoring_symbol.documentation = "Objective function for evaluating recommendation quality."
+    scoring_symbol.kind = SymbolKindEnum.CLASS
+
+    doc_symbol = MagicMock()
+    doc_symbol.name = "Recommendation Service"
+    doc_symbol.fully_qualified_name = "README.Recommendation Service"
+    doc_symbol.documentation = "Documentation section."
+    doc_symbol.kind = SymbolKindEnum.DOCUMENT_SECTION
+
+    scoring_boost = service._calculate_query_intent_boost(
+        symbol=scoring_symbol,
+        file_path="src/main/java/de/webtrekk/ds/recommender/service/optimizer/ARMObjectiveFunction.java",
+        chunk_content="Objective function for evaluating recommendation quality and coverage score.",
+        query_intents={"scoring_logic"},
+        query_tokens=["recommendation", "scoring", "logic"],
+    )
+    doc_boost = service._calculate_query_intent_boost(
+        symbol=doc_symbol,
+        file_path="README.md",
+        chunk_content="Recommendation Service overview",
+        query_intents={"scoring_logic"},
+        query_tokens=["recommendation", "scoring", "logic"],
+    )
+
+    assert scoring_boost > doc_boost
+
+
+def test_csv_member_import_intent_boost_prefers_member_import_over_form_field_csv():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+
+    member_import_symbol = MagicMock()
+    member_import_symbol.name = "importMitglied"
+    member_import_symbol.fully_qualified_name = "de.jost_net.JVerein.io.Import.importMitglied"
+    member_import_symbol.documentation = "Imports a new member."
+    member_import_symbol.kind = SymbolKindEnum.METHOD
+
+    form_import_symbol = MagicMock()
+    form_import_symbol.name = "FormularfelderImportCSV"
+    form_import_symbol.fully_qualified_name = "de.jost_net.JVerein.io.FormularfelderImportCSV"
+    form_import_symbol.documentation = "Importieren von Objekten zu Mitgliedern."
+    form_import_symbol.kind = SymbolKindEnum.CLASS
+
+    member_import_boost = service._calculate_query_intent_boost(
+        symbol=member_import_symbol,
+        file_path="src/de/jost_net/JVerein/io/Import.java",
+        chunk_content="this method imports a new member from the specified data source",
+        query_intents={"csv_member_import"},
+        query_tokens=["csv", "member", "import"],
+    )
+    form_import_boost = service._calculate_query_intent_boost(
+        symbol=form_import_symbol,
+        file_path="src/de/jost_net/JVerein/io/FormularfelderImportCSV.java",
+        chunk_content="Importieren von Objekten zu Mitgliedern",
+        query_intents={"csv_member_import"},
+        query_tokens=["csv", "member", "import"],
+    )
+
+    assert member_import_boost > form_import_boost
+
+
+def test_csv_member_import_intent_penalizes_export_shapes():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+
+    import_symbol = MagicMock()
+    import_symbol.name = "importMitglied"
+    import_symbol.fully_qualified_name = "de.jost_net.JVerein.io.Import.importMitglied"
+    import_symbol.documentation = "Imports a new member."
+    import_symbol.kind = SymbolKindEnum.METHOD
+
+    export_symbol = MagicMock()
+    export_symbol.name = "MitgliedAuswertungCSV"
+    export_symbol.fully_qualified_name = "de.jost_net.JVerein.io.MitgliedAuswertungCSV"
+    export_symbol.documentation = "Exports member evaluation data."
+    export_symbol.kind = SymbolKindEnum.CLASS
+
+    import_boost = service._calculate_query_intent_boost(
+        symbol=import_symbol,
+        file_path="src/de/jost_net/JVerein/io/Import.java",
+        chunk_content="this method imports a new member from the specified data source",
+        query_intents={"csv_member_import"},
+        query_tokens=["csv", "member", "import"],
+    )
+    export_boost = service._calculate_query_intent_boost(
+        symbol=export_symbol,
+        file_path="src/de/jost_net/JVerein/io/MitgliedAuswertungCSV.java",
+        chunk_content="CSV export for member evaluation",
+        query_intents={"csv_member_import"},
+        query_tokens=["csv", "member", "import"],
+    )
+
+    assert import_boost > export_boost
 
 
 @pytest.mark.asyncio
@@ -251,7 +618,8 @@ async def test_search_integration(search_service, mock_session):
     search_service._keyword_search = AsyncMock(return_value=[mock_result])
     
     # Test keyword-only search
-    results = await search_service.search("test", limit=10, hybrid=False)
+    with patch("src.api.services.search_service._get_redis_cache", AsyncMock(return_value=None)):
+        results = await search_service.search("test", limit=10, hybrid=False)
     
     assert len(results) >= 0
     search_service._keyword_search.assert_called_once()
@@ -310,3 +678,14 @@ async def test_rrf_with_overlapping_results():
     assert fused[0].match_type == "hybrid"
     # Score should be higher due to appearing in both result sets
     assert fused[0].score > 0
+
+
+def test_hybrid_source_weights_favor_keyword_for_csv_member_import():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+
+    keyword_weight, semantic_weight = service._get_hybrid_source_weights({"csv_member_import"})
+
+    assert keyword_weight == 10.0
+    assert semantic_weight == 0.1

@@ -52,10 +52,11 @@ def format_search_results(results: List[Dict], query: str) -> str:
 
                 formatted.append(
                     f"   • **{name}** ({result['kind']})\n"
-                    f"     Lines: {result['lines']} | Score: {result['relevance_score']}\n"
+                    f"     Lines: {result['lines']} | Score: {result['relevance_score']} | Match: {result.get('match_reason') or result.get('match_type')}\n"
                     f"     {code_preview}"
                     f"     _Documentation_: {result.get('documentation', 'N/A')}\n"
                     f"     🔗 ID: {result['symbol_id']}\n"
+                    f"     Next: {', '.join(result.get('follow_up_tools') or ['get_symbol_context'])}\n"
                 )
 
     return "".join(formatted)
