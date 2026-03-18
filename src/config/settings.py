@@ -91,10 +91,11 @@ class Settings(BaseSettings):
     celery_task_soft_time_limit: int = 3000
 
     # Embeddings
-    embedding_provider: str = "local"  # "local" or "openai"
+    embedding_provider: str = "ollama"  # "local", "openai", or "ollama"
     openai_api_key: Optional[str] = None
     openai_embedding_model: str = "text-embedding-3-small"
     openai_embedding_dimension: int = 1536
+    ollama_embedding_model: str = "mxbai-embed-large"
     
     # LLM Summarization (Phase 2)
     llm_provider: str = "openrouter"  # "openai" or "openrouter"

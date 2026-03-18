@@ -21,3 +21,7 @@ export API_PORT=8080
 export REDIS_URL='redis://localhost:6379/0'
 export CELERY_BROKER_URL='redis://localhost:6379/0'
 export CELERY_RESULT_BACKEND='redis://localhost:6379/0'
+
+export EMBEDDING_PROVIDER='ollama'
+export OLLAMA_EMBEDDING_MODEL='mxbai-embed-large'
+export OLLAMA_BASE_URL='http://host.docker.internal:11434/v1'

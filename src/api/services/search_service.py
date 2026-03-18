@@ -361,6 +361,9 @@ class SearchService:
             filters['language'] = language
         if symbol_kind:
             filters['symbol_kind'] = symbol_kind
+        filters['embedding_model_name'] = self.embedding_generator.model_name
+        filters['embedding_model_version'] = self.embedding_generator.model_version
+        filters['embedding_dimension'] = self.embedding_generator.dimension
         
         # Perform vector search with file and repo info in single query
         # This fixes the N+1 query problem

@@ -15,6 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship, declarative_base
 from pgvector.sqlalchemy import Vector
+from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.config.enums import (
     LanguageEnum,
     SymbolKindEnum,
@@ -385,7 +386,7 @@ class Embedding(Base):
     model_name = Column(String(100), nullable=False)
     model_version = Column(String(50))
     dimension = Column(Integer, nullable=False)
-    vector = Column(Vector(), nullable=False)
+    vector = Column(Vector(FIXED_EMBEDDING_DIMENSION), nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
