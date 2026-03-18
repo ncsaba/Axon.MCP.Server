@@ -27,6 +27,7 @@ This fork targets Python + Java + docs/config indexing with a graph-oriented cod
 
 - [Architecture Overview](architecture/overview.md)
 - [Parser Capability Matrix](architecture/parser_capability_matrix.md)
+- [Retrieval Improvement Plan](architecture/retrieval_improvement_plan.md)
 - [Repository Source Abstraction](architecture/repository_source_abstraction.md)
 - [Incremental Indexing Spec](architecture/incremental_indexing_spec.md)
 - [Streaming Indexing Implementation Plan](architecture/streaming_indexing_implementation_plan.md)
