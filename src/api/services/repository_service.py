@@ -21,7 +21,7 @@ from src.api.schemas.repositories import (
     CommitInfo,
 )
 from src.config.enums import RepositoryStatusEnum, SourceControlProviderEnum
-from src.database.models import Repository, File, Commit
+from src.database.models import Repository, FileInstance as File, Commit
 from src.database.query_helpers import active_file_filter
 from src.gitlab.client import GitLabClient
 from src.utils.logging_config import get_logger

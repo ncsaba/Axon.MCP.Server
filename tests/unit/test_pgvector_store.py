@@ -35,7 +35,6 @@ async def test_store_embeddings_success(vector_store, mock_session):
     # Mock chunk - use simple MagicMock to avoid InvalidSpecError
     mock_chunk = MagicMock()
     mock_chunk.id = 1
-    mock_chunk.symbol_id = 10
     
     # Mock for batch query (uses scalars() now)
     mock_chunks_result = MagicMock()
@@ -284,7 +283,6 @@ async def test_store_multiple_embeddings(vector_store, mock_session):
     for i in range(3):
         mock_chunk = MagicMock()
         mock_chunk.id = i + 1
-        mock_chunk.symbol_id = (i + 1) * 10
         mock_chunks.append(mock_chunk)
     
     # Mock batch query with all chunks
@@ -325,4 +323,3 @@ async def test_search_similar_empty_results(vector_store, mock_session):
     results = await vector_store.search_similar(query_vector, limit=10, threshold=0.9)
     
     assert len(results) == 0
-

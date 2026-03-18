@@ -17,7 +17,7 @@ from src.utils.call_graph_traversal import (
     SymbolNode,
 )
 from src.config.enums import RelationTypeEnum, SymbolKindEnum, AccessModifierEnum
-from src.database.models import Symbol, File, Relation, Chunk
+from src.database.models import Symbol, FileInstance as File, Relation, Chunk
 
 
 class TestTraversalConfig:

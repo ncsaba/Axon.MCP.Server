@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import (
     Repository,
-    File,
+    FileInstance as File,
     Symbol,
     Relation,
     RepositoryIndexRun,
@@ -357,8 +357,8 @@ class IncrementalSyncWorker:
 
     async def _clear_file_owned_artifacts(self, file_id: int) -> None:
         """Clear instance-scoped extracted data before reparse or missing transition."""
-        await self.session.execute(delete(Symbol).where(Symbol.file_id == file_id))
-        await self.session.execute(delete(Dependency).where(Dependency.file_id == file_id))
+        await self.session.execute(delete(Symbol).where(Symbol.file_instance_id == file_id))
+        await self.session.execute(delete(Dependency).where(Dependency.file_instance_id == file_id))
     
     async def _reparse_file(
         self,
@@ -690,9 +690,9 @@ class IncrementalSyncWorker:
         if not touched_file_ids:
             return
 
-        await self.session.execute(delete(OutgoingApiCall).where(OutgoingApiCall.file_id.in_(touched_file_ids)))
-        await self.session.execute(delete(PublishedEvent).where(PublishedEvent.file_id.in_(touched_file_ids)))
-        await self.session.execute(delete(EventSubscription).where(EventSubscription.file_id.in_(touched_file_ids)))
+        await self.session.execute(delete(OutgoingApiCall).where(OutgoingApiCall.file_instance_id.in_(touched_file_ids)))
+        await self.session.execute(delete(PublishedEvent).where(PublishedEvent.file_instance_id.in_(touched_file_ids)))
+        await self.session.execute(delete(EventSubscription).where(EventSubscription.file_instance_id.in_(touched_file_ids)))
         await self.session.flush()
 
         outgoing_extractor = OutgoingCallExtractor(self.session)
@@ -786,7 +786,7 @@ class IncrementalSyncWorker:
         await self.session.execute(
             update(Symbol)
             .where(
-                Symbol.file_id.in_(
+                Symbol.file_instance_id.in_(
                     select(File.id).where(File.repository_id == repository_id)
                 )
             )

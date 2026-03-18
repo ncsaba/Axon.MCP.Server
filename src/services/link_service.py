@@ -26,7 +26,7 @@ from src.database.models import (
     EventLink,
     GatewayRoute,
     Repository,
-    File,
+    FileInstance as File,
 )
 from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum
@@ -1012,7 +1012,7 @@ class LinkService:
             select(OutgoingApiCall, ApiEndpointLink, Symbol, File, Repository)
             .outerjoin(ApiEndpointLink, OutgoingApiCall.id == ApiEndpointLink.outgoing_call_id)
             .outerjoin(Symbol, ApiEndpointLink.target_symbol_id == Symbol.id)
-            .outerjoin(File, Symbol.file_id == File.id)
+            .outerjoin(File, Symbol.file_instance_id == File.id)
             .outerjoin(Repository, File.repository_id == Repository.id)
             .where(
                 OutgoingApiCall.symbol_id == symbol_id,
@@ -1047,7 +1047,7 @@ class LinkService:
         incoming_result = await self.db.execute(
             select(ApiEndpointLink, OutgoingApiCall, File, Repository)
             .join(OutgoingApiCall, ApiEndpointLink.outgoing_call_id == OutgoingApiCall.id)
-            .join(File, OutgoingApiCall.file_id == File.id)
+            .join(File, OutgoingApiCall.file_instance_id == File.id)
             .join(Repository, File.repository_id == Repository.id)
             .where(ApiEndpointLink.target_symbol_id == symbol_id, active_file_filter())
         )

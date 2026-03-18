@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from src.config.enums import LanguageEnum, RelationTypeEnum, RepositoryStatusEnum, SourceControlProviderEnum, SymbolKindEnum
-from src.database.models import File, Relation, Repository, Symbol
+from src.database.models import FileInstance as File, Relation, Repository, Symbol
 from src.extractors.import_resolver import ImportRelationshipBuilder
 
 
@@ -78,7 +78,7 @@ async def test_java_import_relationships_are_created(async_session, tmp_path: Pa
     await async_session.flush()
 
     app_symbol = Symbol(
-        file_id=app_file.id,
+        file_instance_id=app_file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.CLASS,
         name="App",
@@ -87,7 +87,7 @@ async def test_java_import_relationships_are_created(async_session, tmp_path: Pa
         end_line=5,
     )
     service_symbol = Symbol(
-        file_id=service_file.id,
+        file_instance_id=service_file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.CLASS,
         name="UserService",
@@ -170,7 +170,7 @@ async def test_java_package_wildcard_import_relationships_are_created(async_sess
     await async_session.flush()
 
     app_symbol = Symbol(
-        file_id=app_file.id,
+        file_instance_id=app_file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.CLASS,
         name="App",
@@ -179,7 +179,7 @@ async def test_java_package_wildcard_import_relationships_are_created(async_sess
         end_line=6,
     )
     user_service_symbol = Symbol(
-        file_id=service_file.id,
+        file_instance_id=service_file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.CLASS,
         name="UserService",
@@ -188,7 +188,7 @@ async def test_java_package_wildcard_import_relationships_are_created(async_sess
         end_line=2,
     )
     billing_service_symbol = Symbol(
-        file_id=billing_file.id,
+        file_instance_id=billing_file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.CLASS,
         name="BillingService",
@@ -269,7 +269,7 @@ async def test_java_static_wildcard_import_relationships_are_created(async_sessi
     await async_session.flush()
 
     app_symbol = Symbol(
-        file_id=app_file.id,
+        file_instance_id=app_file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.CLASS,
         name="App",
@@ -278,7 +278,7 @@ async def test_java_static_wildcard_import_relationships_are_created(async_sessi
         end_line=5,
     )
     constants_class_symbol = Symbol(
-        file_id=constants_file.id,
+        file_instance_id=constants_file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.CLASS,
         name="Constants",
@@ -287,7 +287,7 @@ async def test_java_static_wildcard_import_relationships_are_created(async_sessi
         end_line=5,
     )
     max_users_symbol = Symbol(
-        file_id=constants_file.id,
+        file_instance_id=constants_file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.VARIABLE,
         name="MAX_USERS",
@@ -297,7 +297,7 @@ async def test_java_static_wildcard_import_relationships_are_created(async_sessi
         end_line=3,
     )
     default_limit_symbol = Symbol(
-        file_id=constants_file.id,
+        file_instance_id=constants_file.id,
         language=LanguageEnum.JAVA,
         kind=SymbolKindEnum.METHOD,
         name="defaultLimit",

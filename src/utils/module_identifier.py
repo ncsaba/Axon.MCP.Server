@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.enums import LanguageEnum, SymbolKindEnum
-from src.database.models import File, Symbol
+from src.database.models import FileInstance as File, Symbol
 from src.database.query_helpers import active_file_filter
 from src.utils.logging_config import get_logger
 
@@ -220,7 +220,7 @@ class ModuleIdentifier:
         file_ids = [f.id for f in dir_info["files"]]
         if file_ids:
             symbol_count_result = await self.session.execute(
-                select(func.count(Symbol.id)).where(Symbol.file_id.in_(file_ids))
+                select(func.count(Symbol.id)).where(Symbol.file_instance_id.in_(file_ids))
             )
             symbol_count = symbol_count_result.scalar() or 0
         else:
@@ -301,7 +301,7 @@ class ModuleIdentifier:
             # Get symbols, prioritizing entry points and public symbols
             symbols_result = await self.session.execute(
                 select(Symbol)
-                .where(Symbol.file_id.in_(file_ids))
+                .where(Symbol.file_instance_id.in_(file_ids))
                 .where(
                     Symbol.kind.in_(
                         [
@@ -338,7 +338,7 @@ class ModuleIdentifier:
                         if symbol.access_modifier
                         else "public",
                         "file_path": next(
-                            (f.path for f in files if f.id == symbol.file_id), ""
+                            (f.path for f in files if f.id == symbol.file_instance_id), ""
                         ),
                     }
                 )

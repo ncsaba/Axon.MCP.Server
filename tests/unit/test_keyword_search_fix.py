@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime
 
 from src.api.services.search_service import SearchService
-from src.database.models import Symbol, File, Repository
+from src.database.models import Symbol, FileInstance as File, Repository
 from src.config.enums import SymbolKindEnum, LanguageEnum
 
 
@@ -66,7 +66,7 @@ async def test_keyword_search_scores_all_matches_before_limit(search_service, mo
         symbol.start_line = i * 10
         symbol.end_line = i * 10 + 5
         symbol.created_at = datetime.now()
-        symbol.file_id = i
+        symbol.file_instance_id = i
         
         file = MagicMock(spec=File)
         file.id = i
@@ -95,7 +95,7 @@ async def test_keyword_search_scores_all_matches_before_limit(search_service, mo
         symbol.start_line = i * 10
         symbol.end_line = i * 10 + 5
         symbol.created_at = datetime.now()
-        symbol.file_id = i
+        symbol.file_instance_id = i
         
         file = MagicMock(spec=File)
         file.id = i
@@ -124,7 +124,7 @@ async def test_keyword_search_scores_all_matches_before_limit(search_service, mo
         symbol.start_line = i * 10
         symbol.end_line = i * 10 + 5
         symbol.created_at = datetime.now()
-        symbol.file_id = i
+        symbol.file_instance_id = i
         
         file = MagicMock(spec=File)
         file.id = i
@@ -201,7 +201,7 @@ async def test_keyword_search_safety_limit(search_service, mock_session):
         symbol.start_line = i
         symbol.end_line = i + 5
         symbol.created_at = datetime.now()
-        symbol.file_id = i
+        symbol.file_instance_id = i
         
         file = MagicMock(spec=File)
         file.id = i
@@ -262,7 +262,7 @@ async def test_keyword_search_deterministic_tie_breaking(search_service, mock_se
         symbol.start_line = i
         symbol.end_line = i + 5
         symbol.created_at = datetime.now()
-        symbol.file_id = i
+        symbol.file_instance_id = i
         
         file = MagicMock(spec=File)
         file.id = i

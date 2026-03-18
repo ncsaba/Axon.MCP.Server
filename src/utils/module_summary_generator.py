@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import File, ModuleSummary, Repository
+from src.database.models import FileInstance as File, ModuleSummary, Repository
 from src.database.query_helpers import active_file_filter
 from src.utils.llm_summarizer import LLMSummarizer
 from src.utils.logging_config import get_logger

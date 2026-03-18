@@ -21,6 +21,7 @@ Axon is a code-indexing MCP server focused on Python, Java, JavaScript/TypeScrip
 ```bash
 cp .env.example .env
 make dev-install
+make db-reset
 make api-dev
 ```
 
@@ -34,6 +35,8 @@ docker compose -f docker/docker-compose.yml up -d
 
 - Use integration-style validation with the real local PostgreSQL/Redis setup.
 - The legacy hybrid semantic-analysis pipeline has been removed from this fork.
+- For the current WIP cycle, prefer fresh-schema creation via `make db-reset` or `python scripts/reset_db.py --yes`.
+- Alembic is still available when you explicitly want the migration path; it is just not the default path for today's branch work.
 
 ## Integration Test Prerequisites
 

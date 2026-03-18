@@ -5,7 +5,7 @@ from sqlalchemy import select, and_
 from mcp.types import TextContent
 
 from src.config.enums import RelationTypeEnum, SymbolKindEnum
-from src.database.models import File, Repository, Symbol, Chunk, Relation
+from src.database.models import FileInstance as File, Repository, Symbol, Chunk, ChunkSymbolLink, Relation
 from src.database.query_helpers import active_file_filter
 from src.database.session import get_async_session, get_readonly_session
 from src.utils.logging_config import get_logger
@@ -156,7 +156,7 @@ async def get_symbol_context(
                 # Get symbol with file and repository info
                 result = await session.execute(
                     select(Symbol, File, Repository)
-                    .join(File, Symbol.file_id == File.id)
+                    .join(File, Symbol.file_instance_id == File.id)
                     .join(Repository, File.repository_id == Repository.id)
                     .where(Symbol.id == symbol_id, active_file_filter())
                 )
@@ -201,7 +201,8 @@ async def get_symbol_context(
                 # Get symbol source code from chunks
                 chunk_result = await session.execute(
                     select(Chunk.content)
-                    .where(Chunk.symbol_id == symbol_id)
+                    .join(ChunkSymbolLink, ChunkSymbolLink.chunk_id == Chunk.id)
+                    .where(ChunkSymbolLink.symbol_id == symbol_id)
                     .order_by(Chunk.id)
                     .limit(1)  # Get the main body chunk
                 )
@@ -334,7 +335,7 @@ async def find_usages(
             query = (
                 select(Relation, Symbol, File)
                 .join(Symbol, Relation.from_symbol_id == Symbol.id)
-                .join(File, Symbol.file_id == File.id)
+                .join(File, Symbol.file_instance_id == File.id)
                 .where(Relation.to_symbol_id == symbol_id, active_file_filter())
             )
 
@@ -457,7 +458,7 @@ async def find_implementations(
             result = await session.execute(
                 select(Symbol, File)
                 .join(Relation, Relation.from_symbol_id == Symbol.id)
-                .join(File, Symbol.file_id == File.id)
+                .join(File, Symbol.file_instance_id == File.id)
                 .where(
                     Relation.to_symbol_id == interface_id,
                     Relation.relation_type == RelationTypeEnum.IMPLEMENTS,
@@ -570,7 +571,7 @@ async def find_references(
             result = await session.execute(
                 select(Relation, Symbol, File)
                 .join(Symbol, Relation.from_symbol_id == Symbol.id)
-                .join(File, Symbol.file_id == File.id)
+                .join(File, Symbol.file_instance_id == File.id)
                 .where(and_(*filters), active_file_filter())
                 .limit(limit)
             )

@@ -11,7 +11,7 @@ from sqlalchemy import delete, func, select
 
 from src.config.enums import FileLifecycleStateEnum
 from src.config.settings import get_settings
-from src.database.models import File, FileContent
+from src.database.models import FileInstance as File, FileContent
 from src.database.session import AsyncSessionLocal
 from src.utils.logging_config import get_logger
 from src.utils.metrics import (

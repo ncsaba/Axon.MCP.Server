@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
 from src.config.enums import LanguageEnum
-from src.database.models import File
+from src.database.models import FileInstance as File
 from src.extractors.call_analyzer import Call
 
 

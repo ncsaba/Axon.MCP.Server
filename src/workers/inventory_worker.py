@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from src.config.settings import get_settings
 from src.config.enums import FileLifecycleStateEnum
-from src.database.models import File, Repository
+from src.database.models import FileInstance as File, Repository
 from src.database.session import AsyncSessionLocal
 from src.repository_sources import get_repository_source_registry
 from src.utils.logging_config import get_logger

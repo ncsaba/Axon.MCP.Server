@@ -4,7 +4,7 @@ Helper functions for worker tasks.
 
 import hashlib
 from src.database.session import engine
-from src.database.models import Symbol, File
+from src.database.models import Symbol, FileInstance as File
 from src.config.enums import FileLifecycleStateEnum
 from sqlalchemy import select, func
 

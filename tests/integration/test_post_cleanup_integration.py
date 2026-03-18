@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import func, select, text
 
 from src.config.enums import LanguageEnum, RepositoryStatusEnum
-from src.database.models import Chunk, File, FileContent, Repository, Symbol
+from src.database.models import Chunk, ChunkSymbolLink, FileInstance as File, FileContent, Repository, Symbol
 from src.extractors.knowledge_extractor import KnowledgeExtractor
 from src.parsers import ParserFactory
 from src.workers.file_worker import DEFAULT_PARSER_FINGERPRINT
@@ -96,10 +96,13 @@ def run() -> str:
     assert not extraction.errors
 
     symbol_count = await async_session.scalar(
-        select(func.count()).select_from(Symbol).where(Symbol.file_id == file.id)
+        select(func.count()).select_from(Symbol).where(Symbol.file_instance_id == file.id)
     )
     chunk_count = await async_session.scalar(
-        select(func.count()).select_from(Chunk).where(Chunk.file_id == file.id)
+        select(func.count(func.distinct(Chunk.id)))
+        .select_from(Chunk)
+        .join(ChunkSymbolLink, ChunkSymbolLink.chunk_id == Chunk.id)
+        .where(ChunkSymbolLink.file_instance_id == file.id)
     )
 
     assert symbol_count and symbol_count > 0

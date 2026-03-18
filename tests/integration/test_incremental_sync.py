@@ -16,7 +16,7 @@ from src.config.enums import (
     SourceControlProviderEnum,
 )
 from src.config.settings import get_settings
-from src.database.models import Dependency, File, Repository, RepositoryIndexRun
+from src.database.models import Dependency, FileInstance as File, Repository, RepositoryIndexRun
 from src.workers.file_worker import create_or_update_file
 from src.workers.incremental_sync import IncrementalSyncWorker
 

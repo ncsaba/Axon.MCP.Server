@@ -6,7 +6,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Symbol, File, Repository
+from src.database.models import Symbol, FileInstance as File, Repository
 from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum, LanguageEnum, AccessModifierEnum
 from src.repository_sources import get_repository_source_registry
@@ -23,7 +23,7 @@ class ApiEndpoint:
         controller: str,
         action: str,
         file_path: str,
-        file_id: int,
+        file_instance_id: int,
         language: LanguageEnum,
         line_number: int,
         requires_auth: bool = False,
@@ -34,7 +34,7 @@ class ApiEndpoint:
         self.controller = controller
         self.action = action
         self.file_path = file_path
-        self.file_id = file_id
+        self.file_instance_id = file_instance_id
         self.language = language
         self.line_number = line_number
         self.requires_auth = requires_auth
@@ -116,7 +116,7 @@ class ApiEndpointExtractor:
 
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -138,7 +138,7 @@ class ApiEndpointExtractor:
             methods_result = await self.session.execute(
                 select(Symbol)
                 .where(
-                    Symbol.file_id == class_symbol.file_id,
+                    Symbol.file_instance_id == class_symbol.file_instance_id,
                     Symbol.kind == SymbolKindEnum.METHOD,
                     Symbol.parent_name == class_symbol.fully_qualified_name
                 )
@@ -166,7 +166,7 @@ class ApiEndpointExtractor:
 
         endpoints_result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -192,7 +192,7 @@ class ApiEndpointExtractor:
                 controller=docs.get('type', 'MinimalApi'),
                 action=symbol.name,
                 file_path=file.path,
-                file_id=file.id,
+                file_instance_id=file.id,
                 language=file.language,
                 line_number=symbol.start_line,
                 requires_auth=False,
@@ -220,7 +220,7 @@ class ApiEndpointExtractor:
             
             # Create Symbol
             symbol = Symbol(
-                file_id=endpoint.file_id,
+                file_instance_id=endpoint.file_instance_id,
                 language=endpoint.language,
                 kind=SymbolKindEnum.ENDPOINT,
                 access_modifier=AccessModifierEnum.PUBLIC,
@@ -408,7 +408,7 @@ class ApiEndpointExtractor:
             controller=controller.name,
             action=method.name,
             file_path=file_path,
-            file_id=file_id,
+            file_instance_id=file_id,
             language=language,
             line_number=method.start_line,
             requires_auth=requires_auth,
@@ -535,7 +535,7 @@ class ApiEndpointExtractor:
                                 controller=class_name,
                                 action=method_name,
                                 file_path=file.path,
-                                file_id=file.id,
+                                file_instance_id=file.id,
                                 language=file.language,
                                 line_number=idx,
                                 requires_auth=False,

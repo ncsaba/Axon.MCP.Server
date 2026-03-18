@@ -7,7 +7,7 @@ from mcp.types import TextContent
 
 from src.api.services.search_service import SearchService
 from src.config.enums import LanguageEnum, SymbolKindEnum
-from src.database.models import File, Repository, Symbol
+from src.database.models import FileInstance as File, Repository, Symbol
 from src.database.query_helpers import active_file_filter
 from src.database.session import get_async_session
 from src.utils.logging_config import get_logger
@@ -159,7 +159,7 @@ async def search_documentation(
             
             query_stmt = (
                 select(Symbol, File, Repository)
-                .join(File, Symbol.file_id == File.id)
+                .join(File, Symbol.file_instance_id == File.id)
                 .join(Repository, File.repository_id == Repository.id)
                 .where(and_(*filters))
                 .limit(limit)
@@ -346,11 +346,11 @@ async def search_by_path(
             file_ids = [file.id for file in matching_files]
             symbol_counts_result = await session.execute(
                 select(
-                    Symbol.file_id,
+                    Symbol.file_instance_id,
                     func.count(Symbol.id).label('count')
                 )
-                .where(Symbol.file_id.in_(file_ids))
-                .group_by(Symbol.file_id)
+                .where(Symbol.file_instance_id.in_(file_ids))
+                .group_by(Symbol.file_instance_id)
             )
             symbol_counts = {row.file_id: row.count for row in symbol_counts_result}
             

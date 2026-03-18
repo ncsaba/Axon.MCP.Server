@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.extractors.pattern_detector import PatternDetector, Pattern
-from src.database.models import Symbol, File, Relation
+from src.database.models import Symbol, FileInstance as File, Relation
 from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum
 
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Symbol, File, Relation
+from src.database.models import Symbol, FileInstance as File, Relation
 from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum, RelationTypeEnum
 from src.utils.logging_config import get_logger
@@ -81,7 +81,7 @@ class AdvancedPatternDetector:
         # Look for classes with private constructors and static instances
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -129,7 +129,7 @@ class AdvancedPatternDetector:
         # Look for classes/methods with "Factory" in name
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -161,7 +161,7 @@ class AdvancedPatternDetector:
         # Look for classes ending with "Repository"
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -193,7 +193,7 @@ class AdvancedPatternDetector:
         # Look for classes with "Builder" in name
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -225,7 +225,7 @@ class AdvancedPatternDetector:
         # Look for event-related naming
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -257,7 +257,7 @@ class AdvancedPatternDetector:
         # Find classes with too many methods (>20) or high complexity
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -270,7 +270,7 @@ class AdvancedPatternDetector:
             methods_result = await self.session.execute(
                 select(Symbol)
                 .where(
-                    Symbol.file_id == symbol.file_id,
+                    Symbol.file_instance_id == symbol.file_instance_id,
                     Symbol.kind == SymbolKindEnum.METHOD,
                     Symbol.parent_name == symbol.fully_qualified_name
                 )
@@ -303,7 +303,7 @@ class AdvancedPatternDetector:
         # Find methods with high line count or complexity
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),
@@ -348,7 +348,7 @@ class AdvancedPatternDetector:
         # Find symbols with no incoming relationships
         result = await self.session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository_id,
                 active_file_filter(),

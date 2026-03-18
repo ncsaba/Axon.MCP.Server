@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.database.models import ConfigurationEntry, File
+from src.database.models import ConfigurationEntry, FileInstance as File
 from src.database.query_helpers import active_file_filter
 from src.utils.logging_config import get_logger
 from src.utils.async_compat import maybe_await
@@ -156,7 +156,7 @@ class ConfigExtractor:
                     
                 entry = ConfigurationEntry(
                     repository_id=file.repository_id,
-                    file_id=file.id,
+                    file_instance_id=file.id,
                     config_key=key,
                     config_value=config_value_str,
                     config_type=config_type,
@@ -197,7 +197,7 @@ class ConfigExtractor:
                         
                     entry = ConfigurationEntry(
                         repository_id=file.repository_id,
-                        file_id=file.id,
+                        file_instance_id=file.id,
                         config_key=key,
                         config_value=config_value_str,
                         config_type=config_type,
@@ -317,7 +317,7 @@ class ConfigExtractor:
                         
                     entries.append(ConfigurationEntry(
                         repository_id=file.repository_id,
-                        file_id=file.id,
+                        file_instance_id=file.id,
                         config_key=f"AppSettings:{key}",
                         config_value=value,
                         config_type="string",
@@ -335,7 +335,7 @@ class ConfigExtractor:
                 if name:
                     entries.append(ConfigurationEntry(
                         repository_id=file.repository_id,
-                        file_id=file.id,
+                        file_instance_id=file.id,
                         config_key=f"ConnectionStrings:{name}",
                         config_value="***" if value else None, # Always treat connection strings as secrets
                         config_type="string",

@@ -81,16 +81,10 @@ async def _lifespan(_: FastAPI):
     except Exception as exc:
         logger.error("database_initialization_failed", error=str(exc))
 
-    # Run auto-migrations
-    try:
-        from scripts.auto_migrate import run_all_migrations
-        success = await run_all_migrations()
-        if success:
-            logger.info("auto_migrations_applied_successfully")
-        else:
-            logger.warning("auto_migrations_failed_but_continuing")
-    except Exception as exc:
-        logger.error("auto_migrations_error", error=str(exc))
+    # In this WIP fork, schema drift is handled by reset/recreate rather than
+    # automatic migration execution on startup. Alembic remains available for
+    # manual use, but runtime boot should not mutate schema history.
+    logger.info("database_schema_mode", mode="reset_or_create_all")
 
     # Reset any interrupted jobs from previous run
     try:

@@ -7,7 +7,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Symbol, File, Relation
+from src.database.models import Symbol, FileInstance as File, Relation
 from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum
 from src.extractors.path_resolver import PathResolver
@@ -102,7 +102,7 @@ class ImportResolver:
         # Find exported symbol with matching name in that file
         result = await self.session.execute(
             select(Symbol).where(
-                Symbol.file_id == file_id,
+                Symbol.file_instance_id == file_id,
                 Symbol.name == symbol_name
             ).limit(1)
         )
@@ -308,7 +308,7 @@ class JavaImportExtractionStrategy:
 
         symbol_result = await self.resolver.session.execute(
             select(Symbol.id).where(
-                Symbol.file_id.in_(package_file_ids),
+                Symbol.file_instance_id.in_(package_file_ids),
                 Symbol.kind.in_([SymbolKindEnum.CLASS, SymbolKindEnum.INTERFACE, SymbolKindEnum.ENUM]),
             )
         )
@@ -328,7 +328,7 @@ class JavaImportExtractionStrategy:
         class_fqn = import_path
         symbol_result = await self.resolver.session.execute(
             select(Symbol.id).where(
-                Symbol.file_id == target_file_id,
+                Symbol.file_instance_id == target_file_id,
                 Symbol.parent_name == class_fqn,
                 Symbol.kind.in_(
                     [
@@ -404,7 +404,7 @@ class ImportRelationshipBuilder:
                 
                 # Get all symbols in the importing file to create import relationships
                 source_symbols_result = await self.session.execute(
-                    select(Symbol).where(Symbol.file_id == file.id).limit(1)
+                    select(Symbol).where(Symbol.file_instance_id == file.id).limit(1)
                 )
                 source_symbol = source_symbols_result.scalar_one_or_none()
                 

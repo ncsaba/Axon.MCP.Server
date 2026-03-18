@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, distinct, case
 
 from src.database.models import (
-    Repository, File, Symbol, OutgoingApiCall, 
+    Repository, FileInstance as File, Symbol, OutgoingApiCall, 
     PublishedEvent, EventSubscription, Relation, ModuleSummary
 )
 from src.database.query_helpers import active_file_filter
@@ -110,7 +110,7 @@ class StatisticsService:
         # Files with 0 symbols
         files_no_symbols_stmt = (
             select(func.count(File.id))
-            .outerjoin(Symbol, File.id == Symbol.file_id)
+            .outerjoin(Symbol, File.id == Symbol.file_instance_id)
             .where(File.repository_id == repository_id, active_file_filter())
             .group_by(File.id)
             .having(func.count(Symbol.id) == 0)
@@ -118,7 +118,7 @@ class StatisticsService:
         # The above query returns a row per file, we need to count those rows
         # Easier way: Count files where id NOT IN (select distinct file_id from symbols)
         files_with_symbols_subquery = (
-            select(distinct(Symbol.file_id))
+            select(distinct(Symbol.file_instance_id))
             .join(File)
             .where(File.repository_id == repository_id, active_file_filter())
         )
@@ -173,7 +173,7 @@ class StatisticsService:
         rel_dist_stmt = (
             select(Relation.relation_type, func.count(Relation.id))
             .join(Symbol, Relation.from_symbol_id == Symbol.id)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(File.repository_id == repository_id, active_file_filter())
             .group_by(Relation.relation_type)
         )

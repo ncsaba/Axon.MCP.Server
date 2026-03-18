@@ -13,7 +13,7 @@ from src.workers.celery_app import celery_app
 from src.workers.utils import _run_with_engine_cleanup, _count_symbols
 from src.workers.summary_worker import _generate_module_summaries
 from src.database.session import AsyncSessionLocal
-from src.database.models import Repository, Job, File, RepositoryIndexRun
+from src.database.models import Repository, Job, FileInstance as File, RepositoryIndexRun
 from src.config.enums import (
     RepositoryStatusEnum,
     JobStatusEnum,

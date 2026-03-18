@@ -20,7 +20,7 @@ elif db_url and "@postgres:" in db_url:
     os.environ["DATABASE_URL"] = db_url.replace("@postgres:", "@localhost:")
 
 from src.database.session import get_async_session
-from src.database.models import Relation, Symbol, Repository, File
+from src.database.models import Relation, Symbol, Repository, FileInstance as File
 from src.config.enums import RelationTypeEnum, SymbolKindEnum
 from src.utils.call_graph_traversal import CallGraphTraverser, TraversalConfig, TraversalDirection
 
@@ -46,7 +46,7 @@ async def verify_call_graph():
         result = await session.execute(
             select(Repository.name, func.count(Relation.id))
             .join(File, Repository.id == File.repository_id)
-            .join(Symbol, File.id == Symbol.file_id)
+            .join(Symbol, File.id == Symbol.file_instance_id)
             .join(Relation, Symbol.id == Relation.from_symbol_id)
             .group_by(Repository.name)
         )
@@ -65,7 +65,7 @@ async def verify_call_graph():
         
         result = await session.execute(
             select(Symbol, File, Repository)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .join(Repository, File.repository_id == Repository.id)
             .where(Symbol.id.in_(subquery))
         )

@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.schemas.search import SearchResult
 from src.config.enums import LanguageEnum, SymbolKindEnum
-from src.database.models import File, Repository, Symbol, Chunk
+from src.database.models import FileInstance as File, Repository, Symbol, Chunk, ChunkSymbolLink
 from src.database.query_helpers import active_file_filter
 from src.embeddings.generator import EmbeddingGenerator
 from src.vector_store.pgvector_store import PgVectorStore
@@ -279,7 +279,7 @@ class SearchService:
         
         # Build base query
         stmt = select(Symbol, File, Repository).join(
-            File, Symbol.file_id == File.id
+            File, Symbol.file_instance_id == File.id
         ).join(
             Repository, File.repository_id == Repository.id
         )
@@ -452,9 +452,10 @@ class SearchService:
         try:
             # Get chunks for these symbols (limit to first chunk per symbol for preview)
             stmt = (
-                select(Chunk.symbol_id, Chunk.content)
-                .where(Chunk.symbol_id.in_(symbol_ids))
-                .order_by(Chunk.symbol_id, Chunk.id)
+                select(ChunkSymbolLink.symbol_id, Chunk.content)
+                .join(Chunk, Chunk.id == ChunkSymbolLink.chunk_id)
+                .where(ChunkSymbolLink.symbol_id.in_(symbol_ids))
+                .order_by(ChunkSymbolLink.symbol_id, Chunk.id)
             )
             
             result = await self.session.execute(stmt)

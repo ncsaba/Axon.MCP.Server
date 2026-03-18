@@ -15,7 +15,7 @@ from src.config.enums import (
     SourceControlProviderEnum,
     RelationTypeEnum
 )
-from src.database.models import File, Repository, Symbol, Chunk, Relation
+from src.database.models import FileInstance as File, Repository, Symbol, Chunk, Relation
 from src.mcp_server.server import AxonMCPServer
 from src.mcp_server.tools.router import route_tool_call
 from src.mcp_server.formatters.search import format_search_results

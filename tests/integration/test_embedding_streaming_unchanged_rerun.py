@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from src.config.enums import LanguageEnum, RepositoryStatusEnum
-from src.database.models import Chunk, Embedding, File, FileContent, Repository
+from src.database.models import Chunk, Embedding, FileInstance as File, FileContent, Repository
 from src.embeddings.generator import EmbeddingResult
 from src.workers.file_worker import DEFAULT_PARSER_FINGERPRINT
 from src.workers.pipeline.context import PipelineContext
@@ -57,7 +57,6 @@ async def test_streaming_embedding_step_skips_unchanged_rerun(async_session) -> 
     await async_session.flush()
 
     chunk = Chunk(
-        file_id=file_row.id,
         file_content_id=file_row.current_content_id,
         content=content,
         content_type="signature_with_docs",
@@ -119,7 +118,11 @@ async def test_streaming_embedding_step_skips_unchanged_rerun(async_session) -> 
     assert generator.generate_embeddings.await_count == 1
 
     result = await async_session.execute(
-        select(Embedding).join(Chunk).join(File).where(File.repository_id == repo_id)
+        select(Embedding)
+        .join(Chunk, Embedding.chunk_id == Chunk.id)
+        .join(FileContent, Chunk.file_content_id == FileContent.id)
+        .join(File, File.current_content_id == FileContent.id)
+        .where(File.repository_id == repo_id)
     )
     embeddings = result.scalars().all()
     assert len(embeddings) == 1

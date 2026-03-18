@@ -11,7 +11,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
-from src.database.models import DockerService, File, Repository
+from src.database.models import DockerService, FileInstance as File, Repository
 from src.database.query_helpers import active_file_filter
 from src.parsers.docker_compose_parser import DockerComposeParser
 from src.services.service_mapper import ServiceMapper

@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text
-from src.database.models import Embedding, Chunk, Symbol, File, Repository
+from src.database.models import Embedding, Chunk, ChunkSymbolLink, Symbol, FileInstance as File, Repository
 from src.database.query_helpers import active_file_filter
 from src.embeddings.generator import EmbeddingResult
 from src.utils.logging_config import get_logger
@@ -62,7 +62,6 @@ class PgVectorStore:
                 # Create embedding record
                 embedding = Embedding(
                     chunk_id=result.chunk_id,
-                    symbol_id=chunk.symbol_id,
                     model_name=result.model_name,
                     model_version=result.model_version,
                     dimension=result.dimension,
@@ -133,14 +132,17 @@ class PgVectorStore:
         # Fetch more candidates than limit to allow for re-ranking
         vector_limit = limit * 2
         
-        # Subquery to get best similarity per symbol
+        # Subquery to get best similarity per symbol through chunk links.
         vector_subq = select(
-            Embedding.symbol_id,
+            ChunkSymbolLink.symbol_id.label("symbol_id"),
             func.max(1 - Embedding.vector.cosine_distance(query_vector)).label('vector_score')
+        ).join(
+            ChunkSymbolLink,
+            ChunkSymbolLink.chunk_id == Embedding.chunk_id,
         ).where(
             (1 - Embedding.vector.cosine_distance(query_vector)) >= threshold
         ).group_by(
-            Embedding.symbol_id
+            ChunkSymbolLink.symbol_id
         ).subquery()
         
         vector_query = select(
@@ -152,7 +154,7 @@ class PgVectorStore:
             vector_subq,
             Symbol.id == vector_subq.c.symbol_id
         ).join(
-            File, Symbol.file_id == File.id
+            File, Symbol.file_instance_id == File.id
         ).join(
             Repository, File.repository_id == Repository.id
         ).where(
@@ -182,7 +184,7 @@ class PgVectorStore:
                 File,
                 Repository
             ).join(
-                File, Symbol.file_id == File.id
+                File, Symbol.file_instance_id == File.id
             ).join(
                 Repository, File.repository_id == Repository.id
             ).where(

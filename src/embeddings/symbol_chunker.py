@@ -3,7 +3,7 @@
 from typing import List, Optional
 from dataclasses import dataclass
 
-from src.database.models import Symbol, File, Chunk
+from src.database.models import Symbol, FileInstance as File, Chunk
 from src.embeddings.chunk_context import ChunkContext, ChunkContextBuilder
 from src.config.enums import SymbolKindEnum
 

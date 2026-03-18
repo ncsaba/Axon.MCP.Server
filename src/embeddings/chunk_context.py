@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Symbol, File, Relation
+from src.database.models import Symbol, FileInstance as File, Relation
 from src.config.enums import RelationTypeEnum
 
 
@@ -106,7 +106,7 @@ class ChunkContextBuilder:
         
         result = await self.session.execute(
             select(Symbol).where(
-                Symbol.file_id == symbol.file_id,
+                Symbol.file_instance_id == symbol.file_instance_id,
                 Symbol.fully_qualified_name == symbol.parent_name
             )
         )

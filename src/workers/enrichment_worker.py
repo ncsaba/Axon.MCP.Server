@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from src.workers.celery_app import celery_app
 from src.workers.utils import _run_with_engine_cleanup
 from src.database.session import AsyncSessionLocal
-from src.database.models import Symbol, Repository, File
+from src.database.models import Symbol, Repository, FileInstance as File
 from src.database.query_helpers import active_file_filter
 from src.utils.logging_config import get_logger
 from src.utils.llm_summarizer import LLMSummarizer

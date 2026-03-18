@@ -6,7 +6,7 @@ from sqlalchemy import String, cast, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.enums import SymbolKindEnum
-from src.database.models import File, Repository, Service, Symbol
+from src.database.models import FileInstance as File, Repository, Service, Symbol
 from src.database.query_helpers import active_file_filter
 from src.utils.async_compat import maybe_await
 
@@ -42,7 +42,7 @@ class ServiceBoundaryAnalyzer:
         # Find potential controller classes and their files.
         result = await session.execute(
             select(Symbol, File)
-            .join(File, Symbol.file_id == File.id)
+            .join(File, Symbol.file_instance_id == File.id)
             .where(
                 File.repository_id == repository.id,
                 active_file_filter(),
@@ -145,7 +145,7 @@ class ServiceBoundaryAnalyzer:
             if file_ids:
                 await session.execute(
                     update(Symbol)
-                    .where(Symbol.file_id.in_(file_ids))
+                    .where(Symbol.file_instance_id.in_(file_ids))
                     .values(service_id=service_obj.id)
                 )
 

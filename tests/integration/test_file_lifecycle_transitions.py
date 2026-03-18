@@ -11,7 +11,7 @@ from src.config.enums import (
     SourceControlProviderEnum,
 )
 from src.config.settings import get_settings
-from src.database.models import File, FileContent, Repository
+from src.database.models import FileInstance as File, FileContent, Repository
 from src.workers.file_lifecycle_worker import _cleanup_missing_file_instances_async
 from src.workers.file_worker import DEFAULT_PARSER_FINGERPRINT, create_or_update_file
 from src.workers.sync_worker import _mark_missing_file_instances

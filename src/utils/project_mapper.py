@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.enums import LanguageEnum
-from src.database.models import File, Repository, Symbol
+from src.database.models import FileInstance as File, Repository, Symbol
 from src.database.query_helpers import active_file_filter
 from src.utils.logging_config import get_logger
 
@@ -319,7 +319,7 @@ class ProjectMapper:
         # Symbol count
         symbol_count = await self.session.execute(
             select(func.count(Symbol.id)).where(
-                Symbol.file_id.in_(
+                Symbol.file_instance_id.in_(
                     select(File.id).where(File.repository_id == repository_id, active_file_filter())
                 )
             )
