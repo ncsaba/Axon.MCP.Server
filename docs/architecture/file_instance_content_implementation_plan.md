@@ -3,7 +3,7 @@
 ## Snapshot
 
 - Date: 2026-03-18
-- Status: `🧭` active execution plan
+- Status: `✅` runtime slice landed; remaining work is doc/test-environment closure
 - Depends on: `docs/architecture/file_instance_content_dedup_proposal.md`
 
 ## Current Branch Priority
@@ -12,10 +12,9 @@
 
 | Priority | Status | Scope |
 | --- | --- | --- |
-| 1. Shared-chunk association model | `🧭` | The broad lifecycle/query cleanup is landed; the branch is now blocked on removing temporary chunk-to-symbol and chunk-to-instance ownership. |
-| 2. Retrieval/snippet cutover to association model | `🧭` | Search, symbols, traversal, and vector retrieval still need the schema/model cut to stop depending on transitional chunk ownership. |
-| 3. Branch doc closure | `🚧` | Canonical docs should describe lifecycle/query correctness as landed and keep only the true shared-chunk blocker open. |
-| 4. Broader language-platform work | `🚧` | Keep Java strategy and parser-platform work secondary to the current lifecycle branch until this slice stabilizes. |
+| 1. Branch doc closure | `🚧` | Canonical docs and handover text should describe lifecycle/query correctness, shared-chunk association, and reset-schema validation as landed. |
+| 2. Dedicated test DB default alignment | `🚧` | Docs, setup helpers, and test harness defaults should consistently keep `TEST_DATABASE_URL` separate from `DATABASE_URL`. |
+| 3. Broader language-platform work | `🧭` | With the branch runtime slice landed, the next engineering work can move back to Java strategy and parser-platform tracks. |
 
 ## Objective
 
@@ -311,9 +310,9 @@ Current execution batch:
 - `✅` Incremental git lifecycle coverage now exists and passed:
   `tests/integration/test_incremental_sync.py`
   (up-to-date, add+modify, delete, rename flows, plus one live dependency-refresh parity assertion)
-- `✅` Verified with explicit local Postgres env:
+- `✅` Verified with default devcontainer DB env (no manual DB exports):
   `DATABASE_URL=postgresql+asyncpg://indexer:indexer@localhost:5432/indexer`
-  `TEST_DATABASE_URL=postgresql+asyncpg://indexer:indexer@localhost:5432/indexer`
+  `TEST_DATABASE_URL=postgresql+asyncpg://indexer:indexer@localhost:5432/indexer_test`
 - `🚧` The new incremental sync integration suite validates real git diff and DB lifecycle
   behavior and now includes one live dependency-refresh parity stage.
   A later slice can extend that pattern to another restored stage such as reference building

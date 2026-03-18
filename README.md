@@ -44,14 +44,24 @@ For integration or DB-backed tests, set database credentials explicitly before r
 
 ```bash
 source /home/vscode/.venv-dev/bin/activate
-export DATABASE_URL='postgresql+asyncpg://indexer:indexer@localhost:5432/indexer'
-export TEST_DATABASE_URL='postgresql+asyncpg://indexer:indexer@localhost:5432/indexer'
 ```
+
+In the devcontainer, `DATABASE_URL` and `TEST_DATABASE_URL` are already exported by default:
+- `DATABASE_URL=postgresql+asyncpg://indexer:indexer@localhost:5432/indexer`
+- `TEST_DATABASE_URL=postgresql+asyncpg://indexer:indexer@localhost:5432/indexer_test`
+
+The devcontainer Postgres bootstrap also initializes both databases automatically:
+- `indexer`
+- `indexer_test`
+
+`TEST_DATABASE_URL` must point at a separate database. The test harness creates and drops schema there.
 
 If you need a deliberate clean-schema reset before a validation run, use:
 
 ```bash
 python scripts/reset_db.py --yes --use-test-db
+# or:
+make db-reset-test
 ```
 
 This is intended as a manual action. The test harness does not reset the database automatically.

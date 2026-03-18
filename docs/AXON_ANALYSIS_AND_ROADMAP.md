@@ -54,7 +54,7 @@ Adopt selectively from `external-inspiration/kilocode`:
 
 | Phase | Status | Focus | Risk |
 | --- | --- | --- | --- |
-| Phase 1: File instance/content separation | `🧭` | Close the docs and explicitly mark the branch state now that the shared-chunk association cut and reset-schema validation are landed. | `🔥` stale branch-status docs could make Phase 1 look less complete than the shipped runtime actually is. |
+| Phase 1: File instance/content separation | `✅` | Runtime slice is landed: lifecycle/query correctness, shared-chunk association, incremental git parity, and reset-schema full-suite validation are complete. Remaining follow-up is doc/test-environment alignment, not a runtime blocker. | `🔥` stale branch-status docs could make Phase 1 look less complete than the shipped runtime actually is. |
 | Phase 2: Parser platform consolidation | `🧭` | Capability matrix integration, strategy interfaces, fallback policy. | `🔥` temporary extractor regressions during refactor. |
 | Phase 3: Java semantic completeness (parity gate) | `🧭` | Reach at least kilocode-equivalent Java capability coverage for imports/calls/endpoints/dependencies. | `🔥` feature surface parity can expose parser/query gaps. |
 | Phase 4: Axon differentiation (surpass gate) | `🧭` | Exceed kilocode baseline via graph-native relations, richer traversal context, and MCP retrieval quality. | `🔥` requires representative benchmark repos and stable scoring criteria. |
@@ -85,7 +85,7 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Streaming indexing implementation plan (slice-by-slice execution) | `✅` |
 | Approve incremental indexing implementation contract | `🧭` |
 | Execute streaming indexing slices (metadata contract -> gate -> parse fanout -> embed -> aggregate) | `🧭` |
-| Implement file instance/content separation vertical slice (chunks + embeddings first) | `🚧` |
+| Implement file instance/content separation vertical slice (chunks + embeddings first) | `✅` |
 | Introduce interfaces for import/call/dependency extraction by language | `🚧` |
 | Implement first Java semantic extractor set | `🚧` |
 | Add integration checks focused on relation creation quality | `🚧` |

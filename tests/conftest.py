@@ -17,14 +17,23 @@ if str(_project_root) not in sys.path:
 os.environ["ENVIRONMENT"] = "testing"
 os.environ["DEBUG"] = "false"
 
-# In CI environments, DATABASE_URL is often set to the correct test database service.
-# Locally, we prefer TEST_DATABASE_URL or the default axon_test.
+# Tests must target a dedicated database, never the main runtime database.
+configured_runtime_db_url = (os.getenv("DATABASE_URL") or "").strip()
+configured_test_db_url = (os.getenv("TEST_DATABASE_URL") or "").strip()
+
+if configured_runtime_db_url and configured_test_db_url:
+    if configured_runtime_db_url == configured_test_db_url:
+        raise RuntimeError(
+            "TEST_DATABASE_URL must point at a dedicated test database and must not "
+            "match DATABASE_URL."
+        )
+
 effective_db_url = (
-    os.getenv("DATABASE_URL") or 
-    os.getenv("TEST_DATABASE_URL") or 
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/axon_test"
+    configured_test_db_url or
+    "postgresql+asyncpg://indexer:indexer@localhost:5432/indexer_test"
 )
 os.environ["DATABASE_URL"] = effective_db_url
+os.environ["TEST_DATABASE_URL"] = effective_db_url
 
 # Disable SSL for tests
 os.environ["DATABASE_SSL"] = "False"

@@ -1,4 +1,4 @@
-.PHONY: help install dev-install test test-integration lint format clean docker-up docker-down docker-logs docker-rebuild docker-status docker-check migrate db-reset api-start api-dev api-test retrieval-smoke mcp-start mcp-dev mcp-http-dev mcp-http-smoke ui-install ui-dev ui-build ui-test
+.PHONY: help install dev-install test test-integration lint format clean docker-up docker-down docker-logs docker-rebuild docker-status docker-check migrate db-reset db-reset-test api-start api-dev api-test retrieval-smoke mcp-start mcp-dev mcp-http-dev mcp-http-smoke ui-install ui-dev ui-build ui-test
 
 help:
 	@echo "Available commands:"
@@ -12,6 +12,7 @@ help:
 	@echo "  make format        - Format code"
 	@echo "  make migrate       - Run database migrations (optional/manual, not the default WIP path)"
 	@echo "  make db-reset      - Deliberately reset the PostgreSQL schema and recreate tables"
+	@echo "  make db-reset-test - Deliberately reset the dedicated test database schema"
 	@echo "  make api-start     - Start API server (production)"
 	@echo "  make api-dev       - Start API server (development with reload)"
 	@echo "  make api-test      - Test API endpoints"
@@ -78,6 +79,9 @@ migrate:
 
 db-reset:
 	python scripts/reset_db.py --yes
+
+db-reset-test:
+	python scripts/reset_db.py --yes --use-test-db
 
 # API commands
 api-start:
