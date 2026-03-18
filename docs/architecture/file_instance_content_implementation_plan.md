@@ -267,6 +267,11 @@ Recommendation:
 
 `✅` covered, `🚧` missing/partial, `🧭` recommended next slice.
 
+Current execution batch:
+- `🧭` align incremental git sync with the remaining main-pipeline enrichment stages:
+  `ReferenceBuilder`, pattern detection, service detection, service documentation,
+  and module summary regeneration.
+
 | Pipeline Capability | Main Pipeline | Incremental Git Sync | Priority | Notes |
 | --- | --- | --- | --- | --- |
 | Commit diff detection | `🛑` | `✅` | `✅` | Unique strength of the git workflow; keep this path. |
@@ -274,29 +279,42 @@ Recommendation:
 | Parse + symbol/chunk extraction for changed files | `✅` | `✅` | `✅` | Incremental worker now reparses changed paths correctly. |
 | Cross-file relationship building | `✅` | `✅` | `✅` | Covered via repository-wide rebuild of relationship-builder-owned relations. |
 | API endpoint extraction | `✅` | `✅` | `✅` | Incremental worker now refreshes generated endpoint symbols repository-wide after changed-file parse. |
-| Reference building | `✅` | `🚧` | `🧭` | Incremental worker does not run `ReferenceBuilder`. |
+| Reference building | `✅` | `✅` | `✅` | Incremental worker now clears and rebuilds parser-backed `REFERENCES` edges repository-wide via `ReferenceBuilder`. |
 | Import relationship building | `✅` | `✅` | `✅` | Incremental worker now clears and rebuilds repo-scoped `IMPORTS` edges after changed-file parse. |
 | Call graph / `CALLS` + `USES` selective rebuild | `✅` | `✅` | `✅` | Incremental worker now runs `CallGraphBuilder` selectively for changed files. |
 | Dependency extraction | `✅` | `✅` | `✅` | Incremental worker now refreshes repository dependency manifests after changed-file processing. |
 | Config extraction | `✅` | `✅` | `✅` | Incremental worker now refreshes repository configuration entries after changed-file processing. |
-| Pattern detection | `✅` | `🚧` | `🚧` | Lower priority than relation/config/dependency parity. |
+| Pattern detection | `✅` | `✅` | `✅` | Incremental worker now runs optional pattern detection when the feature flag is enabled. |
 | Outgoing call + event extraction | `✅` | `✅` | `✅` | Incremental worker now clears stale rows for touched file IDs and reruns combined extraction for changed active files. |
 | Embedding regeneration / reuse | `✅` | `✅` | `✅` | Incremental worker now regenerates embeddings for chunks owned by changed files. |
-| Service detection | `✅` | `🚧` | `🚧` | Useful after graph parity is restored; not first parity blocker. |
-| Service documentation | `✅` | `🚧` | `🚧` | Depends on service detection and richer graph parity. |
-| Module summaries | `✅` | `🚧` | `🚧` | Repository/module summary refresh is still absent in incremental git sync. |
+| Service detection | `✅` | `✅` | `✅` | Incremental worker now refreshes services after graph rebuild and service grouping is active-file aware. |
+| Service documentation | `✅` | `✅` | `✅` | Incremental worker now regenerates service documentation after service refresh. |
+| Module summaries | `✅` | `✅` | `✅` | Incremental worker now reruns module summary generation after incremental sync completion work. |
 
 ### Recommended Parity Order
 
 1. Restore graph/retrieval correctness parity for changed files:
-   - reference building
+   - graph/retrieval parity landed in this slice
 2. Restore repository metadata parity:
-   - metadata parity landed in this slice
+   - metadata parity landed in the previous slice
 3. Restore higher-level enrichment parity:
-   - pattern detection
-   - service detection
-   - service documentation
-   - module summaries
+   - enrichment parity landed in this slice
+
+### Validation Status (2026-03-18)
+
+- `✅` Targeted DB-backed lifecycle validation passed:
+  `tests/integration/test_file_lifecycle_transitions.py`
+  `tests/integration/test_sync_lifecycle_transitions.py`
+- `✅` Incremental git lifecycle coverage now exists and passed:
+  `tests/integration/test_incremental_sync.py`
+  (up-to-date, add+modify, delete, rename flows, plus one live dependency-refresh parity assertion)
+- `✅` Verified with explicit local Postgres env:
+  `DATABASE_URL=postgresql+asyncpg://indexer:indexer@localhost:5432/indexer`
+  `TEST_DATABASE_URL=postgresql+asyncpg://indexer:indexer@localhost:5432/indexer`
+- `🚧` The new incremental sync integration suite validates real git diff and DB lifecycle
+  behavior and now includes one live dependency-refresh parity stage.
+  A later slice can extend that pattern to another restored stage such as reference building
+  or service refresh if deeper end-to-end parity confidence is needed.
 
 ## Slice 1: Schema Reset And Model Rewrite
 

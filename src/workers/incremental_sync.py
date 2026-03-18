@@ -7,7 +7,7 @@ from typing import List, Optional
 from dataclasses import dataclass
 
 from git import Repo, GitCommandError
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import (
@@ -21,6 +21,7 @@ from src.database.models import (
     PublishedEvent,
     EventSubscription,
     Chunk,
+    Service,
 )
 from src.config.enums import (
     FileLifecycleStateEnum,
@@ -38,12 +39,17 @@ from src.extractors.dependency_extractor import DependencyExtractor
 from src.extractors.event_extractor import EventExtractor
 from src.extractors.import_resolver import ImportRelationshipBuilder
 from src.extractors.knowledge_extractor import KnowledgeExtractor
+from src.extractors.pattern_detector import PatternDetector
 from src.extractors.relationship_builder import RelationshipBuilder
 from src.extractors.outgoing_call_extractor import OutgoingCallExtractor
+from src.extractors.reference_builder import ReferenceBuilder
+from src.analyzers.service_boundary_analyzer import ServiceBoundaryAnalyzer
+from src.generators.service_doc_generator import ServiceDocGenerator
 from src.utils.logging_config import get_logger
 from src.workers.file_worker import create_or_update_file
 from src.workers.utils import _count_symbols
 from src.workers.embedding_worker import _generate_embeddings_async
+from src.workers.summary_worker import _generate_module_summaries
 
 logger = get_logger(__name__)
 
@@ -578,6 +584,8 @@ class IncrementalSyncWorker:
         if settings.extract_api_endpoints:
             await self._refresh_api_endpoints(repository_id)
 
+        await self._refresh_references(repository_id)
+
         await self._refresh_outgoing_calls_and_events(
             repository_id=repository_id,
             repo_path=repo_path,
@@ -592,6 +600,10 @@ class IncrementalSyncWorker:
             await self._refresh_configuration(repository_id, repo_path)
 
         await self._refresh_embeddings(repository_id, changed_file_ids)
+        await self._detect_patterns(repository_id)
+        await self._refresh_services(repository_id)
+        await self._refresh_service_documentation(repository_id)
+        await self._refresh_module_summaries(repository_id)
 
     async def _rebuild_import_relationships(self, repository_id: int, repo_path: Path) -> None:
         """Refresh IMPORTS edges repository-wide to match pipeline behavior."""
@@ -641,6 +653,30 @@ class IncrementalSyncWorker:
         endpoints = await api_extractor.extract_endpoints(repository_id)
         await api_extractor.save_endpoints(endpoints)
         await self.session.flush()
+
+    async def _refresh_references(self, repository_id: int) -> None:
+        """Refresh parser-backed REFERENCES edges repository-wide."""
+        repository_symbol_ids_result = await self.session.execute(
+            select(Symbol.id).join(File).where(
+                File.repository_id == repository_id,
+                File.lifecycle_state == FileLifecycleStateEnum.ACTIVE,
+            )
+        )
+        repository_symbol_ids = [int(symbol_id) for symbol_id in repository_symbol_ids_result.scalars().all()]
+        if not repository_symbol_ids:
+            return
+
+        await self.session.execute(
+            delete(Relation).where(
+                Relation.relation_type == RelationTypeEnum.REFERENCES,
+                (Relation.from_symbol_id.in_(repository_symbol_ids)) |
+                (Relation.to_symbol_id.in_(repository_symbol_ids)),
+            )
+        )
+        await self.session.flush()
+
+        reference_builder = ReferenceBuilder(self.session)
+        await reference_builder.build_all_references(repository_id)
 
     async def _refresh_outgoing_calls_and_events(
         self,
@@ -721,3 +757,60 @@ class IncrementalSyncWorker:
             return
 
         await _generate_embeddings_async(chunk_ids)
+
+    async def _detect_patterns(self, repository_id: int) -> None:
+        """Run optional pattern detection to match the main pipeline."""
+        settings = get_settings()
+        if not settings.detect_patterns:
+            return
+
+        pattern_detector = PatternDetector(self.session)
+        await pattern_detector.detect_patterns(repository_id)
+
+    async def _refresh_services(self, repository_id: int) -> None:
+        """Recompute repository services and clear stale symbol assignments first."""
+        repository = await self.session.get(Repository, repository_id)
+        if repository is None:
+            return
+
+        await self.session.execute(
+            update(Symbol)
+            .where(
+                Symbol.file_id.in_(
+                    select(File.id).where(File.repository_id == repository_id)
+                )
+            )
+            .values(service_id=None)
+        )
+        await self.session.execute(delete(Service).where(Service.repository_id == repository_id))
+        await self.session.flush()
+
+        service_analyzer = ServiceBoundaryAnalyzer()
+        await service_analyzer.detect_services(repository, self.session)
+        await self.session.flush()
+
+    async def _refresh_service_documentation(self, repository_id: int) -> None:
+        """Regenerate service documentation after service detection."""
+        services_result = await self.session.execute(
+            select(Service).where(Service.repository_id == repository_id)
+        )
+        services = services_result.scalars().all()
+        if not services:
+            return
+
+        doc_generator = ServiceDocGenerator(self.session)
+        for service in services:
+            doc_content = await doc_generator.generate_service_doc(service)
+            doc_path = await doc_generator.save_documentation(service, doc_content)
+            service.documentation_path = doc_path
+            service.last_documented_at = datetime.now(UTC)
+
+        await self.session.flush()
+
+    async def _refresh_module_summaries(self, repository_id: int) -> None:
+        """Refresh repository module summaries to match full-sync behavior."""
+        await _generate_module_summaries(
+            self.session,
+            repository_id,
+            force_regenerate=False,
+        )
