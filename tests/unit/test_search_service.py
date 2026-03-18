@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from src.api.services.search_service import SearchService
 from src.api.schemas.search import SearchResult
+from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.config.enums import SymbolKindEnum, LanguageEnum
 
 
@@ -66,7 +67,10 @@ async def test_keyword_search(search_service, mock_session):
 async def test_semantic_search(search_service, mock_session):
     """Test semantic search."""
     # Mock embedding generation
-    search_service.embedding_generator.generate_single_embedding.return_value = [0.1] * 384
+    search_service.embedding_generator.generate_single_embedding.return_value = [0.1] * FIXED_EMBEDDING_DIMENSION
+    search_service.embedding_generator.model_name = "sentence-transformers/all-mpnet-base-v2"
+    search_service.embedding_generator.model_version = "1.0"
+    search_service.embedding_generator.dimension = FIXED_EMBEDDING_DIMENSION
     
     # Mock symbol for vector search
     mock_symbol = MagicMock()
@@ -99,6 +103,11 @@ async def test_semantic_search(search_service, mock_session):
     results = await search_service._semantic_search("test function", 10, None, None, None)
     
     assert len(results) >= 0
+    search_service.vector_store.search_similar.assert_awaited_once()
+    kwargs = search_service.vector_store.search_similar.await_args.kwargs
+    assert kwargs["filters"]["embedding_model_name"] == "sentence-transformers/all-mpnet-base-v2"
+    assert kwargs["filters"]["embedding_model_version"] == "1.0"
+    assert kwargs["filters"]["embedding_dimension"] == FIXED_EMBEDDING_DIMENSION
     if len(results) > 0:
         assert results[0].match_type == "semantic"
         assert results[0].score > 0

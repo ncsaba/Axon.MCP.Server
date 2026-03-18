@@ -27,6 +27,7 @@ Reference analysis:
 | Hybrid keyword + semantic search | `✅` | `SearchService` fuses keyword and semantic candidates with reciprocal-rank fusion. |
 | Symbol-linked chunk storage | `✅` | Chunks and embeddings are stored against symbols and files. |
 | Incremental embedding reuse | `✅` | Existing chunk embeddings are skipped or reused by hash. |
+| Vector ANN index on `embeddings.vector` | `✅` | `embeddings.vector` now uses a fixed `vector(768)` contract with a direct HNSW index, and the parameterized semantic query uses it on the live DB. |
 | Implementation chunk body inclusion | `🚧` | Chunker supports body extraction, but current ingestion passes `file_content=None`, so body text is often omitted from implementation chunks. |
 | Import/context population | `🛑` | `ChunkContextBuilder._extract_imports()` currently returns an empty list. |
 | Semantic snippet selection | `🚧` | Search previews return the first chunk per symbol, not the best matching chunk. |
@@ -37,6 +38,7 @@ Reference analysis:
 
 | Problem | Why it hurts usefulness | Current source |
 | --- | --- | --- |
+| Operational model-change contract is still thin | The fixed-size runtime path works, but we still need a clear runbook for changing embedding model or dimension in the future | `/workspaces/axon-mcp/axon-src/src/vector_store/pgvector_store.py`, `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_index_validation_20260318.md` |
 | Implementation chunks often omit code bodies | Embeddings miss the strongest semantic signal in the symbol | `/workspaces/axon-mcp/axon-src/src/extractors/knowledge_extractor.py` |
 | Imports are not populated | Queries about framework usage, dependencies, or external types lose context | `/workspaces/axon-mcp/axon-src/src/embeddings/chunk_context.py` |
 | First-chunk preview selection is naive | Returned snippets are often worse than the actual matched chunk | `/workspaces/axon-mcp/axon-src/src/api/services/search_service.py` |
@@ -81,6 +83,7 @@ flowchart LR
 
 | Phase | Status | Focus | Risk |
 | --- | --- | --- | --- |
+| S0. Semantic-search DB indexing baseline | `🚧` | Fixed-size ANN indexing is implemented and validated; the remaining work is operational model-change/runbook clarity. | `🔥` Model or dimension churn could still create operational confusion if rebuild behavior stays implicit. |
 | S1. Benchmark baseline and semantic-search contract | `🧭` | Create seed queries, expected outcomes, and evaluation workflow before tuning. | `🔥` Tuning without a benchmark will create churn and regressions. |
 | S2. Chunk corpus quality | `🧭` | Add symbol body text, imports, and explicit fallback-chunking policy. | `🔥` Larger chunks can shift embedding behavior and storage costs. |
 | S3. Semantic-ranking cleanup | `🧭` | Use one coherent semantic reranking contract and remove dead paths. | `🔥` Ranking changes can destabilize existing search behavior. |
@@ -88,6 +91,66 @@ flowchart LR
 | S5. Threshold tuning and graph-aware follow-ups | `🧭` | Tune thresholds using benchmarks and add higher-order reranking only after baseline quality improves. | `🔥` Graph-aware boosting will magnify upstream relation-quality weaknesses. |
 
 ## Detailed Execution Slices
+
+### S0A. Create The Default pgvector Index Contract
+
+Make ANN indexing of `embeddings.vector` a first-class runtime contract instead of an optional helper method.
+
+Current implementation status:
+
+- `✅` Alembic migration now converts `embeddings.vector` to `vector(768)`, enforces `dimension = 768`, and creates `embeddings_vector_idx`
+- `✅` API startup ensures the fixed HNSW index exists at runtime
+- `✅` embedding generation now fails fast if the configured model dimension is not `768`
+- `✅` semantic search now uses the fixed-size vector column directly with a KNN candidate query shape that can use pgvector ANN indexes
+- `✅` Live validation showed the parameterized semantic-search path using `Index Scan using embeddings_vector_idx`
+- `🚧` Rebuild/upgrade behavior is still not captured in an operational runbook
+
+This slice should decide and document:
+
+- the fixed embedding contract itself, not just the index type
+- preferred index type: `hnsw` or `ivfflat`
+- where index creation happens: migration, startup hook, admin command, or validation task
+- rebuild expectations after dimension/model changes
+- minimum table-size conditions if `ivfflat` is chosen
+
+Recommended default:
+
+- prefer `hnsw` first for operational simplicity and better small-to-medium corpus behavior
+- keep `ivfflat` available only as an explicitly chosen alternative
+- use a fixed `vector(768)` contract for the current semantic-search baseline
+
+Acceptance:
+
+1. A repository can be brought to a state where semantic search uses a real pgvector ANN index by default.
+2. The chosen fixed-dimension and index strategy is documented in one canonical place.
+3. Model/dimension changes have an explicit rebuild contract.
+
+Implementation note:
+
+- Current default: `hnsw`
+- Creation path: migration-backed baseline plus startup enforcement
+- Existing non-HNSW ANN index: detected and logged as a mismatch rather than silently replaced
+- Chosen fix: lock `embeddings.vector` to `vector(768)`, enforce `dimension = 768`, and use a direct raw-column HNSW index
+- Validation artifact: `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_index_validation_20260318.md`
+
+### S0B. Validate Planner And Latency Behavior
+
+After creating the fixed-size ANN-index contract, validate that semantic search is actually using it in practice.
+
+This slice should capture:
+
+- representative query timings before and after index creation
+- `EXPLAIN`-style validation that planner behavior is sane
+- warm-path latency notes for a small and medium corpus
+
+Acceptance:
+
+1. We have evidence that semantic search is not relying on an accidental full scan baseline.
+2. Latency measurements are recorded before semantic ranking work starts.
+
+Current validation artifact:
+
+- `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_index_validation_20260318.md`
 
 ### S1A. Semantic Search Benchmark Seed Set
 
@@ -302,11 +365,12 @@ Use a small but varied set:
 
 ## Immediate Next Actions
 
-1. Create the benchmark seed document.
-2. Implement implementation-chunk body inclusion.
-3. Implement import/context population for Python and Java first.
-4. Activate the existing `query_text` semantic reranking path.
-5. Replace first-chunk snippet selection with best-match snippet selection.
+1. Write the operational runbook for changing embedding model or dimension under the fixed `768` contract.
+2. Create the benchmark seed document.
+3. Implement implementation-chunk body inclusion.
+4. Implement import/context population for Python and Java first.
+5. Activate the existing `query_text` semantic reranking path.
+6. Replace first-chunk snippet selection with best-match snippet selection.
 
 ## Explicit Answers To Current Questions
 

@@ -11,6 +11,7 @@ except ImportError:
     OPENAI_AVAILABLE = False
     AsyncOpenAI = None
 from src.config.settings import get_settings
+from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.utils.logging_config import get_logger
 from src.utils.metrics import embedding_generation_duration, embeddings_generated_total
 
@@ -56,6 +57,12 @@ class EmbeddingGenerator:
             self.model_name = get_settings().local_embedding_model
             self.dimension = self.model.get_sentence_embedding_dimension()
             self.model_version = "1.0"
+
+        if self.dimension != FIXED_EMBEDDING_DIMENSION:
+            raise ValueError(
+                f"Embedding model dimension {self.dimension} does not match fixed contract "
+                f"{FIXED_EMBEDDING_DIMENSION}"
+            )
         
         logger.info(
             "embedding_generator_initialized",

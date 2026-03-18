@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from src.embeddings.generator import EmbeddingGenerator, EmbeddingResult, OPENAI_AVAILABLE
+from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 
 
 @pytest.fixture
@@ -9,16 +10,15 @@ def mock_openai_client():
     mock_client = AsyncMock()
     mock_response = MagicMock()
     mock_response.data = [
-        MagicMock(embedding=[0.1] * 1536)
+        MagicMock(embedding=[0.1] * FIXED_EMBEDDING_DIMENSION)
     ]
     mock_client.embeddings.create.return_value = mock_response
     return mock_client
 
 
 @pytest.mark.skipif(not OPENAI_AVAILABLE, reason="OpenAI not installed")
-@pytest.mark.asyncio
-async def test_generate_openai_embeddings(mock_openai_client):
-    """Test OpenAI embedding generation."""
+def test_generate_openai_embeddings_rejects_wrong_dimension(mock_openai_client):
+    """Test OpenAI embedding generator rejects dimensions outside the fixed contract."""
     with patch('src.embeddings.generator.AsyncOpenAI', return_value=mock_openai_client):
         with patch('src.embeddings.generator.get_settings') as mock_get_settings:
             mock_settings = mock_get_settings.return_value
@@ -28,18 +28,9 @@ async def test_generate_openai_embeddings(mock_openai_client):
                 mock_settings.openai_embedding_model = "text-embedding-3-small"
                 mock_settings.openai_embedding_dimension = 1536
                 mock_settings.embedding_batch_size = 100
-                
-                generator = EmbeddingGenerator()
-                
-                chunks = [
-                    {'id': 1, 'content': 'Test content'}
-                ]
-                
-                results = await generator.generate_embeddings(chunks)
-                
-                assert len(results) == 1
-                assert results[0].chunk_id == 1
-                assert len(results[0].vector) == 1536
+
+                with pytest.raises(ValueError, match="does not match fixed contract"):
+                    EmbeddingGenerator()
 
 
 @pytest.mark.asyncio
@@ -48,14 +39,14 @@ async def test_generate_local_embeddings():
     with patch('src.embeddings.generator.get_settings') as mock_get_settings:
         mock_settings = mock_get_settings.return_value
         mock_settings.embedding_provider = "local"
-        mock_settings.local_embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+        mock_settings.local_embedding_model = "sentence-transformers/all-mpnet-base-v2"
         mock_settings.embedding_batch_size = 100
         
         with patch('sentence_transformers.SentenceTransformer') as mock_st:
             import numpy as np
             mock_model = MagicMock()
-            mock_model.encode.return_value = np.array([[0.1] * 384])
-            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_model.encode.return_value = np.array([[0.1] * FIXED_EMBEDDING_DIMENSION])
+            mock_model.get_sentence_embedding_dimension.return_value = FIXED_EMBEDDING_DIMENSION
             mock_st.return_value = mock_model
             
             generator = EmbeddingGenerator()
@@ -76,21 +67,21 @@ async def test_generate_single_embedding():
     with patch('src.embeddings.generator.get_settings') as mock_get_settings:
         mock_settings = mock_get_settings.return_value
         mock_settings.embedding_provider = "local"
-        mock_settings.local_embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+        mock_settings.local_embedding_model = "sentence-transformers/all-mpnet-base-v2"
         mock_settings.embedding_batch_size = 100
         
         with patch('sentence_transformers.SentenceTransformer') as mock_st:
             import numpy as np
             mock_model = MagicMock()
-            mock_model.encode.return_value = np.array([[0.1] * 384])
-            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_model.encode.return_value = np.array([[0.1] * FIXED_EMBEDDING_DIMENSION])
+            mock_model.get_sentence_embedding_dimension.return_value = FIXED_EMBEDDING_DIMENSION
             mock_st.return_value = mock_model
             
             generator = EmbeddingGenerator()
             
             vector = await generator.generate_single_embedding("Test text")
             
-            assert len(vector) == 384
+            assert len(vector) == FIXED_EMBEDDING_DIMENSION
 
 
 @pytest.mark.asyncio
@@ -99,7 +90,7 @@ async def test_batch_processing():
     with patch('src.embeddings.generator.get_settings') as mock_get_settings:
         mock_settings = mock_get_settings.return_value
         mock_settings.embedding_provider = "local"
-        mock_settings.local_embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+        mock_settings.local_embedding_model = "sentence-transformers/all-mpnet-base-v2"
         mock_settings.embedding_batch_size = 2  # Small batch size for testing
         
         with patch('sentence_transformers.SentenceTransformer') as mock_st:
@@ -107,10 +98,10 @@ async def test_batch_processing():
             mock_model = MagicMock()
             # Return different batches
             mock_model.encode.side_effect = [
-                np.array([[0.1] * 384, [0.2] * 384]),
-                np.array([[0.3] * 384])
+                np.array([[0.1] * FIXED_EMBEDDING_DIMENSION, [0.2] * FIXED_EMBEDDING_DIMENSION]),
+                np.array([[0.3] * FIXED_EMBEDDING_DIMENSION])
             ]
-            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_model.get_sentence_embedding_dimension.return_value = FIXED_EMBEDDING_DIMENSION
             mock_st.return_value = mock_model
             
             generator = EmbeddingGenerator()
@@ -135,7 +126,7 @@ async def test_embedding_error_handling():
     with patch('src.embeddings.generator.get_settings') as mock_get_settings:
         mock_settings = mock_get_settings.return_value
         mock_settings.embedding_provider = "local"
-        mock_settings.local_embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+        mock_settings.local_embedding_model = "sentence-transformers/all-mpnet-base-v2"
         mock_settings.embedding_batch_size = 2
         
         with patch('sentence_transformers.SentenceTransformer') as mock_st:
@@ -144,9 +135,9 @@ async def test_embedding_error_handling():
             # First batch fails, second succeeds
             mock_model.encode.side_effect = [
                 Exception("Encoding failed"),
-                np.array([[0.3] * 384])
+                np.array([[0.3] * FIXED_EMBEDDING_DIMENSION])
             ]
-            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_model.get_sentence_embedding_dimension.return_value = FIXED_EMBEDDING_DIMENSION
             mock_st.return_value = mock_model
             
             generator = EmbeddingGenerator()
@@ -162,3 +153,20 @@ async def test_embedding_error_handling():
             # Should only get results from successful batch
             assert len(results) == 1
             assert results[0].chunk_id == 3
+
+
+def test_generate_local_embeddings_rejects_wrong_dimension():
+    """Test local embedding generator rejects models outside the fixed contract."""
+    with patch('src.embeddings.generator.get_settings') as mock_get_settings:
+        mock_settings = mock_get_settings.return_value
+        mock_settings.embedding_provider = "local"
+        mock_settings.local_embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
+        mock_settings.embedding_batch_size = 100
+
+        with patch('sentence_transformers.SentenceTransformer') as mock_st:
+            mock_model = MagicMock()
+            mock_model.get_sentence_embedding_dimension.return_value = 384
+            mock_st.return_value = mock_model
+
+            with pytest.raises(ValueError, match="does not match fixed contract"):
+                EmbeddingGenerator()

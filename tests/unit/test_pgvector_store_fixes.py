@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 from src.vector_store.pgvector_store import PgVectorStore
 from src.embeddings.generator import EmbeddingResult
 from src.database.models import Embedding, Chunk, Symbol, File, Repository
+from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
 from src.config.enums import SymbolKindEnum, LanguageEnum
 
 
@@ -56,7 +57,7 @@ async def test_symbol_deduplication_in_search(vector_store, mock_session):
     mock_result.all.return_value = [mock_row]
     mock_session.execute.return_value = mock_result
     
-    query_vector = [0.1] * 384
+    query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
     results = await vector_store.search_similar(query_vector, limit=10, threshold=0.7)
     
     # Should return only one result per symbol, with best similarity
@@ -104,7 +105,7 @@ async def test_search_with_file_repo_join(vector_store, mock_session):
     mock_result.all.return_value = [mock_row]
     mock_session.execute.return_value = mock_result
     
-    query_vector = [0.1] * 384
+    query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
     results = await vector_store.search_similar(
         query_vector, 
         limit=10, 
@@ -161,7 +162,7 @@ async def test_multiple_chunks_best_similarity(vector_store, mock_session):
     mock_result.all.return_value = [mock_row]
     mock_session.execute.return_value = mock_result
     
-    query_vector = [0.1] * 384
+    query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
     results = await vector_store.search_similar(query_vector, limit=10, threshold=0.7)
     
     # Should return single result with best similarity (boosted by +0.05 for FUNCTION)
@@ -196,7 +197,7 @@ async def test_repository_filter_with_include_file_repo(vector_store, mock_sessi
     mock_result.all.return_value = [mock_row]
     mock_session.execute.return_value = mock_result
     
-    query_vector = [0.1] * 384
+    query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
     filters = {'repository_id': 100}
     
     results = await vector_store.search_similar(

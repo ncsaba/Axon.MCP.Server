@@ -164,7 +164,10 @@ async def _generate_embeddings_async(chunk_ids: List[int]):
 
             # Store embeddings
             vector_store = PgVectorStore(session)
-            stored = await vector_store.store_embeddings(reused_results + generated_results)
+            all_results = reused_results + generated_results
+            stored = await vector_store.store_embeddings(all_results)
+            if all_results:
+                await vector_store.ensure_vector_index(index_type="hnsw")
             
             await session.commit()
             
