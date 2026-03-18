@@ -1,11 +1,11 @@
 # Semantic Search Index Validation 2026-03-18
 
-Note:
+Current status:
 
-- this validation was captured before the later switch to the `mxbai-embed-large` / fixed-`1024` embedding contract
-- the current code contract has changed and this validation should be treated as historical until rerun on a real `1024` corpus
-- the old `768` corpus should be deleted before rerunning this validation so the post-fix results are not mixed with historical embeddings
-- the old corpus deletion and `1024` rebuild have now been completed; this document remains historical until the planner/latency checks are rerun on that rebuilt corpus
+- this document now includes the live 2026-03-18 rerun on the rebuilt `mxbai-embed-large` / fixed-`1024` corpus
+- the vector-stage planner check is current
+- the local DB snapshot still has a lifecycle-model inconsistency: semantic artifacts exist, but `file_instances` is empty while legacy `files` rows remain populated
+- that inconsistency does not block `S0B` planner/latency validation, but it does block end-to-end usefulness scoring that depends on active-file filtering
 
 ## Objective
 
@@ -16,6 +16,28 @@ Validate the new semantic-search DB indexing baseline against a real local corpu
 - measure current semantic-query latency
 - confirm whether the current semantic SQL shape can use pgvector ANN indexing
 
+## Current Rerun Update
+
+These values were rechecked live on 2026-03-18 against the current local DB:
+
+| Check | Live result |
+| --- | --- |
+| Embedding rows | `11,710` |
+| Live embedding model | `mxbai-embed-large` |
+| Live model version | `1.0` |
+| Live embedding dimension | `1024` |
+| ANN index present | `embeddings_vector_idx` |
+| ANN index type | `hnsw` |
+| Repository rows | `2` (`jverein`, `dasc-ds-recommender`) |
+| Legacy `files` rows | `972` |
+| Current `file_instances` rows | `0` |
+
+Practical interpretation:
+
+- the semantic-search vector corpus is on the intended fixed contract
+- the planner can be validated against the real `1024` index path
+- the current local corpus is not suitable for end-to-end retrieval usefulness scoring until the active lifecycle model is repopulated
+
 ## Environment
 
 | Item | Value |
@@ -23,12 +45,12 @@ Validate the new semantic-search DB indexing baseline against a real local corpu
 | Date | `2026-03-18` |
 | Database | local Postgres at `localhost:5432/indexer` |
 | Corpus | 2 repositories |
-| Files | 972 |
+| Files | 972 legacy `files` rows; `file_instances` currently empty |
 | Symbols | 10,354 |
 | Chunks | 11,710 |
 | Embeddings | 11,710 |
-| Stored embedding model | `sentence-transformers/all-mpnet-base-v2` |
-| Stored embedding dimension | `768` |
+| Stored embedding model | `mxbai-embed-large` |
+| Stored embedding dimension | `1024` |
 
 Repository breakdown:
 
@@ -194,6 +216,28 @@ Warm-path interpretation:
 - warm runs were roughly `0.58 ms` to `0.76 ms`
 - this is materially better than the pre-fix full-scan baseline
 
+## Current Planner Rerun Notes
+
+Live rerun query shape:
+
+- target embedding IDs: `1`, `3`, `9521`
+- model filter: `mxbai-embed-large`
+- model version filter: `1.0`
+- dimension filter: `1024`
+- active-file filter: current search-path semantics
+
+Observed planner facts:
+
+- the query plan still includes `Index Scan using embeddings_vector_idx on embeddings e`
+- execution times on the current warm snapshot were approximately `0.074 ms`, `0.109 ms`, and `0.130 ms`
+- the current snapshot returned `0` rows because the active lifecycle table is empty
+
+Interpretation:
+
+- the vector-stage planner behavior is correct for `S0B`
+- the active-file join currently suppresses result rows in this local snapshot
+- this is a corpus-state problem, not an ANN-index regression
+
 ## Validation Outcome
 
 | Check | Result |
@@ -204,12 +248,13 @@ Warm-path interpretation:
 | Fixed-size HNSW index exists in live DB | `✅` |
 | ANN index can be created on current schema | `✅` |
 | Shipped parameterized semantic query uses ANN index | `✅` |
-| S0B planner validation completed end-to-end | `✅` |
+| S0B planner validation completed on the live `1024` corpus | `✅` |
+| Current local corpus is ready for end-to-end usefulness scoring | `🛑` |
 
-## Next Action
+## Follow-On Action
 
-Capture the operational rebuild/runbook contract next:
+Before running semantic-search usefulness benchmarks:
 
-1. what happens when someone wants to change embedding model or dimension
-2. how schema migration and full re-embedding should be run safely
-3. where the fixed `1024` contract is documented for operators
+1. refresh the local corpus into the active `file_instances` lifecycle model
+2. then run the seed set in `docs/validation/semantic_search_benchmark_seed.md`
+3. record results using `docs/validation/semantic_search_evaluation_workflow.md`

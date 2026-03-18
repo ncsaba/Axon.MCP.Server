@@ -1,3 +1,5 @@
+import asyncio
+from pathlib import Path
 from typing import List, Dict, Optional, Set, Tuple, Any
 from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,6 +86,7 @@ class KnowledgeExtractor:
             file_path = file_obj.path if file_obj else parse_result.file_path
             
             assembly_name = None
+            source_file_content = await self._load_source_file_content(parse_result.file_path)
             
             # Cache existing AI enrichment before deletion
             existing_enrichment_map = {}
@@ -148,7 +151,12 @@ class KnowledgeExtractor:
                     symbols_created += 1
                     
                     # Create chunks for symbol using new symbol-based chunker
-                    chunks = await self._create_chunks_for_symbol(symbol, parsed_symbol, file_id)
+                    chunks = await self._create_chunks_for_symbol(
+                        symbol,
+                        parsed_symbol,
+                        file_id,
+                        file_content=source_file_content,
+                    )
                     for chunk in chunks:
                         await maybe_await(self.session.add(chunk))
                         chunks_created += 1
@@ -263,7 +271,12 @@ class KnowledgeExtractor:
                     symbols_created += 1
                     
                     # Create chunks for lambda
-                    chunks = await self._create_chunks_for_symbol(l_symbol, lambda_parsed, file_id)
+                    chunks = await self._create_chunks_for_symbol(
+                        l_symbol,
+                        lambda_parsed,
+                        file_id,
+                        file_content=source_file_content,
+                    )
                     for chunk in chunks:
                         await maybe_await(self.session.add(chunk))
                         chunks_created += 1
@@ -426,7 +439,8 @@ class KnowledgeExtractor:
         self,
         symbol: Symbol,
         parsed: ParsedSymbol,
-        file_id: int
+        file_id: int,
+        file_content: Optional[str] = None,
     ) -> List[Chunk]:
         """
         Create rich chunks for symbol using new SymbolChunker.
@@ -454,7 +468,7 @@ class KnowledgeExtractor:
             # Some tests use async test doubles for this method; support both sync and async implementations.
             chunk_dicts = await maybe_await(
                 self.chunker.create_chunks_for_symbol(
-                    symbol, file, context, file_content=None  # Could load file content here
+                    symbol, file, context, file_content=file_content
                 )
             )
             
@@ -489,6 +503,22 @@ class KnowledgeExtractor:
             chunks.extend(legacy_chunks)
         
         return chunks
+
+    async def _load_source_file_content(self, file_path: Optional[str]) -> Optional[str]:
+        """Load on-disk source text once for chunk body extraction when available."""
+        if not file_path:
+            return None
+
+        path = Path(file_path)
+        if not path.exists() or not path.is_file():
+            logger.debug("chunk_source_file_unavailable", file_path=file_path)
+            return None
+
+        try:
+            return await asyncio.to_thread(path.read_text, encoding="utf-8", errors="ignore")
+        except Exception as exc:
+            logger.warning("chunk_source_file_read_failed", file_path=file_path, error=str(exc))
+            return None
     
     async def _create_chunk_legacy(
         self,

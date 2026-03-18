@@ -25,28 +25,27 @@ Reference analysis:
 | Area | Status | Current reality |
 | --- | --- | --- |
 | Hybrid keyword + semantic search | `✅` | `SearchService` fuses keyword and semantic candidates with reciprocal-rank fusion. |
-| Symbol-linked chunk storage | `✅` | Chunks and embeddings are stored against symbols and files. |
-| Incremental embedding reuse | `✅` | Existing chunk embeddings are skipped or reused by hash. |
+| Transitional chunk/symbol/file linkage | `🚧` | Retrieval currently reads chunks and embeddings through legacy symbol/file links, but new work should treat chunks as content-derived artifacts and avoid deepening ownership assumptions. |
+| Incremental embedding reuse | `✅` | Existing chunk embeddings are skipped or reused by hash, but new semantic-refresh work should follow `changed_content_ids` as the durable invalidation contract. |
 | Vector ANN index on `embeddings.vector` | `✅` | `embeddings.vector` now targets a fixed `vector(1024)` contract for `mxbai-embed-large`, with a direct HNSW index. |
 | Host Ollama integration for local dev | `✅` | Dev-container runtime now targets host Ollama at `host.docker.internal:11434/v1`, and the `mxbai-embed-large` smoke test passes. |
 | Live corpus rebuilt on `1024` embeddings | `✅` | The local DB corpus has been reset and rebuilt with `mxbai-embed-large`, restoring 11,710 embeddings on the fixed contract. |
-| Implementation chunk body inclusion | `🚧` | Chunker supports body extraction, but current ingestion passes `file_content=None`, so body text is often omitted from implementation chunks. |
+| Implementation chunk body inclusion | `✅` | Extractor path now loads source text once per parsed file and passes it into chunk construction when the source file is readable. |
 | Import/context population | `🛑` | `ChunkContextBuilder._extract_imports()` currently returns an empty list. |
 | Semantic snippet selection | `🚧` | Search previews return the first chunk per symbol, not the best matching chunk. |
 | Semantic reranking contract | `🚧` | `PgVectorStore.search_similar()` supports `query_text` boosting, but the main search path does not use it. |
-| Benchmark-driven threshold tuning | `🛑` | There is no canonical semantic-search query set or acceptance contract yet. |
+| Benchmark-driven threshold tuning | `🚧` | Canonical seed queries and evaluation workflow now exist, but usefulness scoring should wait for a corpus snapshot with active indexed files. |
 
 ## Root Problems
 
 | Problem | Why it hurts usefulness | Current source |
 | --- | --- | --- |
-| Operational model-change contract is still thin | The fixed-size runtime path works, but we still need a clear runbook for changing embedding model or dimension in the future | `/workspaces/axon-mcp/axon-src/src/vector_store/pgvector_store.py`, `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_index_validation_20260318.md` |
-| Implementation chunks often omit code bodies | Embeddings miss the strongest semantic signal in the symbol | `/workspaces/axon-mcp/axon-src/src/extractors/knowledge_extractor.py` |
+| Current local corpus snapshot is lifecycle-inconsistent | Planner validation succeeds, but end-to-end usefulness scoring is blocked until the active-file model is repopulated | `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_index_validation_20260318.md`, `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_evaluation_workflow.md` |
 | Imports are not populated | Queries about framework usage, dependencies, or external types lose context | `/workspaces/axon-mcp/axon-src/src/embeddings/chunk_context.py` |
 | First-chunk preview selection is naive | Returned snippets are often worse than the actual matched chunk | `/workspaces/axon-mcp/axon-src/src/api/services/search_service.py` |
 | Vector reranking logic is split | Search behavior is harder to reason about and partially dead | `/workspaces/axon-mcp/axon-src/src/vector_store/pgvector_store.py`, `/workspaces/axon-mcp/axon-src/src/api/services/search_service.py` |
 | Fixed permissive threshold is untuned | Recall/precision tradeoffs are being guessed instead of measured | `/workspaces/axon-mcp/axon-src/src/api/services/search_service.py` |
-| No semantic benchmark set | Ranking changes can easily regress known workflows | Retrieval docs and tests baseline |
+| Benchmark execution is not yet recurring | The seed set and workflow exist, but they still need repeated before/after use on a refreshed active corpus | `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_benchmark_seed.md`, `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_evaluation_workflow.md` |
 
 ## Target Design
 
@@ -85,9 +84,9 @@ flowchart LR
 
 | Phase | Status | Focus | Risk |
 | --- | --- | --- | --- |
-| S0. Semantic-search DB indexing baseline | `🚧` | Fixed-size ANN indexing now targets `mxbai-embed-large` at `1024`, host-Ollama access is working, and the local corpus has been rebuilt; the remaining S0 work is planner/latency rerun plus the operator runbook. | `🔥` The main remaining S0 risk is documentation drift around rebuild/runbook behavior, not implementation readiness. |
-| S1. Benchmark baseline and semantic-search contract | `🧭` | Create seed queries, expected outcomes, and evaluation workflow before tuning. | `🔥` Tuning without a benchmark will create churn and regressions. |
-| S2. Chunk corpus quality | `🧭` | Add symbol body text, imports, and explicit fallback-chunking policy. | `🔥` Larger chunks can shift embedding behavior and storage costs. |
+| S0. Semantic-search DB indexing baseline | `✅` | Fixed-size ANN indexing, live planner/latency validation on the `1024` corpus, and the operator rebuild/runbook contract are now documented. | `🔥` The remaining environment risk is a lifecycle-model mismatch in the current local corpus snapshot, not the ANN baseline itself. |
+| S1. Benchmark baseline and semantic-search contract | `✅` | Canonical seed queries, expected outcome categories, and a repeatable evaluation workflow are now in place before ranking/threshold tuning. | `🔥` The benchmark contract now exists, but skipped or inconsistent corpus refreshes can still make comparisons misleading. |
+| S2. Chunk corpus quality | `🚧` | Implementation-chunk body inclusion is now wired through the extractor path; remaining work is import/context population and explicit fallback-chunking policy. | `🔥` Larger or more context-rich chunks can shift embedding behavior, storage costs, and result balance if introduced without benchmark coverage. |
 | S3. Semantic-ranking cleanup | `🧭` | Use one coherent semantic reranking contract and remove dead paths. | `🔥` Ranking changes can destabilize existing search behavior. |
 | S4. Snippet and result packaging | `🧭` | Return the best matching chunk and tighten search-to-context affordances. | `🔥` Better ranking can still feel weak if snippet selection stays naive. |
 | S5. Threshold tuning and graph-aware follow-ups | `🧭` | Tune thresholds using benchmarks and add higher-order reranking only after baseline quality improves. | `🔥` Graph-aware boosting will magnify upstream relation-quality weaknesses. |
@@ -106,8 +105,8 @@ Current implementation status:
 - `✅` semantic search now uses the fixed-size vector column directly with a KNN candidate query shape that can use pgvector ANN indexes
 - `✅` Local dev runtime is wired to host Ollama and `scripts/test_mxbai_embed_large.py` passes against `mxbai-embed-large`
 - `✅` The old `768` corpus has been deleted and rebuilt on the fixed `1024` contract
-- `🚧` The previous live planner validation was captured on the old `768` corpus; the `1024` contract still needs a fresh planner/latency rerun on the rebuilt corpus
-- `🚧` Rebuild/upgrade behavior is still not captured in an operational runbook
+- `✅` Live planner/latency validation has been rerun against the rebuilt `1024` corpus
+- `✅` Rebuild/upgrade behavior is now captured in an operator runbook
 
 This slice should decide and document:
 
@@ -155,6 +154,7 @@ Acceptance:
 Current validation artifact:
 
 - `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_index_validation_20260318.md`
+- `/workspaces/axon-mcp/axon-src/docs/guides/semantic_search_embedding_runbook.md`
 
 ### S1A. Semantic Search Benchmark Seed Set
 
@@ -171,6 +171,10 @@ Create a benchmark seed set that covers:
 Planned artifact:
 
 - `docs/validation/semantic_search_benchmark_seed.md`
+
+Current status:
+
+- `✅` Canonical seed set added at `docs/validation/semantic_search_benchmark_seed.md`
 
 Acceptance:
 
@@ -192,6 +196,10 @@ Planned artifact:
 
 - `docs/validation/semantic_search_evaluation_workflow.md`
 
+Current status:
+
+- `✅` Evaluation workflow added at `docs/validation/semantic_search_evaluation_workflow.md`
+
 Acceptance:
 
 1. Every semantic-search tuning change can be checked against the same query set.
@@ -206,6 +214,13 @@ This means:
 - read file content in the extractor path where chunks are built
 - pass file content into `SymbolChunker.create_chunks_for_symbol(...)`
 - keep size guards so chunk bodies do not explode uncontrollably
+- keep the implementation retrieval-only: improve chunk text without adding new persistence coupling to `Chunk.symbol_id` or `Chunk.file_instance_id`
+
+Current increment status:
+
+- `✅` implemented on 2026-03-18
+- extractor path now loads file text once per parsed file and passes it into chunk construction when the on-disk file is readable
+- fallback behavior remains unchanged when the file path is missing, relative-only, or unreadable
 
 Why first:
 
@@ -216,7 +231,7 @@ Acceptance:
 
 1. Implementation chunks include signature plus body text for normal symbols.
 2. Existing fallback behavior remains safe for missing/unreadable file content.
-3. Embedding generation still works incrementally on changed chunks only.
+3. Embedding generation still works with the current content-driven incremental contract (`changed_content_ids` remain the durable invalidation signal).
 
 ### S2B. Populate Imports and File-Level Context
 
@@ -369,23 +384,20 @@ Use a small but varied set:
 
 ## Immediate Next Actions
 
-1. Rerun live planner validation under the rebuilt `1024` corpus and record the new latency evidence.
-2. Create the benchmark seed document so ranking changes stop being heuristic-only.
-3. Implement implementation-chunk body inclusion in ingestion.
-4. Implement import/context population for Python and Java first.
-5. Activate the existing `query_text` semantic reranking path.
-6. Replace first-chunk snippet selection with best-match snippet selection.
+1. Refresh the local benchmark corpus into the active `file_instances` lifecycle model.
+2. Execute the seed benchmark workflow on that refreshed corpus and record the first before/after baseline.
+3. Implement import/context population for Python and Java first.
+4. Activate the existing `query_text` semantic reranking path.
+5. Replace first-chunk snippet selection with best-match snippet selection.
 
 ## Highlighted Next Steps
 
 Recommended execution order from here:
 
-1. `S0B`: rerun `EXPLAIN`/latency validation on the rebuilt `mxbai-embed-large` corpus.
-2. `S1A` and `S1B`: write the benchmark seed and evaluation workflow docs.
-3. `S2A`: improve chunk content by passing real file bodies into chunk construction.
-4. `S2B`: populate imports/file-level context for Python and Java.
-5. `S3A`: turn on the existing `query_text` semantic reranking path.
-6. `S4A`: return the best matching chunk snippet instead of the first chunk.
+1. Refresh the benchmark corpus into the active lifecycle model and run the first scored benchmark pass.
+2. `S2B`: populate imports/file-level context for Python and Java.
+3. `S3A`: turn on the existing `query_text` semantic reranking path.
+4. `S4A`: return the best matching chunk snippet instead of the first chunk.
 
 ## Explicit Answers To Current Questions
 

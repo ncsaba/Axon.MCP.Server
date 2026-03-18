@@ -104,3 +104,4 @@ def run() -> str:
 
     assert symbol_count and symbol_count > 0
     assert chunk_count and chunk_count > 0
+
