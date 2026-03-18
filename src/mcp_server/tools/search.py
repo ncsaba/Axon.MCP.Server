@@ -8,6 +8,7 @@ from mcp.types import TextContent
 from src.api.services.search_service import SearchService
 from src.config.enums import LanguageEnum, SymbolKindEnum
 from src.database.models import File, Repository, Symbol
+from src.database.query_helpers import active_file_filter
 from src.database.session import get_async_session
 from src.utils.logging_config import get_logger
 from src.utils.metrics import mcp_tool_calls_total, mcp_tool_duration
@@ -154,6 +155,7 @@ async def search_documentation(
             # Add repository filter
             if repository_id:
                 filters.append(File.repository_id == repository_id)
+            filters.append(active_file_filter())
             
             query_stmt = (
                 select(Symbol, File, Repository)
@@ -319,6 +321,7 @@ async def search_by_path(
             # Get all files in repository
             result = await session.execute(
                 select(File).where(File.repository_id == repository_id)
+                .where(active_file_filter())
             )
             files = result.scalars().all()
             

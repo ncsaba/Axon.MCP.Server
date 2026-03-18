@@ -11,6 +11,7 @@ from typing import Any
 from sqlalchemy import select
 
 from src.config.settings import get_settings
+from src.config.enums import FileLifecycleStateEnum
 from src.database.models import File, Repository
 from src.database.session import AsyncSessionLocal
 from src.repository_sources import get_repository_source_registry
@@ -115,6 +116,7 @@ async def _run_metadata_gate(
 ) -> dict[str, Any]:
     stage_started = time.perf_counter()
     repository_id = int(payload["repository_id"])
+    current_run_id = int(payload["run_id"])
     batch_files: list[dict[str, Any]] = payload["files"]
     batch_size = len(batch_files)
     streaming_stage_batch_size.labels(stage="metadata_gate").observe(batch_size)
@@ -164,12 +166,22 @@ async def _run_metadata_gate(
             payload_mtime_ns = _safe_int(item.get("mtime_ns"))
 
             if existing is None:
-                file_record = await create_or_update_file(session, repository_id, file_path, repo_path)
+                file_record = await create_or_update_file(
+                    session,
+                    repository_id,
+                    file_path,
+                    repo_path,
+                    run_id=current_run_id,
+                )
                 parse_file_ids.append(file_record.id)
                 decision_counts["new"] += 1
                 continue
 
             if _metadata_matches(existing, payload_size, payload_mtime_ns):
+                existing.last_seen_run_id = current_run_id
+                existing.last_seen_at = datetime.now(UTC)
+                existing.lifecycle_state = FileLifecycleStateEnum.ACTIVE
+                existing.missing_since = None
                 decision_counts["unchanged"] += 1
                 continue
 
@@ -179,13 +191,23 @@ async def _run_metadata_gate(
                 if current_hash and current_hash == existing.content_hash:
                     existing.size_bytes = payload_size
                     existing.last_modified = _mtime_ns_to_utc(payload_mtime_ns)
+                    existing.last_seen_run_id = current_run_id
+                    existing.last_seen_at = datetime.now(UTC)
+                    existing.lifecycle_state = FileLifecycleStateEnum.ACTIVE
+                    existing.missing_since = None
                     decision_counts["unchanged_hash"] += 1
                     hash_matched = True
 
             if hash_matched:
                 continue
 
-            file_record = await create_or_update_file(session, repository_id, file_path, repo_path)
+            file_record = await create_or_update_file(
+                session,
+                repository_id,
+                file_path,
+                repo_path,
+                run_id=current_run_id,
+            )
             parse_file_ids.append(file_record.id)
             decision_counts["changed"] += 1
 
@@ -207,17 +229,17 @@ async def _run_metadata_gate(
 
     parse_processed = 0
     parse_task_ids: list[str] = []
-    changed_chunk_ids: list[int] = []
+    changed_content_ids: list[int] = []
     if inline_parse_enabled:
         from src.workers.file_worker import _parse_file_async
 
         for file_id in parse_file_ids:
             parse_result = await _parse_file_async(file_id)
             if isinstance(parse_result, dict):
-                changed_chunk_ids.extend(
-                    int(chunk_id)
-                    for chunk_id in (parse_result.get("chunk_ids") or [])
-                    if chunk_id is not None
+                changed_content_ids.extend(
+                    int(content_id)
+                    for content_id in (parse_result.get("changed_content_ids") or [])
+                    if content_id is not None
                 )
             parse_processed += 1
     else:
@@ -233,7 +255,7 @@ async def _run_metadata_gate(
         parse_processed=parse_processed,
         parse_mode="inline" if inline_parse_enabled else "queued",
         parse_task_ids_count=len(parse_task_ids),
-        changed_chunk_ids_count=len(changed_chunk_ids),
+        changed_content_ids_count=len(changed_content_ids),
         decisions=decision_counts,
     )
     streaming_stage_batches_total.labels(stage="metadata_gate", status="processed").inc()
@@ -257,7 +279,7 @@ async def _run_metadata_gate(
         "parse_mode": "inline" if inline_parse_enabled else "queued",
         "parse_task_ids": parse_task_ids,
         "parse_file_ids": parse_file_ids,
-        "changed_chunk_ids": sorted(set(changed_chunk_ids)),
+        "changed_content_ids": sorted(set(changed_content_ids)),
         "decisions": decision_counts,
         "idempotency_key": payload["idempotency_key"],
     }

@@ -1,7 +1,7 @@
 import time
 from celery import current_task
 from sqlalchemy import select
-from src.database.models import Repository
+from src.database.models import Chunk, Repository
 from src.config.enums import RepositoryStatusEnum
 from src.config.settings import get_settings
 from src.utils.metrics import (
@@ -53,6 +53,13 @@ class EmbeddingGenerationStep(PipelineStep):
     
         embeddings_generated = 0
         if settings.metadata_gate_enabled and settings.inventory_emit_enabled:
+            changed_content_ids = sorted(
+                {
+                    int(content_id)
+                    for content_id in (ctx.metadata.get("changed_content_ids") or [])
+                    if content_id is not None
+                }
+            )
             changed_chunk_ids = sorted(
                 {
                     int(chunk_id)
@@ -60,6 +67,12 @@ class EmbeddingGenerationStep(PipelineStep):
                     if chunk_id is not None
                 }
             )
+            if changed_content_ids:
+                chunk_id_result = await ctx.session.execute(
+                    select(Chunk.id).where(Chunk.file_content_id.in_(changed_content_ids))
+                )
+                changed_chunk_ids = [int(chunk_id) for chunk_id in chunk_id_result.scalars().all()]
+
             streaming_stage_batch_size.labels(stage="embedding").observe(len(changed_chunk_ids))
             streaming_stage_queue_depth.labels(stage="embedding").set(len(changed_chunk_ids))
             if changed_chunk_ids:

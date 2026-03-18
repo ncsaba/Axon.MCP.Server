@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.enums import SymbolKindEnum
 from src.database.models import File, Repository, Service, Symbol
+from src.database.query_helpers import active_file_filter
 from src.utils.async_compat import maybe_await
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ class ServiceBoundaryAnalyzer:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository.id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS,
                 (Symbol.name.like("%Controller"))
                 | (cast(Symbol.attributes, String).like("%ApiController%"))
@@ -114,7 +116,10 @@ class ServiceBoundaryAnalyzer:
                     # No controller-derived grouping exists, so the repository-wide
                     # fallback service should own the whole repository.
                     root_ids_result = await session.execute(
-                        select(File.id).where(File.repository_id == repository.id)
+                        select(File.id).where(
+                            File.repository_id == repository.id,
+                            active_file_filter(),
+                        )
                     )
                     file_ids = [row[0] for row in root_ids_result.all()]
                 else:
@@ -122,6 +127,7 @@ class ServiceBoundaryAnalyzer:
                     root_ids_result = await session.execute(
                         select(File.id).where(
                             File.repository_id == repository.id,
+                            active_file_filter(),
                             ~File.path.contains("/"),
                         )
                     )
@@ -130,6 +136,7 @@ class ServiceBoundaryAnalyzer:
                 file_ids_result = await session.execute(
                     select(File.id).where(
                         File.repository_id == repository.id,
+                        active_file_filter(),
                         File.path.like(f"{group}/%"),
                     )
                 )

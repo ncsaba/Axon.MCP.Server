@@ -5,6 +5,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Symbol, File, Relation
+from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum, RelationTypeEnum, AccessModifierEnum
 from src.utils.logging_config import get_logger
 
@@ -151,6 +152,7 @@ class PatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS
             )
         )
@@ -224,6 +226,7 @@ class PatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS,
                 Symbol.name.ilike('%Factory%')
             )
@@ -271,6 +274,7 @@ class PatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind.in_([SymbolKindEnum.CLASS, SymbolKindEnum.INTERFACE]),
                 Symbol.name.ilike('%Repository%')
             )
@@ -324,6 +328,7 @@ class PatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS,
                 Symbol.name.ilike('%Builder%')
             )
@@ -377,6 +382,7 @@ class PatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS,
                 Symbol.name.ilike('%Controller%')
             )
@@ -399,6 +405,7 @@ class PatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS,
                 Symbol.name.ilike('%Service%')
             )
@@ -421,6 +428,7 @@ class PatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind.in_([SymbolKindEnum.CLASS, SymbolKindEnum.INTERFACE]),
                 Symbol.name.ilike('%Repository%')
             )
@@ -465,6 +473,7 @@ class PatternDetector:
             )
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS
             )
             .group_by(Symbol.id, Symbol.name, Symbol.fully_qualified_name, File.id)
@@ -502,6 +511,7 @@ class PatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Relation.relation_type.in_([RelationTypeEnum.IMPORTS, RelationTypeEnum.USES])
             )
         )

@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from src.database.models import Symbol, Relation, File, Chunk
+from src.database.query_helpers import active_file_filter
 from src.config.enums import RelationTypeEnum, SymbolKindEnum
 from src.utils.logging_config import get_logger
 from src.utils.layer_detector import LayerDetector
@@ -404,7 +405,7 @@ class CallGraphTraverser:
         result = await self.session.execute(
             select(Symbol, File)
             .join(File, Symbol.file_id == File.id)
-            .where(Symbol.id == symbol_id)
+            .where(Symbol.id == symbol_id, active_file_filter())
         )
         row = result.first()
         

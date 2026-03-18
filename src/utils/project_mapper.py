@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config.enums import LanguageEnum
 from src.database.models import File, Repository, Symbol
+from src.database.query_helpers import active_file_filter
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -168,7 +169,7 @@ class ProjectMapper:
             # Get all files for this repository
             files_result = await self.session.execute(
                 select(File)
-                .where(File.repository_id == repository_id)
+                .where(File.repository_id == repository_id, active_file_filter())
                 .order_by(File.path)
             )
             files = files_result.scalars().all()
@@ -296,14 +297,14 @@ class ProjectMapper:
                 func.count(File.id).label("total_files"),
                 func.sum(File.line_count).label("total_lines"),
                 func.sum(File.size_bytes).label("total_size"),
-            ).where(File.repository_id == repository_id)
+            ).where(File.repository_id == repository_id, active_file_filter())
         )
         stats_row = file_stats.one()
 
         # Language distribution (defensive: handle None language)
         lang_stats = await self.session.execute(
             select(File.language, func.count(File.id).label("count"))
-            .where(File.repository_id == repository_id)
+            .where(File.repository_id == repository_id, active_file_filter())
             .group_by(File.language)
             .order_by(func.count(File.id).desc())
         )
@@ -319,7 +320,7 @@ class ProjectMapper:
         symbol_count = await self.session.execute(
             select(func.count(Symbol.id)).where(
                 Symbol.file_id.in_(
-                    select(File.id).where(File.repository_id == repository_id)
+                    select(File.id).where(File.repository_id == repository_id, active_file_filter())
                 )
             )
         )

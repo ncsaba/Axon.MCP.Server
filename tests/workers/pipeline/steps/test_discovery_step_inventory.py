@@ -95,7 +95,7 @@ async def test_discovery_step_processes_batches_inline_when_metadata_gate_enable
         "parse_processed": 0,
         "parse_task_ids": ["task-a"],
         "parse_file_ids": [42],
-        "changed_chunk_ids": [1001, 1002],
+        "changed_content_ids": [1001, 1002],
     }
 
     with patch(
@@ -120,5 +120,5 @@ async def test_discovery_step_processes_batches_inline_when_metadata_gate_enable
     assert ctx.metadata["parse_enqueued_total"] == 2
     assert ctx.metadata["parse_processed_total"] == 0
     assert ctx.metadata["parse_file_ids"] == [42]
-    assert ctx.metadata["changed_chunk_ids"] == [1001, 1002]
+    assert ctx.metadata["changed_content_ids"] == [1001, 1002]
     assert ctx.metadata["parse_task_ids"] == ["task-a"]

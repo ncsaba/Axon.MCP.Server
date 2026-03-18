@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Symbol, File, Relation
+from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum
 from src.extractors.path_resolver import PathResolver
 from src.extractors.strategy_interfaces import ImportExtractionStrategy, language_strategy
@@ -61,7 +62,8 @@ class ImportResolver:
         result = await self.session.execute(
             select(File).where(
                 File.repository_id == importing_file.repository_id,
-                File.path == str(resolved_path)
+                File.path == str(resolved_path),
+                active_file_filter(),
             )
         )
         
@@ -281,7 +283,11 @@ class JavaImportExtractionStrategy:
         ]
 
         file_result = await self.resolver.session.execute(
-            select(File).where(File.repository_id == repository_id, File.language == LanguageEnum.JAVA)
+            select(File).where(
+                File.repository_id == repository_id,
+                File.language == LanguageEnum.JAVA,
+                active_file_filter(),
+            )
         )
         java_files = file_result.scalars().all()
 
@@ -372,7 +378,7 @@ class ImportRelationshipBuilder:
         
         # Get all files in repository
         result = await self.session.execute(
-            select(File).where(File.repository_id == repository_id)
+            select(File).where(File.repository_id == repository_id, active_file_filter())
         )
         files = result.scalars().all()
         

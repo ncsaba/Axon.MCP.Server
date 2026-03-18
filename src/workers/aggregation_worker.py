@@ -13,6 +13,7 @@ from src.workers.celery_app import celery_app
 from src.workers.utils import _run_with_engine_cleanup
 from src.database.session import AsyncSessionLocal
 from src.database.models import Repository, Symbol, File, Service
+from src.database.query_helpers import active_file_filter
 from src.utils.logging_config import get_logger
 from src.utils.llm_summarizer import LLMSummarizer
 from src.config.settings import get_settings
@@ -74,6 +75,7 @@ async def _aggregate_repository_summary_async(task, repository_id: int):
             .join(Symbol.file)
             .where(
                 Symbol.file.has(File.repository_id == repository_id),
+                active_file_filter(),
                 Symbol.ai_enrichment.is_not(None),
                 # Exclude obvious noise
                 sa.not_(Symbol.name.ilike("%DTO%")),

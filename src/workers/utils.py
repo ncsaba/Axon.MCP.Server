@@ -5,6 +5,7 @@ Helper functions for worker tasks.
 import hashlib
 from src.database.session import engine
 from src.database.models import Symbol, File
+from src.config.enums import FileLifecycleStateEnum
 from sqlalchemy import select, func
 
 async def _run_with_engine_cleanup(coro):
@@ -44,7 +45,10 @@ async def _count_symbols(session, repository_id: int) -> int:
     result = await session.execute(
         select(func.count(Symbol.id))
         .join(File)
-        .where(File.repository_id == repository_id)
+        .where(
+            File.repository_id == repository_id,
+            File.lifecycle_state == FileLifecycleStateEnum.ACTIVE,
+        )
     )
     count = result.scalar()
     return count or 0

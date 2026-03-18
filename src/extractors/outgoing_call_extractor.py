@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import File, OutgoingApiCall
+from src.database.query_helpers import active_file_filter
 from src.config.enums import LanguageEnum
 from src.utils.logging_config import get_logger
 from src.parsers.javascript_parser import JavaScriptParser
@@ -22,7 +23,9 @@ class OutgoingCallExtractor:
     async def extract_calls(self, repository_id: int) -> int:
         """Repository-level extractor entrypoint (currently orchestrated per file)."""
         calls_extracted = 0
-        result = await self.session.execute(select(File).where(File.repository_id == repository_id))
+        result = await self.session.execute(
+            select(File).where(File.repository_id == repository_id, active_file_filter())
+        )
         _ = result.scalars().all()
         return calls_extracted
 

@@ -28,6 +28,7 @@ from src.database.models import (
     Repository,
     File,
 )
+from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum
 from src.parsers.ocelot_parser import OcelotParser
 from src.parsers.nginx_parser import NginxParser
@@ -79,7 +80,7 @@ class LinkService:
                 File.path.ilike('%.conf'),
                 File.path.ilike('%nginx%')
             )
-        )
+        ).where(active_file_filter())
         
         if repository_ids:
             query = query.where(File.repository_id.in_(repository_ids))
@@ -290,6 +291,7 @@ class LinkService:
                 )
             )
         )
+        query = query.where(active_file_filter())
         
         if repository_ids:
             query = query.where(File.repository_id.in_(repository_ids))
@@ -561,7 +563,7 @@ class LinkService:
                         )
                     )
                 )
-            ).limit(500)
+            ).where(active_file_filter()).limit(500)
             
             result = await self.db.execute(query)
             db_candidates = result.scalars().all()
@@ -1012,7 +1014,10 @@ class LinkService:
             .outerjoin(Symbol, ApiEndpointLink.target_symbol_id == Symbol.id)
             .outerjoin(File, Symbol.file_id == File.id)
             .outerjoin(Repository, File.repository_id == Repository.id)
-            .where(OutgoingApiCall.symbol_id == symbol_id)
+            .where(
+                OutgoingApiCall.symbol_id == symbol_id,
+                or_(File.id.is_(None), active_file_filter()),
+            )
         )
         
         for row in outgoing_result.all():
@@ -1044,7 +1049,7 @@ class LinkService:
             .join(OutgoingApiCall, ApiEndpointLink.outgoing_call_id == OutgoingApiCall.id)
             .join(File, OutgoingApiCall.file_id == File.id)
             .join(Repository, File.repository_id == Repository.id)
-            .where(ApiEndpointLink.target_symbol_id == symbol_id)
+            .where(ApiEndpointLink.target_symbol_id == symbol_id, active_file_filter())
         )
         
         for row in incoming_result.all():

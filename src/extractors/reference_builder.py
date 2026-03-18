@@ -2,6 +2,7 @@ from typing import List, Dict, Set, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from src.database.models import Symbol, Relation, File
+from src.database.query_helpers import active_file_filter
 from src.config.enums import RelationTypeEnum, SymbolKindEnum
 from src.extractors.call_resolver import CallResolver
 from src.repository_sources import get_repository_source_registry
@@ -48,7 +49,7 @@ class ReferenceBuilder:
             # 2. Get all files for this repository  
             result = await self.session.execute(
                 select(File)
-                .where(File.repository_id == repository_id)
+                .where(File.repository_id == repository_id, active_file_filter())
                 .order_by(File.path) # Sort by path for predictable processing
             )
             files = result.scalars().all()

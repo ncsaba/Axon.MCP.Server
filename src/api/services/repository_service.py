@@ -22,6 +22,7 @@ from src.api.schemas.repositories import (
 )
 from src.config.enums import RepositoryStatusEnum, SourceControlProviderEnum
 from src.database.models import Repository, File, Commit
+from src.database.query_helpers import active_file_filter
 from src.gitlab.client import GitLabClient
 from src.utils.logging_config import get_logger
 from src.workers.tasks import sync_repository
@@ -79,7 +80,11 @@ class RepositoryService:
     async def _enrich_repository_response(self, response: RepositoryResponse) -> None:
         """Populate language stats and last commit info."""
         # Get language stats
-        stmt = select(File.language, func.sum(File.size_bytes)).where(File.repository_id == response.id).group_by(File.language)
+        stmt = (
+            select(File.language, func.sum(File.size_bytes))
+            .where(File.repository_id == response.id, active_file_filter())
+            .group_by(File.language)
+        )
         result = await self._session.execute(stmt)
         stats = result.all()
         

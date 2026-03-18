@@ -443,6 +443,8 @@ class KnowledgeExtractor:
         if not file:
             # Fallback to old method if file not found
             return await self._create_chunk_legacy(symbol, parsed, file_id)
+        if not file.current_content_id:
+            return await self._create_chunk_legacy(symbol, parsed, file_id)
         
         try:
             # Build rich context for symbol
@@ -462,7 +464,8 @@ class KnowledgeExtractor:
                 content_hash = hashlib.sha256(content.encode()).hexdigest()
                 
                 chunk = Chunk(
-                    file_id=file_id,
+                    file_instance_id=file_id,
+                    file_content_id=file.current_content_id,
                     symbol_id=symbol.id,
                     content=content,
                     content_type=chunk_dict['content_type'],
@@ -509,12 +512,17 @@ class KnowledgeExtractor:
         
         if not content_parts:
             return []
-        
+
         content = "\n\n".join(content_parts)
         content_hash = hashlib.sha256(content.encode()).hexdigest()
+        file_result = await self.session.execute(select(File).where(File.id == file_id))
+        file = file_result.scalar_one_or_none()
+        if not file or not file.current_content_id:
+            return []
         
         chunk = Chunk(
-            file_id=file_id,
+            file_instance_id=file_id,
+            file_content_id=file.current_content_id,
             symbol_id=symbol.id,
             content=content,
             content_type="signature_with_docs",

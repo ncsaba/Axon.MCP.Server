@@ -5,6 +5,7 @@ from mcp.types import TextContent
 
 from src.config.enums import SymbolKindEnum
 from src.database.models import File, Repository, Symbol
+from src.database.query_helpers import active_file_filter
 from src.database.session import get_async_session
 from src.repository_sources import get_repository_source_registry
 from src.utils.logging_config import get_logger
@@ -113,7 +114,9 @@ async def get_file_tree(
             
             # Get all files in repository
             result = await session.execute(
-                select(File).where(File.repository_id == repository_id).order_by(File.path)
+                select(File)
+                .where(File.repository_id == repository_id, active_file_filter())
+                .order_by(File.path)
             )
             files = result.scalars().all()
             
@@ -229,7 +232,8 @@ async def get_file_content(
             result = await session.execute(
                 select(File).where(
                     File.repository_id == repository_id,
-                    File.path == file_path
+                    File.path == file_path,
+                    active_file_filter(),
                 )
             )
             file_record = result.scalar_one_or_none()
@@ -327,7 +331,8 @@ async def list_symbols_in_file(
             result = await session.execute(
                 select(File).where(
                     File.repository_id == repository_id,
-                    File.path == file_path
+                    File.path == file_path,
+                    active_file_filter(),
                 )
             )
             file_record = result.scalar_one_or_none()

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
 from src.database.models import DockerService, File, Repository
+from src.database.query_helpers import active_file_filter
 from src.parsers.docker_compose_parser import DockerComposeParser
 from src.services.service_mapper import ServiceMapper
 from src.utils.logging_config import get_logger
@@ -50,7 +51,7 @@ class DockerComposeExtractor:
         """
         # Get file info
         result = await self.session.execute(
-            select(File).where(File.id == file_id)
+            select(File).where(File.id == file_id, active_file_filter())
         )
         file_obj = result.scalar_one_or_none()
         
@@ -195,7 +196,7 @@ class DockerComposeExtractor:
         """
         # Find all docker-compose files
         result = await self.session.execute(
-            select(File).where(File.repository_id == repository_id)
+            select(File).where(File.repository_id == repository_id, active_file_filter())
         )
         files = result.scalars().all()
         

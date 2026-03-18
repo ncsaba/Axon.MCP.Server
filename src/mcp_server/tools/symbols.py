@@ -6,6 +6,7 @@ from mcp.types import TextContent
 
 from src.config.enums import RelationTypeEnum, SymbolKindEnum
 from src.database.models import File, Repository, Symbol, Chunk, Relation
+from src.database.query_helpers import active_file_filter
 from src.database.session import get_async_session, get_readonly_session
 from src.utils.logging_config import get_logger
 from src.utils.metrics import mcp_tool_calls_total, mcp_tool_duration
@@ -157,7 +158,7 @@ async def get_symbol_context(
                     select(Symbol, File, Repository)
                     .join(File, Symbol.file_id == File.id)
                     .join(Repository, File.repository_id == Repository.id)
-                    .where(Symbol.id == symbol_id)
+                    .where(Symbol.id == symbol_id, active_file_filter())
                 )
                 row = result.first()
 
@@ -320,7 +321,9 @@ async def find_usages(
         async with get_async_session() as session:
             # Get the symbol
             result = await session.execute(
-                select(Symbol).where(Symbol.id == symbol_id)
+                select(Symbol)
+                .join(Symbol.file)
+                .where(Symbol.id == symbol_id, active_file_filter())
             )
             symbol = result.scalar_one_or_none()
             
@@ -332,7 +335,7 @@ async def find_usages(
                 select(Relation, Symbol, File)
                 .join(Symbol, Relation.from_symbol_id == Symbol.id)
                 .join(File, Symbol.file_id == File.id)
-                .where(Relation.to_symbol_id == symbol_id)
+                .where(Relation.to_symbol_id == symbol_id, active_file_filter())
             )
 
             # Apply relationship type filter
@@ -424,7 +427,9 @@ async def find_implementations(
         async with get_readonly_session() as session:
             # Get the interface
             result = await session.execute(
-                select(Symbol).where(Symbol.id == interface_id)
+                select(Symbol)
+                .join(Symbol.file)
+                .where(Symbol.id == interface_id, active_file_filter())
             )
             interface = result.scalar_one_or_none()
             
@@ -455,7 +460,8 @@ async def find_implementations(
                 .join(File, Symbol.file_id == File.id)
                 .where(
                     Relation.to_symbol_id == interface_id,
-                    Relation.relation_type == RelationTypeEnum.IMPLEMENTS
+                    Relation.relation_type == RelationTypeEnum.IMPLEMENTS,
+                    active_file_filter(),
                 )
             )
             implementations = result.all()
@@ -527,7 +533,9 @@ async def find_references(
             
             # Get the symbol
             result = await session.execute(
-                select(Symbol).where(Symbol.id == symbol_id)
+                select(Symbol)
+                .join(Symbol.file)
+                .where(Symbol.id == symbol_id, active_file_filter())
             )
             symbol = result.scalar_one_or_none()
             
@@ -563,7 +571,7 @@ async def find_references(
                 select(Relation, Symbol, File)
                 .join(Symbol, Relation.from_symbol_id == Symbol.id)
                 .join(File, Symbol.file_id == File.id)
-                .where(and_(*filters))
+                .where(and_(*filters), active_file_filter())
                 .limit(limit)
             )
             references = result.all()

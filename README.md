@@ -45,6 +45,14 @@ export DATABASE_URL='postgresql+asyncpg://indexer:indexer@localhost:5432/indexer
 export TEST_DATABASE_URL='postgresql+asyncpg://indexer:indexer@localhost:5432/indexer'
 ```
 
+If you need a deliberate clean-schema reset before a validation run, use:
+
+```bash
+python scripts/reset_db.py --yes --use-test-db
+```
+
+This is intended as a manual action. The test harness does not reset the database automatically.
+
 Example targeted run:
 
 ```bash

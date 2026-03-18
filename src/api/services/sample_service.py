@@ -6,6 +6,7 @@ from src.database.models import (
     OutgoingApiCall, PublishedEvent, EventSubscription, 
     Symbol, File, ModuleSummary
 )
+from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum
 from src.api.schemas.samples import (
     OutgoingApiCallSample, PublishedEventSample, EventSubscriptionSample,
@@ -40,7 +41,7 @@ class SampleService:
         stmt = (
             select(OutgoingApiCall, File.path)
             .join(File, OutgoingApiCall.file_id == File.id)
-            .where(OutgoingApiCall.repository_id == repository_id)
+            .where(OutgoingApiCall.repository_id == repository_id, active_file_filter())
             .order_by(func.random())
             .limit(5)
         )
@@ -64,7 +65,7 @@ class SampleService:
         stmt = (
             select(PublishedEvent, File.path)
             .join(File, PublishedEvent.file_id == File.id)
-            .where(PublishedEvent.repository_id == repository_id)
+            .where(PublishedEvent.repository_id == repository_id, active_file_filter())
             .order_by(func.random())
             .limit(5)
         )
@@ -87,7 +88,7 @@ class SampleService:
         stmt = (
             select(EventSubscription, File.path)
             .join(File, EventSubscription.file_id == File.id)
-            .where(EventSubscription.repository_id == repository_id)
+            .where(EventSubscription.repository_id == repository_id, active_file_filter())
             .order_by(func.random())
             .limit(5)
         )
@@ -113,7 +114,8 @@ class SampleService:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
-                Symbol.kind == SymbolKindEnum.ENDPOINT
+                Symbol.kind == SymbolKindEnum.ENDPOINT,
+                active_file_filter(),
             )
             .order_by(func.random())
             .limit(5)

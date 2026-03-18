@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import ConfigurationEntry, File
+from src.database.query_helpers import active_file_filter
 from src.utils.logging_config import get_logger
 from src.utils.async_compat import maybe_await
 
@@ -39,6 +40,7 @@ class ConfigExtractor:
         # And filter by name (appsettings*, web.config, *.config)
         stmt = select(File).where(
             File.repository_id == repository_id,
+            active_file_filter(),
             (File.path.ilike('%.json')) | (File.path.ilike('%.config')) | (File.path.ilike('%.xml'))
         )
         result = await self.session.execute(stmt)

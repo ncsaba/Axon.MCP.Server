@@ -5,6 +5,7 @@ from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Symbol, File, Relation
+from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum, RelationTypeEnum
 from src.extractors.call_analyzer import Call
 from src.utils.logging_config import get_logger
@@ -261,6 +262,7 @@ class CallResolver:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == file.repository_id,
+                active_file_filter(),
                 Symbol.fully_qualified_name.in_(potential_fqns),
                 Symbol.kind.in_([
                     SymbolKindEnum.CLASS, 
@@ -284,6 +286,7 @@ class CallResolver:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == file.repository_id,
+                active_file_filter(),
                 Symbol.name == type_name,
                 Symbol.kind.in_([
                     SymbolKindEnum.CLASS, 
@@ -313,6 +316,7 @@ class CallResolver:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.fully_qualified_name == class_fqn,
                 Symbol.kind == SymbolKindEnum.CLASS
             )
@@ -326,7 +330,10 @@ class CallResolver:
         # Find member
         result = await self.session.execute(
             select(Symbol)
+            .join(File, Symbol.file_id == File.id)
             .where(
+                File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.parent_name == class_symbol.fully_qualified_name,
                 Symbol.name == member_name,
                 Symbol.kind.in_([SymbolKindEnum.PROPERTY, SymbolKindEnum.VARIABLE, SymbolKindEnum.CONSTANT])
@@ -354,6 +361,7 @@ class CallResolver:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.fully_qualified_name.in_(potential_fqns),
                 Symbol.kind.in_([SymbolKindEnum.CLASS, SymbolKindEnum.INTERFACE])
             )
@@ -363,7 +371,10 @@ class CallResolver:
         for class_symbol in class_symbols:
             result = await self.session.execute(
                 select(Symbol)
+                .join(File, Symbol.file_id == File.id)
                 .where(
+                    File.repository_id == repository_id,
+                    active_file_filter(),
                     Symbol.parent_name == class_symbol.fully_qualified_name,
                     Symbol.name == member_name,
                     Symbol.kind.in_([SymbolKindEnum.PROPERTY, SymbolKindEnum.VARIABLE, SymbolKindEnum.CONSTANT])
@@ -410,6 +421,7 @@ class CallResolver:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.fully_qualified_name == parent_class_fqn,
                 Symbol.kind == SymbolKindEnum.CLASS
             )
@@ -466,6 +478,7 @@ class CallResolver:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.fully_qualified_name.in_(potential_fqns),
                 Symbol.kind.in_([SymbolKindEnum.CLASS, SymbolKindEnum.INTERFACE])
             )
@@ -479,6 +492,7 @@ class CallResolver:
                 .join(File, Symbol.file_id == File.id)
                 .where(
                     File.repository_id == repository_id,
+                    active_file_filter(),
                     Symbol.name == receiver,
                     Symbol.kind.in_([SymbolKindEnum.CLASS, SymbolKindEnum.INTERFACE])
                 )
@@ -520,6 +534,7 @@ class CallResolver:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.name == method_name,
                 Symbol.kind.in_([SymbolKindEnum.METHOD, SymbolKindEnum.FUNCTION]),
             )

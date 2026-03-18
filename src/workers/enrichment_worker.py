@@ -15,6 +15,7 @@ from src.workers.celery_app import celery_app
 from src.workers.utils import _run_with_engine_cleanup
 from src.database.session import AsyncSessionLocal
 from src.database.models import Symbol, Repository, File
+from src.database.query_helpers import active_file_filter
 from src.utils.logging_config import get_logger
 from src.utils.llm_summarizer import LLMSummarizer
 from src.config.settings import get_settings
@@ -65,7 +66,12 @@ async def _enrich_batch_async(task, repository_id: int, symbol_ids: Optional[Lis
     
     async with AsyncSessionLocal() as session:
         # Fetch symbols with file loaded
-        query = select(Symbol).join(Symbol.file).options(selectinload(Symbol.file)).where(File.repository_id == repository_id)
+        query = (
+            select(Symbol)
+            .join(Symbol.file)
+            .options(selectinload(Symbol.file))
+            .where(File.repository_id == repository_id, active_file_filter())
+        )
         
         if symbol_ids:
             query = query.where(Symbol.id.in_(symbol_ids))
@@ -97,6 +103,7 @@ async def _enrich_batch_async(task, repository_id: int, symbol_ids: Optional[Lis
                 .join(Symbol.file)
                 .where(
                     File.repository_id == repository_id,
+                    active_file_filter(),
                     Symbol.ai_enrichment.is_(None),
                     sa.func.length(Symbol.name) >= 3
                 )

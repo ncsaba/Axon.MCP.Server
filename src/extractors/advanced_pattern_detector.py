@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Symbol, File, Relation
+from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum, RelationTypeEnum
 from src.utils.logging_config import get_logger
 
@@ -83,6 +84,7 @@ class AdvancedPatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS
             )
         )
@@ -130,6 +132,7 @@ class AdvancedPatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind.in_([SymbolKindEnum.CLASS, SymbolKindEnum.METHOD])
             )
         )
@@ -161,6 +164,7 @@ class AdvancedPatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS,
                 Symbol.name.like('%Repository')
             )
@@ -192,6 +196,7 @@ class AdvancedPatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS,
                 Symbol.name.like('%Builder%')
             )
@@ -223,6 +228,7 @@ class AdvancedPatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS
             )
         )
@@ -254,6 +260,7 @@ class AdvancedPatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS
             )
         )
@@ -299,6 +306,7 @@ class AdvancedPatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind.in_([SymbolKindEnum.METHOD, SymbolKindEnum.FUNCTION])
             )
         )
@@ -343,6 +351,7 @@ class AdvancedPatternDetector:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind.in_([SymbolKindEnum.METHOD, SymbolKindEnum.FUNCTION, SymbolKindEnum.CLASS])
             )
         )
@@ -382,7 +391,7 @@ class AdvancedPatternDetector:
         
         result = await self.session.execute(
             select(File.path)
-            .where(File.repository_id == repository_id)
+            .where(File.repository_id == repository_id, active_file_filter())
         )
         
         for (path,) in result.all():
@@ -420,7 +429,7 @@ class AdvancedPatternDetector:
         
         result = await self.session.execute(
             select(File.path)
-            .where(File.repository_id == repository_id)
+            .where(File.repository_id == repository_id, active_file_filter())
         )
         
         for (path,) in result.all():
@@ -446,4 +455,3 @@ class AdvancedPatternDetector:
             ))
         
         return patterns
-

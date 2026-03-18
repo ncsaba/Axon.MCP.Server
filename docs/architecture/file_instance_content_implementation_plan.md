@@ -1,0 +1,555 @@
+# File Instance / File Content Implementation Plan
+
+## Snapshot
+
+- Date: 2026-03-18
+- Status: `🧭` active execution plan
+- Depends on: `docs/architecture/file_instance_content_dedup_proposal.md`
+
+## Current Branch Priority
+
+`🧭` current execution order on `file-instance-content-separation`.
+
+| Priority | Status | Scope |
+| --- | --- | --- |
+| 1. Query-surface classification | `🚧` | Broad active-only audit is largely complete; remaining callers are mostly deliberate write-path/lifecycle code that should stay explicit. |
+| 2. User-facing read-path cleanup | `🚧` | Main API/MCP/search/navigation/link/traversal surfaces now exclude `MISSING` instances by default; remaining work is final spot-checking rather than broad patching. |
+| 3. Chunk/content consolidation | `🚧` | Final closure work is reducing transitional alias usage and deciding whether any additional chunk lookups should move from instance-owned reads toward fully content-owned semantics. |
+| 4. Broader language-platform work | `🚧` | Keep Java strategy and parser-platform work secondary to the current lifecycle branch until this slice stabilizes. |
+
+## Objective
+
+Implement the content/instance split with the smallest validated vertical slices:
+
+1. separate file-instance identity from reusable file-content identity
+2. keep symbols and graph relations instance-scoped
+3. move chunks and embedding reuse onto content ownership
+4. implement streaming-friendly missing detection using successful run IDs
+5. finalize missing rows via TTL cleanup
+
+## Confirmed Decisions
+
+`✅` fixed, `🚧` later.
+
+| Decision | Status | Notes |
+| --- | --- | --- |
+| Database reset is acceptable | `✅` | No backward-compatibility migration is required for this fork |
+| Final symbols remain instance-scoped | `✅` | Path and repository context are fundamental |
+| Shared content artifacts start with chunks + embeddings | `✅` | First reusable layer |
+| Missing detection uses successful increasing run IDs | `✅` | No full in-memory file-list reconciliation |
+| Failed runs do not mark files missing | `✅` | Finalization only on successful run completion |
+| Parse-pattern shortcuts may be explored later | `🚧` | Explicitly not part of this implementation wave |
+
+## Scope
+
+`✅` in scope, `🛑` out of scope for this plan.
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| `file_instances` table/model | `✅` | Replaces current file-centric identity role |
+| `file_contents` table/model | `✅` | Canonical reusable content identity |
+| Repository-scoped indexing runs | `✅` | Needed for streaming-friendly missing detection |
+| Content-owned chunks | `✅` | First shared derived artifact |
+| Embedding reuse through shared chunks/content | `✅` | Extends current hash reuse logic |
+| Active vs missing instance lifecycle | `✅` | Explicit query/count semantics |
+| TTL cleanup for missing instances | `✅` | Required to complete soft deletion |
+| Shared symbol rows | `🛑` | Not part of this architecture |
+| Shared relation graph | `🛑` | Not part of this architecture |
+| Parse-pattern optimization layer | `🛑` | Future work after baseline stabilization |
+
+## Target Runtime Model
+
+```mermaid
+flowchart TD
+    A[Repository sync starts] --> B[Allocate repository run_id]
+    B --> C[Stream discovery batches]
+    C --> D[Metadata gate upserts file_instance and stamps last_seen_run_id]
+    D --> E{Content reusable?}
+    E -->|Yes| F[Link current_content_id]
+    E -->|No| G[Parse bytes and upsert file_content]
+    G --> H[Create shared chunks if absent]
+    H --> I[Reuse or generate embeddings]
+    F --> J[Rebuild instance-scoped symbols and relations]
+    I --> J
+    J --> K[Run succeeds]
+    K --> L[Mark prior active instances as MISSING]
+    L --> M[Cleanup task purges expired missing instances and orphaned content]
+```
+
+## Schema Plan
+
+### Core Tables
+
+| Table | Purpose | Notes |
+| --- | --- | --- |
+| `repositories` | unchanged root entity | may gain `next_run_id` helper if desired |
+| `repository_index_runs` | repository-scoped run tracking | success/failure controls missing sweep |
+| `file_instances` | repository/path/lifecycle identity | replaces current `files` identity role |
+| `file_contents` | canonical reusable content identity | keyed by content hash + parser fingerprint |
+| `chunks` | content-owned retrieval units | migrate from file-owned to content-owned |
+| `symbols` | instance-owned extracted graph nodes | re-key from file to file instance |
+
+### Proposed Minimal Columns
+
+#### `repository_index_runs`
+
+| Column | Purpose |
+| --- | --- |
+| `id` | PK |
+| `repository_id` | owning repository |
+| `run_id` | strictly increasing per repository |
+| `status` | `RUNNING`, `SUCCEEDED`, `FAILED` |
+| `started_at` | run start |
+| `completed_at` | run completion |
+| `failure_reason` | optional summary for failed runs |
+
+Uniqueness:
+
+- unique `(repository_id, run_id)`
+
+#### `file_instances`
+
+| Column | Purpose |
+| --- | --- |
+| `id` | PK |
+| `repository_id` | owning repository |
+| `path` | relative path |
+| `language` | detected language |
+| `size_bytes` | latest observed size |
+| `last_modified` | latest observed mtime |
+| `lifecycle_state` | `ACTIVE` or `MISSING` in v1 |
+| `current_content_id` | FK to `file_contents` |
+| `last_seen_run_id` | most recent successful run that observed file present |
+| `first_seen_at` | first observation time |
+| `last_seen_at` | latest successful observation time |
+| `missing_since` | first absent observation time |
+| `created_at` / `updated_at` | audit fields |
+
+Uniqueness:
+
+- unique `(repository_id, path)`
+
+#### `file_contents`
+
+| Column | Purpose |
+| --- | --- |
+| `id` | PK |
+| `content_hash` | canonical bytes identity |
+| `language` | parser language |
+| `parser_fingerprint` | parser/query bundle/version |
+| `size_bytes` | content size |
+| `line_count` | reusable metadata |
+| `created_at` | first materialization |
+| `last_reused_at` | most recent link/reuse |
+
+Uniqueness:
+
+- unique `(content_hash, language, parser_fingerprint)`
+
+## Ownership Plan
+
+| Entity | Owner in target model | Rationale |
+| --- | --- | --- |
+| file path and lifecycle | `file_instances` | source-context identity |
+| current content link | `file_instances.current_content_id` | one instance points at latest content |
+| chunks | `file_contents` | pure content-derived artifact |
+| embeddings | chunk/content path | reuse identical content embeddings |
+| symbols | `file_instances` | path and repository context matter |
+| relations | symbol path | remain graph-context-specific |
+
+## Run-ID Allocation Plan
+
+### Recommended Implementation
+
+Use a repository-scoped run table plus a monotonic allocator:
+
+1. lock repository sync start
+2. allocate next `run_id`
+3. insert `repository_index_runs(status=RUNNING)`
+4. propagate `run_id` through discovery, metadata gate, parsing, and finalization
+5. mark run `SUCCEEDED` only after all downstream barriers complete
+
+### Allocation Options
+
+| Option | Status | Notes |
+| --- | --- | --- |
+| `repository_index_runs` + `max(run_id) + 1` under row lock | `🧭` | simplest explicit model |
+| `repositories.next_run_id` counter column | `🧭` | slightly faster, but adds mutable counter state |
+
+Recommendation:
+
+- Start with `repository_index_runs` plus repository row lock.
+- Add cached counter only if allocator contention shows up in practice.
+
+## Execution Slices
+
+`🧭` next action, `🚧` later.
+
+| Slice | Status | Outcome |
+| --- | --- | --- |
+| 1. Schema reset and model rewrite | `🚧` | core ORM entities landed; broader query-surface rewrite still pending |
+| 2. Run allocation and stamping | `🚧` | sync/discovery/gate path now stamps `last_seen_run_id` |
+| 3. Content upsert and linking | `🚧` | file upsert now creates/links canonical content rows |
+| 4. Content-owned chunks and embedding reuse | `🧭` | shared chunk/embedding materialization works |
+| 5. Missing finalization pass | `🚧` | successful syncs now mark older active instances as `MISSING` |
+| 6. TTL cleanup and orphan content GC | `🚧` | cleanup worker/task landed; broader integration validation still pending |
+
+## Current Increment (2026-03-18)
+
+`✅` implemented in this increment, `🚧` partial.
+
+| Increment | Status | Notes |
+| --- | --- | --- |
+| Add `RepositoryIndexRun`, `FileInstance`, and `FileContent` ORM entities | `✅` | New target model landed in `src/database/models.py` |
+| Preserve compatibility import surface via `File = FileInstance` alias | `✅` | Limits immediate blast radius during transition |
+| Stamp `last_seen_run_id` during discovery/metadata gate and parsing paths | `✅` | Current run ID is threaded through pipeline metadata |
+| Finalize missing rows only after successful sync completion | `✅` | Failed runs skip missing-mark behavior |
+| Count repository file size/count/symbol totals from active instances | `✅` | Sync completion path now filters to active rows |
+| Apply active-instance filtering in main API/MCP read paths | `🚧` | Repository stats, symbol APIs, and main MCP repository/search/navigation tools now default to active rows |
+| Move chunks to fully shared content-scoped ownership | `🚧` | Transitional chunk model keeps instance linkage while `file_content_id` is introduced |
+| Add TTL cleanup worker for expired missing instances and orphan content reclamation | `✅` | Celery task + beat schedule + cleanup metrics are now present |
+
+## Next Validation Increment (2026-03-18)
+
+`🧭` next action for the current branch.
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Integration validation for `ACTIVE -> MISSING -> ACTIVE` lifecycle transitions | `🧭` | Add focused DB-backed tests for successful run finalization, failed-run no-op behavior, and reintroduction |
+| TTL cleanup verification for expired missing instances | `🧭` | Assert bounded deletion of missing rows and safe orphan `file_contents` reclamation |
+| Remaining active-instance read-path cleanup | `🧭` | Use `src/database/query_helpers.py` as the default user-facing filter pattern |
+| `DEBUG=release` settings hardening | `🧭` | Remove validation friction caused by non-boolean debug env values |
+
+### Validation Targets
+
+1. Successful sync finalization marks previously active unseen files as `MISSING`.
+2. Failed sync runs never execute the missing-file sweep.
+3. Reintroduced files reactivate existing instances and clear `missing_since`.
+4. TTL cleanup deletes only expired missing instances within batch limits.
+5. Orphan `file_contents` rows are reclaimed only when no file instance references remain.
+6. Sync-worker orchestration updates repository run state and lifecycle transitions correctly on both success and failure paths.
+7. User-facing read paths consistently exclude `MISSING` file instances unless explicitly requesting lifecycle state.
+
+### Execution Notes
+
+- Start by adding focused integration tests for lifecycle transitions and cleanup behavior.
+- Use those tests to identify remaining `File` query surfaces that should default to active-instance filtering.
+- Keep chunk/content consolidation out of this increment unless validation exposes a correctness bug that must be fixed immediately.
+
+## Current Execution Batch (2026-03-18)
+
+`🧭` in progress for the next narrow slice.
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Update canonical docs to reflect branch priority | `✅` | Wrapper + roadmap docs now identify instance/content separation as the highest-priority track. |
+| Classify remaining query surfaces from session handover inventory | `🚧` | High-value user-facing, extractor, worker, retrieval, and traversal surfaces are now classified and patched; remaining `File` callers are mostly intentional write-path/lifecycle code plus final low-risk spot checks. |
+| Patch first user-facing/operator-facing read paths | `✅` | `sample_service.py`, `symbols.py`, `module_summary_generator.py`, and `aggregation_worker.py` now exclude `MISSING` instances by default in direct file-backed reads. |
+| Patch repository-wide extractor/resolver scans that should stay active-only | `✅` | `outgoing_call_extractor.py`, `reference_builder.py`, `call_graph_builder.py`, `call_resolver.py`, `import_resolver.py`, `api_extractor.py`, `config_extractor.py`, and `docker_compose_extractor.py` now resolve against active file instances only. |
+| Patch unambiguous worker/pipeline scans that should stay active-only | `✅` | `embedding_worker.py` and `pipeline/steps/combined_extraction_step.py` now exclude `MISSING` instances during repository-wide processing scans. |
+| Capture mixed worker semantics explicitly | `✅` | `inventory_worker.py`, `file_worker.py`, `file_lifecycle_worker.py`, and `sync_worker.py` remain deliberate write-path/lifecycle code; `incremental_sync.py` has been aligned with the new lifecycle model rather than left as a legacy hard-delete path. |
+| Tighten transitional chunk/content surfaces | `🚧` | Runtime now uses explicit `Chunk.file_instance_id` in the patched worker paths and hybrid retrieval is lifecycle-safe; the next closure step moves parse/embed orchestration from instance-owned `changed_chunk_ids` toward content-owned `changed_content_ids` so embedding refresh no longer depends on chunk-to-instance linkage. |
+| Define final shared-chunk association model | `🧭` | Full chunk sharing is now blocked on schema shape, not on more query cleanup: `Chunk.symbol_id` and `Embedding.symbol_id` still bind content artifacts to instance-scoped symbols. The next slice must introduce an association layer before `Chunk.file_instance_id` can be removed safely. |
+| Close late retrieval/traversal leaks | `✅` | Pattern detectors, relationship builder, vector search, link service endpoint lookups, and call graph traversal now default to active file instances in repository/user-facing reads. |
+| Focused verification after classification/fixes | `✅` | `py_compile` passed for all completed cleanup batches so far. |
+
+## Incremental Git Sync Alignment Slice (2026-03-18)
+
+`🧭` next implementation slice for the remaining legacy git workflow.
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Preserve commit-diff driven processing | `✅` | The git workflow should keep commit-based change detection instead of being replaced by the local-folder pipeline. |
+| Align file mutations with `FileInstance` / `FileContent` model | `✅` | Incremental sync now reuses `create_or_update_file()` for add/modify/rename target paths instead of creating bare legacy-style file rows. |
+| Replace hard delete with lifecycle-safe missing semantics | `✅` | Deleted paths and rename source paths now become `MISSING` and clear instance-owned extracted artifacts instead of being hard-deleted immediately. |
+| Keep async/concurrency refactor deferred | `✅` | The correctness refactor does not require moving the worker to the newer async pipeline shape yet. |
+| Rebuild only affected file-owned data on change | `✅` | Reparse clears instance-owned extracted artifacts before re-extraction, and the relationship-builder-owned cross-file relations are rebuilt repository-wide to avoid duplicate edges. |
+| Full git-workflow parity with the newer local-folder pipeline | `✅` | Incremental git sync now covers the lifecycle model plus the restored graph, metadata, embedding, and enrichment stages needed for functional parity. |
+
+## Incremental Git Workflow Parity Audit (2026-03-18)
+
+`✅` covered, `🚧` missing/partial, `🧭` recommended next slice.
+
+Current execution batch:
+- `🧭` align incremental git sync with the remaining main-pipeline enrichment stages:
+  `ReferenceBuilder`, pattern detection, service detection, service documentation,
+  and module summary regeneration.
+
+| Pipeline Capability | Main Pipeline | Incremental Git Sync | Priority | Notes |
+| --- | --- | --- | --- | --- |
+| Commit diff detection | `🛑` | `✅` | `✅` | Unique strength of the git workflow; keep this path. |
+| File instance/content lifecycle correctness | `✅` | `✅` | `✅` | Landed in this slice. |
+| Parse + symbol/chunk extraction for changed files | `✅` | `✅` | `✅` | Incremental worker now reparses changed paths correctly. |
+| Cross-file relationship building | `✅` | `✅` | `✅` | Covered via repository-wide rebuild of relationship-builder-owned relations. |
+| API endpoint extraction | `✅` | `✅` | `✅` | Incremental worker now refreshes generated endpoint symbols repository-wide after changed-file parse. |
+| Reference building | `✅` | `✅` | `✅` | Incremental worker now clears and rebuilds parser-backed `REFERENCES` edges repository-wide via `ReferenceBuilder`. |
+| Import relationship building | `✅` | `✅` | `✅` | Incremental worker now clears and rebuilds repo-scoped `IMPORTS` edges after changed-file parse. |
+| Call graph / `CALLS` + `USES` selective rebuild | `✅` | `✅` | `✅` | Incremental worker now runs `CallGraphBuilder` selectively for changed files. |
+| Dependency extraction | `✅` | `✅` | `✅` | Incremental worker now refreshes repository dependency manifests after changed-file processing. |
+| Config extraction | `✅` | `✅` | `✅` | Incremental worker now refreshes repository configuration entries after changed-file processing. |
+| Pattern detection | `✅` | `✅` | `✅` | Incremental worker now runs optional pattern detection when the feature flag is enabled. |
+| Outgoing call + event extraction | `✅` | `✅` | `✅` | Incremental worker now clears stale rows for touched file IDs and reruns combined extraction for changed active files. |
+| Embedding regeneration / reuse | `✅` | `✅` | `✅` | Incremental worker now regenerates embeddings for chunks owned by changed files. |
+| Service detection | `✅` | `✅` | `✅` | Incremental worker now refreshes services after graph rebuild and service grouping is active-file aware. |
+| Service documentation | `✅` | `✅` | `✅` | Incremental worker now regenerates service documentation after service refresh. |
+| Module summaries | `✅` | `✅` | `✅` | Incremental worker now reruns module summary generation after incremental sync completion work. |
+
+### Recommended Parity Order
+
+1. Restore graph/retrieval correctness parity for changed files:
+   - graph/retrieval parity landed in this slice
+2. Restore repository metadata parity:
+   - metadata parity landed in the previous slice
+3. Restore higher-level enrichment parity:
+   - enrichment parity landed in this slice
+
+### Validation Status (2026-03-18)
+
+- `✅` Targeted DB-backed lifecycle validation passed:
+  `tests/integration/test_file_lifecycle_transitions.py`
+  `tests/integration/test_sync_lifecycle_transitions.py`
+- `✅` Incremental git lifecycle coverage now exists and passed:
+  `tests/integration/test_incremental_sync.py`
+  (up-to-date, add+modify, delete, rename flows, plus one live dependency-refresh parity assertion)
+- `✅` Verified with explicit local Postgres env:
+  `DATABASE_URL=postgresql+asyncpg://indexer:indexer@localhost:5432/indexer`
+  `TEST_DATABASE_URL=postgresql+asyncpg://indexer:indexer@localhost:5432/indexer`
+- `🚧` The new incremental sync integration suite validates real git diff and DB lifecycle
+  behavior and now includes one live dependency-refresh parity stage.
+  A later slice can extend that pattern to another restored stage such as reference building
+  or service refresh if deeper end-to-end parity confidence is needed.
+
+## Final Chunk-Sharing Cut (Next Required Design Slice)
+
+This branch has now reached the point where the remaining work is primarily schema/model design.
+
+### Confirmed blocker
+
+The current runtime can no longer safely push chunk sharing further with small query edits because:
+
+1. `Chunk` is content-owned in intent, but still carries `symbol_id` and `file_instance_id`.
+2. `Embedding` also stores `symbol_id`, which assumes a chunk corresponds to one instance-scoped symbol.
+3. Search/snippet/traversal paths currently fetch source previews directly through `Chunk.symbol_id`.
+
+### Required target shape
+
+`🧭` recommended next model:
+
+| Entity | Target role |
+| --- | --- |
+| `Chunk` | pure content-owned artifact |
+| `Embedding` | pure chunk-owned vector artifact |
+| `ChunkSymbolLink` | association from shared chunk to instance-scoped symbol/file context |
+
+### Execution order
+
+1. Add a new association table/model, e.g. `chunk_symbol_links`:
+   - `chunk_id`
+   - `symbol_id`
+   - optional `file_instance_id` shortcut if needed for efficient filtering
+2. Update `KnowledgeExtractor`:
+   - reuse or create chunks by `file_content_id + content_hash + content_type + range`
+   - create per-symbol association rows instead of storing ownership on `Chunk`
+3. Update embedding storage/search:
+   - stop treating `Embedding.symbol_id` as canonical ownership
+   - join from embeddings/chunks back to symbols through the association table
+4. Update snippet/source retrieval:
+   - `search_service.py`
+   - `mcp_server/tools/symbols.py`
+   - `utils/call_graph_traversal.py`
+5. Only after that, remove runtime dependency on:
+   - `Chunk.file_instance_id`
+   - `Chunk.symbol_id`
+   - optionally `Embedding.symbol_id`
+
+### Why this is the correct stopping point for the current slice
+
+The broad lifecycle/query cleanup is done enough that further progress on content sharing is now blocked by data-model coupling, not by missing filters or missing worker parity.
+
+## Slice 1: Schema Reset And Model Rewrite
+
+### Code changes
+
+1. Replace current file-centric schema with explicit run/instance/content entities.
+2. Re-key symbols from `file_id` to `file_instance_id`.
+3. Re-key chunks from `file_id` to `file_content_id`.
+4. Update ORM relationships and query helpers accordingly.
+
+### Target files
+
+- `src/database/models.py`
+- migration/bootstrap schema files used by local reset flow
+- any repositories/services that directly query `File`
+
+### Acceptance criteria
+
+1. Schema initializes cleanly from scratch.
+2. ORM loads repository -> instance -> content relationships correctly.
+3. Existing file-centric code paths fail only where expected and are tracked for next slices.
+
+## Slice 2: Run Allocation And Stamping
+
+### Code changes
+
+1. Allocate `run_id` at repository sync start.
+2. Persist `repository_index_runs(status=RUNNING)`.
+3. Thread `run_id` through `PipelineContext`, discovery payloads, and metadata gate processing.
+4. Stamp each observed `file_instance.last_seen_run_id = current_run_id`.
+
+### Target files
+
+- `src/workers/sync_worker.py`
+- `src/workers/pipeline/context.py`
+- `src/workers/pipeline/steps/discovery_step.py`
+- `src/workers/inventory_worker.py`
+
+### Acceptance criteria
+
+1. Every successful sync has one completed run row.
+2. All observed files in that sync carry the current run ID.
+3. Failed runs remain recorded as failed and do not alter missing state.
+
+## Slice 3: Content Upsert And Linking
+
+### Code changes
+
+1. Replace `create_or_update_file()` with instance/content-aware upsert helpers.
+2. Metadata gate decides:
+   - unchanged instance metadata with same linked content => reuse
+   - changed/new bytes => parse and upsert `file_content`
+3. Link `file_instance.current_content_id` after content resolution.
+4. Preserve current hash-based reuse behavior, but anchor it to `file_contents`.
+
+### Target files
+
+- `src/workers/file_worker.py`
+- `src/workers/inventory_worker.py`
+- `src/workers/utils.py`
+- parser/extractor entry points that read current file ownership
+
+### Acceptance criteria
+
+1. Two instances with identical content can point at one content row.
+2. Repeated unchanged reruns do not create new content rows.
+3. Changed content produces a new or reused `file_content` row as appropriate.
+
+## Slice 4: Content-Owned Chunks And Embedding Reuse
+
+### Code changes
+
+1. Materialize chunks under `file_content_id`.
+2. Update embedding generation to operate through content-owned chunks.
+3. Keep current model/version reuse logic, but move it to content-owned chunk identity.
+4. Ensure instance rebuild does not duplicate shared chunks.
+
+### Target files
+
+- `src/extractors/knowledge_extractor.py`
+- `src/database/models.py`
+- `src/workers/embedding_worker.py`
+- `src/workers/pipeline/steps/embedding_step.py`
+- `src/vector_store/pgvector_store.py`
+
+### Acceptance criteria
+
+1. Identical content across multiple instances yields one shared chunk set.
+2. Embedding generation remains bounded to new shared chunks only.
+3. Unchanged reruns perform zero duplicate chunk creation.
+
+## Slice 5: Missing Finalization Pass
+
+### Code changes
+
+1. On successful run completion only, execute one repository-scoped finalization query:
+   - `ACTIVE` instances with `last_seen_run_id < current_run_id` become `MISSING`
+2. Set `missing_since` on first transition only.
+3. Update repository stats/query paths to count only `ACTIVE` instances.
+
+### Target files
+
+- `src/workers/sync_worker.py`
+- repository statistics services/routes
+- any MCP/API query path that currently treats all file rows as active
+
+### Acceptance criteria
+
+1. Deleted files are not marked missing until a run succeeds fully.
+2. Active repository file counts exclude `MISSING` rows.
+3. Reintroduced files transition from `MISSING` back to `ACTIVE` by later successful runs.
+
+## Slice 6: TTL Cleanup And Orphan Content GC
+
+### Code changes
+
+1. Add cleanup task for `MISSING` instances older than TTL.
+2. Delete instance-scoped artifacts for expired missing rows.
+3. Delete orphaned `file_contents` rows only when no active or missing instances reference them.
+4. Add metrics/logging for purged instances, reclaimed contents, and skipped content rows still in use.
+
+### Target files
+
+- new cleanup worker/task module
+- `src/workers/celery_app.py`
+- stats/metrics modules
+
+### Acceptance criteria
+
+1. TTL cleanup is idempotent.
+2. Shared content is not reclaimed while still referenced.
+3. Storage shrinks after missing rows age out.
+
+## Query Semantics
+
+### Required defaults
+
+| Query type | Default instance filter |
+| --- | --- |
+| Repository file counts | `ACTIVE` only |
+| Normal code search and traversal | `ACTIVE` only |
+| Operational/debug views | selectable `ACTIVE` and `MISSING` |
+| Cleanup jobs | `MISSING` older than TTL |
+
+### Non-goal
+
+- No user-facing history browser is introduced in this plan.
+
+## Risks
+
+`🔥` risk, `🧭` mitigation.
+
+| Risk | Status | Mitigation |
+| --- | --- | --- |
+| Re-keying chunks/symbols touches many code paths | `🔥` | land schema slice first and validate progressively |
+| Missing query filters may leak `MISSING` rows into active APIs | `🔥` | centralize active-instance filtering helpers early |
+| Content GC can delete shared rows too aggressively | `🔥` | require reference check in same transaction |
+| Parser fingerprint drift may cause incorrect content sharing | `🔥` | make parser fingerprint explicit and versioned from day one |
+
+## Validation Plan
+
+`✅` required.
+
+| Validation | Gate |
+| --- | --- |
+| Fresh sync on clean DB creates run, instance, content, chunk, symbol rows coherently | `✅` |
+| Unchanged rerun reuses content/chunks/embeddings and does not mark files missing | `✅` |
+| Successful run after file deletion marks only absent files `MISSING` | `✅` |
+| Failed run after partial discovery does not mark files missing | `✅` |
+| TTL cleanup purges expired missing instances and only orphaned content | `✅` |
+| Reintroduced file reactivates existing/new content correctly | `✅` |
+
+## Suggested Test Order
+
+1. schema bootstrap smoke check
+2. integration test for identical-content reuse across two paths
+3. integration test for successful deletion -> `MISSING`
+4. integration test for failed run -> no missing sweep
+5. integration test for TTL cleanup + orphan content preservation
+
+## Immediate Next Task
+
+Start Slice 1 with a reset-friendly schema rewrite and explicit ORM target model for:
+
+1. `repository_index_runs`
+2. `file_instances`
+3. `file_contents`
+4. re-keyed `symbols` and `chunks`

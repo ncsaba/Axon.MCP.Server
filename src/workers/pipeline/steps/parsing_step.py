@@ -95,7 +95,8 @@ class ParsingStep(PipelineStep):
                     ctx.session,
                     ctx.repository_id,
                     file_path,
-                    ctx.repo_path
+                    ctx.repo_path,
+                    run_id=ctx.metadata.get("current_run_id"),
                 )
             
                 # Extract knowledge
@@ -186,10 +187,10 @@ class ParsingStep(PipelineStep):
     async def _wait_for_streaming_parse_tasks(self, ctx: PipelineContext, settings) -> None:
         start_time = time.time()
         task_ids = [str(x) for x in (ctx.metadata.get("parse_task_ids") or []) if x]
-        changed_chunk_ids = {
-            int(chunk_id)
-            for chunk_id in (ctx.metadata.get("changed_chunk_ids") or [])
-            if chunk_id is not None
+        changed_content_ids = {
+            int(content_id)
+            for content_id in (ctx.metadata.get("changed_content_ids") or [])
+            if content_id is not None
         }
         if not task_ids:
             # No parse tasks means all files were unchanged (metadata gate skip).
@@ -201,7 +202,7 @@ class ParsingStep(PipelineStep):
                 repository_id=ctx.repository_id,
                 total_discovered_files=total_discovered_files,
             )
-            ctx.metadata["changed_chunk_ids"] = sorted(changed_chunk_ids)
+            ctx.metadata["changed_content_ids"] = sorted(changed_content_ids)
             streaming_stage_batch_size.labels(stage="parse_wait").observe(0)
             streaming_stage_duration_seconds.labels(stage="parse_wait", mode="streaming").observe(
                 time.time() - start_time
@@ -237,9 +238,13 @@ class ParsingStep(PipelineStep):
                 if isinstance(payload, dict):
                     symbols_created += int(payload.get("symbols_created", 0) or 0)
                     chunks_created += int(payload.get("chunks_created", 0) or 0)
+                    for content_id in payload.get("changed_content_ids", []) or []:
+                        if content_id is not None:
+                            changed_content_ids.add(int(content_id))
+                    # Backward-compatible fallback for older task payloads.
                     for chunk_id in payload.get("chunk_ids", []) or []:
                         if chunk_id is not None:
-                            changed_chunk_ids.add(int(chunk_id))
+                            logger.debug("legacy_parse_payload_chunk_ids_seen", chunk_id=chunk_id)
                     if payload.get("status") == "error":
                         failed[task_id] = "APPLICATION_ERROR"
                 elif payload is not None:
@@ -265,7 +270,7 @@ class ParsingStep(PipelineStep):
         ctx.files_processed = int(ctx.metadata.get("parse_enqueued_total", len(task_ids)) or len(task_ids))
         ctx.metrics.symbols_created = symbols_created
         ctx.metrics.chunks_created = chunks_created
-        ctx.metadata["changed_chunk_ids"] = sorted(changed_chunk_ids)
+        ctx.metadata["changed_content_ids"] = sorted(changed_content_ids)
         parse_wait_duration = time.time() - start_time
         streaming_stage_duration_seconds.labels(stage="parse_wait", mode="streaming").observe(
             parse_wait_duration
@@ -276,17 +281,17 @@ class ParsingStep(PipelineStep):
             item_type="tasks",
             result="completed",
         ).inc(len(task_ids))
-        if changed_chunk_ids:
+        if changed_content_ids:
             streaming_stage_items_total.labels(
                 stage="parse_wait",
-                item_type="chunks",
+                item_type="contents",
                 result="changed",
-            ).inc(len(changed_chunk_ids))
+            ).inc(len(changed_content_ids))
         logger.info(
             "streaming_parse_tasks_completed",
             repository_id=ctx.repository_id,
             tasks_total=len(task_ids),
             files_processed=ctx.files_processed,
-            changed_chunk_ids=len(changed_chunk_ids),
+            changed_content_ids=len(changed_content_ids),
         )
         ctx.timings["parsing"] = parse_wait_duration
