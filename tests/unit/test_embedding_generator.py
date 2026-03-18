@@ -59,6 +59,83 @@ async def test_generate_ollama_embeddings(mock_openai_client):
             assert generator.model_name == "mxbai-embed-large"
 
 
+@pytest.mark.skipif(not OPENAI_AVAILABLE, reason="OpenAI not installed")
+@pytest.mark.asyncio
+async def test_generate_ollama_embeddings_retries_context_limited_batch():
+    """Batch context-limit failures should split into smaller requests instead of dropping the batch."""
+    mock_client = AsyncMock()
+
+    def _response_for(input_texts):
+        response = MagicMock()
+        response.data = [
+            MagicMock(embedding=[0.1] * FIXED_EMBEDDING_DIMENSION)
+            for _ in input_texts
+        ]
+        return response
+
+    async def _create_embeddings(*, model, input, encoding_format):
+        if len(input) > 1:
+            raise Exception("the input length exceeds the context length")
+        return _response_for(input)
+
+    mock_client.embeddings.create.side_effect = _create_embeddings
+
+    with patch('src.embeddings.generator.AsyncOpenAI', return_value=mock_client):
+        with patch('src.embeddings.generator.get_settings') as mock_get_settings:
+            mock_settings = mock_get_settings.return_value
+            mock_settings.embedding_provider = "ollama"
+            mock_settings.ollama_base_url = "http://localhost:11434/v1"
+            mock_settings.ollama_embedding_model = "mxbai-embed-large"
+            mock_settings.embedding_batch_size = 100
+
+            generator = EmbeddingGenerator()
+            results = await generator.generate_embeddings(
+                [
+                    {'id': 1, 'content': 'first chunk'},
+                    {'id': 2, 'content': 'second chunk'},
+                ]
+            )
+
+            assert [result.chunk_id for result in results] == [1, 2]
+            assert mock_client.embeddings.create.await_count == 3
+
+
+@pytest.mark.skipif(not OPENAI_AVAILABLE, reason="OpenAI not installed")
+@pytest.mark.asyncio
+async def test_generate_ollama_embeddings_truncates_single_chunk_after_context_limit():
+    """A single over-limit chunk should be retried with shorter content before being skipped."""
+    mock_client = AsyncMock()
+    attempted_lengths = []
+    content = "abcdefghijklmnopqrstuvwxyz" * 10
+
+    async def _create_embeddings(*, model, input, encoding_format):
+        attempted_lengths.append(len(input[0]))
+        if len(input[0]) > 80:
+            raise Exception("the input length exceeds the context length")
+        response = MagicMock()
+        response.data = [MagicMock(embedding=[0.1] * FIXED_EMBEDDING_DIMENSION)]
+        return response
+
+    mock_client.embeddings.create.side_effect = _create_embeddings
+
+    with patch('src.embeddings.generator.AsyncOpenAI', return_value=mock_client):
+        with patch('src.embeddings.generator.get_settings') as mock_get_settings:
+            mock_settings = mock_get_settings.return_value
+            mock_settings.embedding_provider = "ollama"
+            mock_settings.ollama_base_url = "http://localhost:11434/v1"
+            mock_settings.ollama_embedding_model = "mxbai-embed-large"
+            mock_settings.embedding_batch_size = 100
+
+            generator = EmbeddingGenerator()
+            results = await generator.generate_embeddings(
+                [{'id': 1, 'content': content}]
+            )
+
+            assert [result.chunk_id for result in results] == [1]
+            assert attempted_lengths[0] == len(content)
+            assert attempted_lengths[-1] <= 80
+
+
 @pytest.mark.asyncio
 async def test_generate_local_embeddings():
     """Test local embedding generation."""

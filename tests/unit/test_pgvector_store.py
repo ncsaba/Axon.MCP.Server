@@ -131,15 +131,8 @@ async def test_search_similar_basic(vector_store, mock_session):
     mock_repo.id = 100
     mock_repo.name = "test-repo"
     
-    # Mock query result row - implementation uses .all() on result
-    mock_row = MagicMock()
-    mock_row.Symbol = mock_symbol
-    mock_row.vector_score = 0.85
-    mock_row.File = mock_file
-    mock_row.Repository = mock_repo
-    
     mock_result = MagicMock()
-    mock_result.all.return_value = [mock_row]
+    mock_result.all.return_value = [(mock_symbol, 0.85, mock_file, mock_repo)]
     mock_session.execute.return_value = mock_result
     
     query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
@@ -152,6 +145,39 @@ async def test_search_similar_basic(vector_store, mock_session):
     assert results[0][1] >= 0.85
     assert results[0][2] is None  # No file when include_file_repo=False
     assert results[0][3] is None  # No repo when include_file_repo=False
+
+
+@pytest.mark.asyncio
+async def test_unpack_search_row_supports_tuple_results(vector_store):
+    """Real SQLAlchemy entity rows arrive as tuples; they must unpack cleanly."""
+    mock_symbol = MagicMock()
+    mock_symbol.id = 1
+    mock_file = MagicMock()
+    mock_repo = MagicMock()
+
+    symbol, vector_score, file_obj, repo_obj = vector_store._unpack_search_row(
+        (mock_symbol, 0.85, mock_file, mock_repo)
+    )
+
+    assert symbol is mock_symbol
+    assert vector_score == 0.85
+    assert file_obj is mock_file
+    assert repo_obj is mock_repo
+
+
+def test_unpack_keyword_row_supports_tuple_results(vector_store):
+    """Keyword candidate rows also need tuple-style unpacking in production."""
+    mock_symbol = MagicMock()
+    mock_file = MagicMock()
+    mock_repo = MagicMock()
+
+    symbol, file_obj, repo_obj = vector_store._unpack_keyword_row(
+        (mock_symbol, mock_file, mock_repo)
+    )
+
+    assert symbol is mock_symbol
+    assert file_obj is mock_file
+    assert repo_obj is mock_repo
 
 
 @pytest.mark.asyncio

@@ -93,6 +93,9 @@ async def search_code(
                          # Search metadata
                         "relevance_score": round(result.score, 3),
                         "match_type": result.match_type,
+                        "snippet_match_type": result.snippet_match_type,
+                        "match_reason": result.match_reason,
+                        "follow_up_tools": result.follow_up_tools,
                         # Quick access (ENHANCED)
                         "context_url": result.context_url,
                     }

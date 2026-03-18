@@ -1,12 +1,21 @@
 """Context builder for creating rich chunks."""
 
+import asyncio
+import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Symbol, FileInstance as File, Relation
-from src.config.enums import RelationTypeEnum
+from src.database.models import Repository, Symbol, FileInstance as File, Relation
+from src.config.enums import LanguageEnum, RelationTypeEnum
+from src.parsers import ParserFactory
+from src.parsers.base_parser import ParseResult
+from src.repository_sources import get_repository_source_registry
+
+_MAX_CONTEXT_IMPORTS = 20
+_JAVA_PACKAGE_RE = re.compile(r"^\s*package\s+([A-Za-z_][\w.]*)\s*;", re.MULTILINE)
 
 
 @dataclass
@@ -45,11 +54,14 @@ class ChunkContextBuilder:
             session: Database session
         """
         self.session = session
+        self._parse_result_cache: dict[int, Optional[ParseResult]] = {}
+        self._repo_path_cache: dict[int, Optional[Path]] = {}
     
     async def build_context(
         self,
         symbol: Symbol,
-        file: File
+        file: File,
+        file_content: Optional[str] = None,
     ) -> ChunkContext:
         """
         Build rich context for a symbol.
@@ -81,7 +93,9 @@ class ChunkContextBuilder:
         # Get imports from file
         # Note: This could be enhanced by parsing file.content if available
         # For now, we'll extract from related symbols
-        context.imports = await self._extract_imports(file.id)
+        context.imports = await self._extract_imports(file, file_content=file_content)
+        if not context.namespace:
+            context.namespace = self._derive_namespace(file, file_content=file_content)
         
         # Get relationships
         await self._extract_relationships(symbol, context)
@@ -112,12 +126,97 @@ class ChunkContextBuilder:
         )
         return result.scalars().first()
     
-    async def _extract_imports(self, file_id: int) -> List[str]:
-        """Extract import statements from file."""
-        # This would ideally parse the file content
-        # For now, return empty list as imports are stored separately
-        # TODO: Enhance by storing file imports in database
-        return []
+    async def _extract_imports(self, file: File, file_content: Optional[str] = None) -> List[str]:
+        """Extract bounded imports from parser output when source text is available."""
+        parse_result = await self._get_parse_result(file, file_content=file_content)
+        if not parse_result or not parse_result.imports:
+            return []
+        return self._normalize_imports(parse_result.imports)
+
+    async def _get_parse_result(
+        self,
+        file: File,
+        file_content: Optional[str] = None,
+    ) -> Optional[ParseResult]:
+        if file.id in self._parse_result_cache:
+            return self._parse_result_cache[file.id]
+
+        source_text = file_content
+        if source_text is None:
+            file_path = await self._resolve_file_path(file)
+            if file_path is None or not file_path.exists() or not file_path.is_file():
+                self._parse_result_cache[file.id] = None
+                return None
+            source_text = await asyncio.to_thread(
+                file_path.read_text,
+                encoding="utf-8",
+                errors="ignore",
+            )
+
+        try:
+            parser = ParserFactory.get_parser_for_file(Path(file.path))
+        except ValueError:
+            self._parse_result_cache[file.id] = None
+            return None
+
+        if hasattr(parser, "parse_async"):
+            parse_result = await parser.parse_async(source_text, str(file.path))
+        else:
+            parse_result = await asyncio.to_thread(parser.parse, source_text, str(file.path))
+
+        self._parse_result_cache[file.id] = parse_result
+        return parse_result
+
+    async def _resolve_file_path(self, file: File) -> Optional[Path]:
+        if file.repository_id in self._repo_path_cache:
+            repo_root = self._repo_path_cache[file.repository_id]
+            return None if repo_root is None else repo_root / file.path
+
+        repository = await self.session.get(Repository, file.repository_id)
+        if repository is None:
+            self._repo_path_cache[file.repository_id] = None
+            return None
+
+        try:
+            source = get_repository_source_registry().resolve(repository)
+            repo_root = source.get_repository_path(repository)
+        except Exception:
+            repo_root = None
+
+        self._repo_path_cache[file.repository_id] = repo_root
+        return None if repo_root is None else repo_root / file.path
+
+    def _normalize_imports(self, imports: List[str]) -> List[str]:
+        normalized: List[str] = []
+        seen: set[str] = set()
+
+        for value in imports:
+            item = str(value or "").strip()
+            if not item or item in seen:
+                continue
+            seen.add(item)
+            normalized.append(item)
+            if len(normalized) >= _MAX_CONTEXT_IMPORTS:
+                break
+
+        return normalized
+
+    def _derive_namespace(self, file: File, file_content: Optional[str] = None) -> Optional[str]:
+        if file.language == LanguageEnum.JAVA and file_content:
+            match = _JAVA_PACKAGE_RE.search(file_content)
+            if match:
+                return match.group(1)
+
+        if file.language == LanguageEnum.PYTHON:
+            module_path = Path(file.path)
+            without_suffix = module_path.with_suffix("")
+            parts = list(without_suffix.parts)
+            if parts and parts[-1] == "__init__":
+                parts = parts[:-1]
+            if parts:
+                return ".".join(parts)
+
+        return None
     
     async def _extract_relationships(self, symbol: Symbol, context: ChunkContext):
         """Extract symbol relationships."""
@@ -163,4 +262,3 @@ class ChunkContextBuilder:
             return True
         
         return False
-
