@@ -40,7 +40,7 @@ docker compose -f docker/docker-compose.yml up -d
 For integration or DB-backed tests, set database credentials explicitly before running `pytest` or `make test`:
 
 ```bash
-source /home/vscode/.venv-axon-mcp/bin/activate
+source /home/vscode/.venv-dev/bin/activate
 export DATABASE_URL='postgresql+asyncpg://indexer:indexer@localhost:5432/indexer'
 export TEST_DATABASE_URL='postgresql+asyncpg://indexer:indexer@localhost:5432/indexer'
 ```

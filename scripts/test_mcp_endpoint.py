@@ -1,22 +1,99 @@
 #!/usr/bin/env python3
-"""
-Test script for MCP HTTP endpoint.
-This script tests the MCP server HTTP transport functionality.
-"""
+"""Test script for MCP HTTP endpoint."""
 
+import ast
 import json
-import requests
 import sys
+from pathlib import Path
 from typing import Dict, Any
+from urllib import error, request
 
 
-def test_mcp_endpoint(base_url: str = "http://localhost:8001") -> bool:
+DEFAULT_DEV_ENV = Path(__file__).resolve().parent / "dev_env.sh"
+
+
+def _load_dev_env(path: Path) -> Dict[str, str]:
+    values: Dict[str, str] = {}
+    if not path.exists():
+        return values
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[len("export ") :]
+        if "=" not in stripped:
+            continue
+        key, raw = stripped.split("=", 1)
+        key = key.strip()
+        raw = raw.strip()
+        try:
+            values[key] = ast.literal_eval(raw) if raw[:1] in {"'", '"'} else raw
+        except Exception:
+            values[key] = raw.strip("'").strip('"')
+    return values
+
+
+def _request_json(url: str, *, payload: Dict[str, Any] | None = None, headers: Dict[str, str] | None = None, timeout: int = 10) -> tuple[int, Dict[str, Any] | str]:
+    data = None
+    req_headers = headers.copy() if headers else {}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        req_headers["Content-Type"] = "application/json"
+
+    req = request.Request(url, data=data, headers=req_headers)
+
+    try:
+        with request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8")
+            return resp.getcode(), json.loads(body) if body else {}
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8") if exc.fp else ""
+        try:
+            parsed = json.loads(body)
+        except Exception:
+            parsed = body
+        return exc.code, parsed
+
+
+def _request_json_with_headers(
+    url: str,
+    *,
+    payload: Dict[str, Any] | None = None,
+    headers: Dict[str, str] | None = None,
+    timeout: int = 10,
+) -> tuple[int, Dict[str, Any] | str, Dict[str, str]]:
+    data = None
+    req_headers = headers.copy() if headers else {}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        req_headers["Content-Type"] = "application/json"
+
+    req = request.Request(url, data=data, headers=req_headers)
+
+    try:
+        with request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8")
+            parsed = json.loads(body) if body else {}
+            return resp.getcode(), parsed, dict(resp.headers.items())
+    except error.HTTPError as exc:
+        body = exc.read().decode("utf-8") if exc.fp else ""
+        try:
+            parsed = json.loads(body)
+        except Exception:
+            parsed = body
+        return exc.code, parsed, dict(exc.headers.items()) if exc.headers else {}
+
+
+def test_mcp_endpoint(base_url: str = "http://localhost:8001", api_key: str = "dev-admin-key") -> bool:
     """Test MCP HTTP endpoint functionality."""
     
     print(f"Testing MCP HTTP endpoint at {base_url}")
     print("=" * 50)
     
     mcp_url = f"{base_url}/mcp"
+    headers = {"X-API-Key": api_key}
     
     # Test 1: Initialize
     print("1. Testing initialize...")
@@ -35,20 +112,29 @@ def test_mcp_endpoint(base_url: str = "http://localhost:8001") -> bool:
     }
     
     try:
-        response = requests.post(mcp_url, json=init_request, timeout=10)
-        if response.status_code == 200:
-            result = response.json()
+        status_code, result, response_headers = _request_json_with_headers(
+            mcp_url,
+            payload=init_request,
+            headers=headers,
+            timeout=10,
+        )
+        if status_code == 200:
             if "result" in result:
                 print("   ✅ Initialize successful")
                 print(f"   📋 Server: {result['result']['serverInfo']['name']}")
+                session_id = response_headers.get("mcp-session-id")
             else:
                 print(f"   ❌ Initialize failed: {result}")
                 return False
         else:
-            print(f"   ❌ HTTP error: {response.status_code}")
+            print(f"   ❌ HTTP error: {status_code}")
             return False
     except Exception as e:
         print(f"   ❌ Request failed: {e}")
+        return False
+
+    if not session_id:
+        print("   ❌ Initialize did not return an mcp-session-id header")
         return False
     
     # Test 2: List tools
@@ -61,9 +147,13 @@ def test_mcp_endpoint(base_url: str = "http://localhost:8001") -> bool:
     }
     
     try:
-        response = requests.post(mcp_url, json=list_request, timeout=10)
-        if response.status_code == 200:
-            result = response.json()
+        status_code, result = _request_json(
+            mcp_url,
+            payload=list_request,
+            headers={**headers, "mcp-session-id": session_id},
+            timeout=10,
+        )
+        if status_code == 200:
             if "result" in result and "tools" in result["result"]:
                 tools = result["result"]["tools"]
                 print(f"   ✅ Found {len(tools)} tools")
@@ -73,7 +163,7 @@ def test_mcp_endpoint(base_url: str = "http://localhost:8001") -> bool:
                 print(f"   ❌ List tools failed: {result}")
                 return False
         else:
-            print(f"   ❌ HTTP error: {response.status_code}")
+            print(f"   ❌ HTTP error: {status_code}")
             return False
     except Exception as e:
         print(f"   ❌ Request failed: {e}")
@@ -95,9 +185,13 @@ def test_mcp_endpoint(base_url: str = "http://localhost:8001") -> bool:
     }
     
     try:
-        response = requests.post(mcp_url, json=call_request, timeout=30)
-        if response.status_code == 200:
-            result = response.json()
+        status_code, result = _request_json(
+            mcp_url,
+            payload=call_request,
+            headers={**headers, "mcp-session-id": session_id},
+            timeout=30,
+        )
+        if status_code == 200:
             if "result" in result:
                 print("   ✅ Tool call successful")
                 content = result["result"].get("content", [])
@@ -106,7 +200,7 @@ def test_mcp_endpoint(base_url: str = "http://localhost:8001") -> bool:
                 print(f"   ❌ Tool call failed: {result}")
                 return False
         else:
-            print(f"   ❌ HTTP error: {response.status_code}")
+            print(f"   ❌ HTTP error: {status_code}")
             return False
     except Exception as e:
         print(f"   ❌ Request failed: {e}")
@@ -122,12 +216,12 @@ def test_health_endpoint(base_url: str = "http://localhost:8001") -> bool:
     print(f"🏥 Testing health endpoint at {base_url}")
     
     try:
-        response = requests.get(f"{base_url}/api/v1/health", timeout=10)
-        if response.status_code == 200:
+        status_code, _ = _request_json(f"{base_url}/api/v1/health", timeout=10)
+        if status_code == 200:
             print("   ✅ Health endpoint is working")
             return True
         else:
-            print(f"   ❌ Health endpoint failed: {response.status_code}")
+            print(f"   ❌ Health endpoint failed: {status_code}")
             return False
     except Exception as e:
         print(f"   ❌ Health check failed: {e}")
@@ -136,6 +230,9 @@ def test_health_endpoint(base_url: str = "http://localhost:8001") -> bool:
 
 def main():
     """Main test function."""
+    env = _load_dev_env(DEFAULT_DEV_ENV)
+    api_key = env.get("ADMIN_API_KEY", "dev-admin-key")
+
     if len(sys.argv) > 1:
         base_url = sys.argv[1]
     else:
@@ -154,11 +251,12 @@ def main():
     print("")
     
     # Test MCP functionality
-    if test_mcp_endpoint(base_url):
+    if test_mcp_endpoint(base_url, api_key=api_key):
         print("✅ All tests completed successfully!")
         print("")
         print("🤖 Your MCP server is ready for AI integration!")
         print(f"   Use this URL: {base_url}/mcp")
+        print(f"   API key: {api_key}")
         sys.exit(0)
     else:
         print("❌ Some tests failed. Check the server logs.")

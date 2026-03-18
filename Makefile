@@ -1,4 +1,4 @@
-.PHONY: help install dev-install test test-integration lint format clean docker-up docker-down docker-logs docker-rebuild docker-status docker-check migrate api-start api-dev api-test mcp-start mcp-dev ui-install ui-dev ui-build ui-test
+.PHONY: help install dev-install test test-integration lint format clean docker-up docker-down docker-logs docker-rebuild docker-status docker-check migrate api-start api-dev api-test retrieval-smoke mcp-start mcp-dev mcp-http-dev mcp-http-smoke ui-install ui-dev ui-build ui-test
 
 help:
 	@echo "Available commands:"
@@ -14,8 +14,11 @@ help:
 	@echo "  make api-start     - Start API server (production)"
 	@echo "  make api-dev       - Start API server (development with reload)"
 	@echo "  make api-test      - Test API endpoints"
+	@echo "  make retrieval-smoke - Smoke-test retrieval via REST and MCP test endpoints"
 	@echo "  make mcp-start     - Start MCP server (stdio transport)"
 	@echo "  make mcp-dev       - Start MCP server (development mode)"
+	@echo "  make mcp-http-dev  - Start MCP over HTTP for direct terminal/client testing"
+	@echo "  make mcp-http-smoke - Smoke-test the MCP HTTP transport"
 	@echo ""
 	@echo "Frontend (UI):"
 	@echo "  make ui-install    - Install UI dependencies"
@@ -82,12 +85,21 @@ api-dev:
 api-test:
 	python scripts/test_api.py
 
+retrieval-smoke:
+	python scripts/test_retrieval_smoke.py
+
 # MCP commands
 mcp-start:
 	python -m src.mcp_server
 
 mcp-dev:
 	python src/mcp_server/main.py
+
+mcp-http-dev:
+	bash scripts/start_mcp_http_dev.sh
+
+mcp-http-smoke:
+	python scripts/test_mcp_endpoint.py http://localhost:8001
 
 # UI commands
 ui-install:

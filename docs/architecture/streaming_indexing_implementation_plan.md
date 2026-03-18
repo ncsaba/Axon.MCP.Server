@@ -257,7 +257,7 @@ Current local validation harness:
 
 ```bash
 cd /workspaces/axon-mcp/axon-src
-source /home/vscode/.venv-axon-mcp/bin/activate
+source /home/vscode/.venv-dev/bin/activate
 python scripts/run_domeus_core_index_validation.py --json --output /tmp/domeus-core-index-validation.json
 ```
 

@@ -38,6 +38,7 @@ flowchart LR
 | Area | Status | Notes |
 | --- | --- | --- |
 | Hybrid symbol search | `✅` | `SearchService` supports keyword + semantic search with reciprocal-rank fusion. |
+| Codex app MCP connectivity | `✅` | Local Codex app sessions can now connect to the Axon HTTP MCP server and see the Axon tool surface. MCP resources/templates remaining empty is expected for this tool-oriented integration. |
 | Documentation/config/path retrieval | `✅` | Shipped through MCP tool handlers and backing database queries. |
 | Symbol context and graph navigation | `✅` | Multiple retrieval tools are already exposed through the MCP router. |
 | Architecture-context retrieval | `🚧` | Tool surface exists, but usefulness depends on service mapping, summaries, and relation quality. |
@@ -118,6 +119,12 @@ This is the current recommended starting slice.
 2. There is one canonical plan doc for retrieval increments.
 3. Retrieval docs describe the actual implemented surface, not just aspirations.
 4. At least one benchmark seed exists for each major retrieval mode.
+
+### Current Progress
+
+- `✅` Retrieval startup docs are in place.
+- `✅` Codex app connectivity to the local Axon MCP HTTP server is working and the Axon tool surface is exposed.
+- `🧭` The next missing deliverables in R1 are the retrieval surface audit, curated query set, and explicit expected outcomes.
 
 ## Upstream Dependencies To Track Explicitly
 

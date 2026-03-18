@@ -36,6 +36,7 @@ This fork targets Python + Java + docs/config indexing with a graph-oriented cod
 - [File Instance/Content Dedup Proposal (Deferred)](architecture/file_instance_content_dedup_proposal.md)
 - [Data Models](architecture/data_models.md)
 - [MCP Tools](api/mcp_tools.md)
+- [MCP Server Startup Guide](guides/mcp_server_startup.md)
 - [Setup Guide](guides/setup.md)
 - [Analysis and Roadmap](AXON_ANALYSIS_AND_ROADMAP.md)
 - [Session Handover](SESSION_HANDOVER.md)
