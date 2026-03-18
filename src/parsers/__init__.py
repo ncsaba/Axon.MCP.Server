@@ -34,6 +34,12 @@ SUPPORTED_DISCOVERY_EXTENSIONS = frozenset(
         ".markdown",
         ".sql",
         ".ddl",
+        ".xml",
+        ".properties",
+        ".conf",
+        ".ini",
+        ".toml",
+        ".gradle",
     }
 )
 
@@ -43,7 +49,7 @@ def is_supported_file_path(file_path: Path) -> bool:
     suffix = file_path.suffix.lower()
     name = file_path.name.lower()
 
-    if suffix in {".js", ".jsx", ".mjs", ".ts", ".tsx", ".java", ".vue", ".py", ".md", ".markdown", ".sql", ".ddl"}:
+    if suffix in {".js", ".jsx", ".mjs", ".ts", ".tsx", ".java", ".vue", ".py", ".md", ".markdown", ".sql", ".ddl", ".xml", ".properties", ".conf", ".ini", ".toml", ".gradle"}:
         return True
     if name == "package.json":
         return True
@@ -58,7 +64,11 @@ def is_supported_file_path(file_path: Path) -> bool:
         "swagger.yml",
     }:
         return True
+    if name in {"pom.xml", "build.xml", ".env", "docker-compose.yml", "docker-compose.yaml"}:
+        return True
     if suffix == ".json":
+        return True
+    if suffix in {".yaml", ".yml"}:
         return True
     return False
 
@@ -124,10 +134,12 @@ class ParserFactory:
         elif name in ['openapi.json', 'openapi.yaml', 'openapi.yml',
                       'swagger.json', 'swagger.yaml', 'swagger.yml']:
             return OpenAPIParser()
-        elif suffix == '.json':
-            # Generic JSON files (e.g., global.json, tsconfig.json, launchSettings.json)
-            # These don't contain code symbols, so we return an empty parser
-            logger.debug("skipping_generic_json_file", file_path=str(file_path))
+        elif (
+            suffix in {'.json', '.yaml', '.yml', '.xml', '.properties', '.conf', '.ini', '.toml', '.gradle'}
+            or name in {'pom.xml', 'build.xml', '.env', 'docker-compose.yml', 'docker-compose.yaml'}
+        ):
+            # Generic config/build/dependency files currently use parser-empty fallback chunking.
+            logger.debug("using_noop_parser_for_generic_config_file", file_path=str(file_path))
             from src.parsers.noop_parser import NoOpParser
             return NoOpParser()
         else:

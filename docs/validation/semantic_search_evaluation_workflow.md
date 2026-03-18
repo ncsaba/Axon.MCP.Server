@@ -107,12 +107,14 @@ The local DB snapshot currently has:
 - valid `1024` embeddings
 - the HNSW ANN index
 - benchmark repos present
-- no active `file_instances`
+- active `file_instances`
+- `0` chunks missing embeddings after context-limit repair
 
 Practical meaning:
 
 - planner/latency validation can proceed
-- usefulness scoring should wait until the corpus is re-indexed into the active lifecycle model
+- usefulness scoring is now unblocked on the refreshed active corpus
+- the full live non-`axon-src` seed run is recorded at `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_benchmark_20260318.md`
 
 ## Exit Criteria For S1
 

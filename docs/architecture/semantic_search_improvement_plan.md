@@ -29,23 +29,26 @@ Reference analysis:
 | Incremental embedding reuse | `✅` | Existing chunk embeddings are skipped or reused by hash, but new semantic-refresh work should follow `changed_content_ids` as the durable invalidation contract. |
 | Vector ANN index on `embeddings.vector` | `✅` | `embeddings.vector` now targets a fixed `vector(1024)` contract for `mxbai-embed-large`, with a direct HNSW index. |
 | Host Ollama integration for local dev | `✅` | Dev-container runtime now targets host Ollama at `host.docker.internal:11434/v1`, and the `mxbai-embed-large` smoke test passes. |
-| Live corpus rebuilt on `1024` embeddings | `✅` | The local DB corpus has been reset and rebuilt with `mxbai-embed-large`, restoring 11,710 embeddings on the fixed contract. |
+| Live corpus rebuilt on `1024` embeddings | `✅` | The local DB corpus has been refreshed into the active lifecycle model with `7,036` embeddings on the fixed contract. |
+| Embedding request resilience for context-rich chunks | `✅` | OpenAI-compatible embedding generation now splits context-limit batches and retries singleton overflows with bounded truncation instead of dropping the whole batch. |
 | Implementation chunk body inclusion | `✅` | Extractor path now loads source text once per parsed file and passes it into chunk construction when the source file is readable. |
-| Import/context population | `🛑` | `ChunkContextBuilder._extract_imports()` currently returns an empty list. |
-| Semantic snippet selection | `🚧` | Search previews return the first chunk per symbol, not the best matching chunk. |
-| Semantic reranking contract | `🚧` | `PgVectorStore.search_similar()` supports `query_text` boosting, but the main search path does not use it. |
-| Benchmark-driven threshold tuning | `🚧` | Canonical seed queries and evaluation workflow now exist, but usefulness scoring should wait for a corpus snapshot with active indexed files. |
+| Import/context population | `🚧` | Parser-backed import extraction now populates bounded Python/Java chunk context when source text is available, but broader language coverage and refreshed corpus materialization are still pending. |
+| Explicit fallback chunking policy | `🚧` | Parser-empty config/build/dependency files now create bounded file-level fallback chunks and explicit file-backed module symbols during extraction, but the live corpus still needs refreshes to pick them up broadly. |
+| Semantic snippet selection | `🚧` | Search previews now prefer the best semantic or text-matching chunk per symbol, and results expose snippet provenance plus suggested follow-up tools, but context chaining is still not fully benchmarked across the whole seed set. |
+| Semantic reranking contract | `🚧` | The main search path now forwards `query_text` into `PgVectorStore.search_similar()`, real SQLAlchemy row-shape failures are fixed, and hybrid ranking is live on the rebuilt corpus, but the layered scoring contract still needs broader benchmark review. |
+| Config/dependency retrieval weighting | `🚧` | Config/framework/API/UI/background/member-flow intent boosts now materially improve retrieval for `database configuration`, `uses mongo`, `find Jameica GUI views`, and member CSV-import queries; remaining work is mostly chainability validation and broader corpus coverage. |
+| Benchmark-driven threshold tuning | `🚧` | Canonical seed queries and evaluation workflow now exist on an active corpus, the full live non-`axon-src` seed run is recorded, and sampled search-to-context follow-ups now succeed on the strongest updated queries; threshold decisions and repeated before/after comparisons are still pending. |
 
 ## Root Problems
 
 | Problem | Why it hurts usefulness | Current source |
 | --- | --- | --- |
-| Current local corpus snapshot is lifecycle-inconsistent | Planner validation succeeds, but end-to-end usefulness scoring is blocked until the active-file model is repopulated | `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_index_validation_20260318.md`, `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_evaluation_workflow.md` |
-| Imports are not populated | Queries about framework usage, dependencies, or external types lose context | `/workspaces/axon-mcp/axon-src/src/embeddings/chunk_context.py` |
-| First-chunk preview selection is naive | Returned snippets are often worse than the actual matched chunk | `/workspaces/axon-mcp/axon-src/src/api/services/search_service.py` |
-| Vector reranking logic is split | Search behavior is harder to reason about and partially dead | `/workspaces/axon-mcp/axon-src/src/vector_store/pgvector_store.py`, `/workspaces/axon-mcp/axon-src/src/api/services/search_service.py` |
+| The benchmark baseline is now live but still incomplete for threshold decisions | The full live non-`axon-src` seed is now recorded, but `axon-src` is still out of corpus scope for this local DB and follow-up chainability checks were not rerun across the whole set | `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_benchmark_seed.md`, `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_evaluation_workflow.md`, `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_benchmark_20260318.md` |
+| Import/context coverage is still partial | Python/Java now populate parser-backed imports, but broader language coverage and existing-corpus refreshes are still needed for consistent framework/dependency context | `/workspaces/axon-mcp/axon-src/src/embeddings/chunk_context.py` |
+| Snippet/result packaging is still only partially improved | Better chunk choice, match provenance, and next-step tool hints are live, but full search-to-context evaluation is still thin | `/workspaces/axon-mcp/axon-src/src/api/services/search_service.py` |
+| Vector reranking logic is still layered across two components | The query-text path is live now, but the end-state scoring contract is still harder to reason about than it should be | `/workspaces/axon-mcp/axon-src/src/vector_store/pgvector_store.py`, `/workspaces/axon-mcp/axon-src/src/api/services/search_service.py` |
 | Fixed permissive threshold is untuned | Recall/precision tradeoffs are being guessed instead of measured | `/workspaces/axon-mcp/axon-src/src/api/services/search_service.py` |
-| Benchmark execution is not yet recurring | The seed set and workflow exist, but they still need repeated before/after use on a refreshed active corpus | `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_benchmark_seed.md`, `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_evaluation_workflow.md` |
+| Benchmark execution is not yet recurring | The first live subset run is recorded, but repeated full-seed before/after comparisons are still missing | `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_benchmark_seed.md`, `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_evaluation_workflow.md`, `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_benchmark_20260318.md` |
 
 ## Target Design
 
@@ -86,9 +89,9 @@ flowchart LR
 | --- | --- | --- | --- |
 | S0. Semantic-search DB indexing baseline | `✅` | Fixed-size ANN indexing, live planner/latency validation on the `1024` corpus, and the operator rebuild/runbook contract are now documented. | `🔥` The remaining environment risk is a lifecycle-model mismatch in the current local corpus snapshot, not the ANN baseline itself. |
 | S1. Benchmark baseline and semantic-search contract | `✅` | Canonical seed queries, expected outcome categories, and a repeatable evaluation workflow are now in place before ranking/threshold tuning. | `🔥` The benchmark contract now exists, but skipped or inconsistent corpus refreshes can still make comparisons misleading. |
-| S2. Chunk corpus quality | `🚧` | Implementation-chunk body inclusion is now wired through the extractor path; remaining work is import/context population and explicit fallback-chunking policy. | `🔥` Larger or more context-rich chunks can shift embedding behavior, storage costs, and result balance if introduced without benchmark coverage. |
-| S3. Semantic-ranking cleanup | `🧭` | Use one coherent semantic reranking contract and remove dead paths. | `🔥` Ranking changes can destabilize existing search behavior. |
-| S4. Snippet and result packaging | `🧭` | Return the best matching chunk and tighten search-to-context affordances. | `🔥` Better ranking can still feel weak if snippet selection stays naive. |
+| S2. Chunk corpus quality | `🚧` | Implementation-chunk body inclusion, embedding-safe handling, and parser-empty fallback chunking are now wired through ingestion; remaining work is broader import/context coverage plus corpus refreshes that materialize the new fallback policy broadly. | `🔥` Larger or more context-rich chunks can shift embedding behavior, storage costs, and result balance if introduced without benchmark coverage. |
+| S3. Semantic-ranking cleanup | `🚧` | Live row-shape fixes, chunk-aware keyword candidates, light query normalization, corpus-specific intent boosts, and precision-first hybrid weighting for member CSV-import queries are now in place; remaining work is repeated benchmark and chainability validation. | `🔥` Ranking changes can destabilize existing search behavior. |
+| S4. Snippet and result packaging | `🚧` | Return the best matching chunk, expose match provenance, and tighten search-to-context affordances. | `🔥` Better ranking can still feel weak if snippet selection stays naive. |
 | S5. Threshold tuning and graph-aware follow-ups | `🧭` | Tune thresholds using benchmarks and add higher-order reranking only after baseline quality improves. | `🔥` Graph-aware boosting will magnify upstream relation-quality weaknesses. |
 
 ## Detailed Execution Slices
@@ -233,6 +236,11 @@ Acceptance:
 2. Existing fallback behavior remains safe for missing/unreadable file content.
 3. Embedding generation still works with the current content-driven incremental contract (`changed_content_ids` remain the durable invalidation signal).
 
+Observed follow-up:
+
+- the 2026-03-18 active-corpus rebuild exposed an OpenAI-compatible context-limit failure on one `100`-chunk embedding batch
+- embedding generation now handles that by recursively splitting failed batches and truncating singleton retries until the provider accepts the request or the chunk is explicitly skipped
+
 ### S2B. Populate Imports and File-Level Context
 
 Implement actual import extraction for chunk context rather than returning `[]`.
@@ -247,6 +255,12 @@ Why this matters:
 
 - semantic search often depends on framework and dependency context
 - many code queries are really asking "where is X used with Y framework/type/library"
+
+Current increment status:
+
+- `🚧` first pass implemented on 2026-03-18
+- chunk context now reuses already-loaded source text in the extractor path, parses imports with the existing language parser contract, and adds bounded Python/Java namespace fallback where symbol-derived namespace is missing
+- the remaining work is broader language coverage plus re-materializing the active corpus so retrieval sees the richer chunk text
 
 Acceptance:
 
@@ -269,6 +283,12 @@ Acceptance:
 2. Parser-weak files still produce usable semantic chunks.
 3. Docs/config formats can opt into specialized fallback policies where needed.
 
+Current increment target:
+
+- `🧭` add file-level fallback chunks for parser-empty/config-heavy files during extraction
+- prioritize config, build, dependency, SQL, and infrastructure text files
+- keep fallback chunks content-derived and linked through `ChunkSymbolLink`-compatible retrieval paths without inventing fake symbol ownership
+
 ### S3A. Unify Semantic Reranking Logic
 
 Pick one of these options and implement it fully:
@@ -282,6 +302,12 @@ Recommended sequence:
 
 1. First pass `query_text` so the existing reranking path is live.
 2. Then decide whether to keep that layering or centralize it later.
+
+Current increment status:
+
+- `🚧` first pass implemented on 2026-03-18
+- `SearchService._semantic_search()` now forwards the user query text into `PgVectorStore.search_similar()` so the existing semantic-side boost path is no longer dead
+- the remaining work is documenting and validating whether this layered boost path should stay in the vector store or be centralized later
 
 Acceptance:
 
@@ -304,6 +330,35 @@ Acceptance:
 1. Threshold changes are justified by benchmark evidence.
 2. The chosen threshold minimizes obvious noise without hurting known useful queries.
 
+### S3C. Improve Config And Dependency Retrieval
+
+Tighten retrieval for queries such as:
+
+- `database configuration`
+- `uses mongo`
+- `uses jameica`
+- `find Jameica GUI views`
+- similar dependency/framework/setup intents
+
+Planned direction:
+
+- recognize config/dependency-heavy query shapes in normalization
+- prefer config/build/docs/setup paths and dependency-bearing chunks for those queries
+- add corpus-accurate boosts for framework/UI/background/member-flow query families
+- avoid letting generic implementation symbols dominate when the user is clearly asking for setup or infrastructure
+
+Current increment status:
+
+- `🚧` broadened on 2026-03-18 after the full live seed pass
+- config/framework/API/UI/background/member-flow boosts now materially improve `database configuration`, `uses mongo`, `where are API routes defined`, `find Jameica GUI views`, and `find member import flow entrypoint`
+- the remaining work is validating chainability and deciding whether any of these intent-specific weights should be generalized or kept narrowly scoped
+
+Acceptance:
+
+1. Config/dependency queries can surface config/setup artifacts before generic adjacent code.
+2. Existing identifier and implementation queries do not regress sharply.
+3. Benchmark notes record before/after movement for at least one Java and one mixed/docs-heavy query.
+
 ### S4A. Best-Matching Snippet Selection
 
 Replace "first chunk per symbol" preview logic with "best matching chunk per returned symbol."
@@ -313,6 +368,12 @@ Preferred order:
 1. exact matched semantic chunk if available
 2. best-scoring chunk for that symbol
 3. fallback to first chunk only if nothing else is available
+
+Current increment status:
+
+- `🚧` first pass implemented on 2026-03-18
+- semantic results now prefer the highest-scoring embedded chunk per returned symbol and keyword results choose the best text-matching chunk instead of the first stored chunk
+- the remaining work is exposing clearer match provenance and tightening search-to-context packaging on top of the better chunk choice
 
 Acceptance:
 
@@ -384,20 +445,20 @@ Use a small but varied set:
 
 ## Immediate Next Actions
 
-1. Refresh the local benchmark corpus into the active `file_instances` lifecycle model.
-2. Execute the seed benchmark workflow on that refreshed corpus and record the first before/after baseline.
-3. Implement import/context population for Python and Java first.
-4. Activate the existing `query_text` semantic reranking path.
-5. Replace first-chunk snippet selection with best-match snippet selection.
+1. Expand the live benchmark run from the current representative subset to the full non-`axon-src` seed set.
+2. Improve dependency/config retrieval so queries like `uses postgres` and `database configuration` land app-layer setup/code before generic docs or DB-adjacent symbols.
+3. Expand `S2B` import/context coverage beyond the initial Python/Java first pass where needed.
+4. Decide whether the current `S3A` layered reranking path should stay or be centralized after the full-seed benchmark run.
+5. Tighten `S4B` search-to-context evaluation coverage now that result packaging exposes provenance and follow-up tools.
 
 ## Highlighted Next Steps
 
 Recommended execution order from here:
 
-1. Refresh the benchmark corpus into the active lifecycle model and run the first scored benchmark pass.
-2. `S2B`: populate imports/file-level context for Python and Java.
-3. `S3A`: turn on the existing `query_text` semantic reranking path.
-4. `S4A`: return the best matching chunk snippet instead of the first chunk.
+1. Run the full scored benchmark pass beyond the first representative subset now captured in `docs/validation/semantic_search_benchmark_20260318.md`.
+2. `S2B`: expand import/file-level context coverage beyond the current Python/Java first pass as needed.
+3. `S4B`: keep improving search-to-context behavior on top of the new provenance and follow-up packaging.
+4. `S3B`: use the full-seed benchmark output to revisit threshold behavior for dependency/config-heavy queries.
 
 ## Explicit Answers To Current Questions
 

@@ -43,6 +43,7 @@ This fork targets Python + Java + docs/config indexing with a graph-oriented cod
 - [Setup Guide](guides/setup.md)
 - [Semantic Search Index Validation](validation/semantic_search_index_validation_20260318.md)
 - [Semantic Search Benchmark Seed](validation/semantic_search_benchmark_seed.md)
+- [Semantic Search Benchmark Run 2026-03-18](validation/semantic_search_benchmark_20260318.md)
 - [Semantic Search Evaluation Workflow](validation/semantic_search_evaluation_workflow.md)
 - [Analysis and Roadmap](AXON_ANALYSIS_AND_ROADMAP.md)
 - [Session Handover](SESSION_HANDOVER.md)

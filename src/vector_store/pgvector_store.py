@@ -23,6 +23,47 @@ class PgVectorStore:
             session: Database session
         """
         self.session = session
+
+    @staticmethod
+    def _unpack_search_row(
+        row,
+    ) -> Tuple[Symbol, float, Optional[File], Optional[Repository]]:
+        """Normalize SQLAlchemy entity rows from tuple or attribute-style access."""
+        try:
+            symbol, vector_score, file_obj, repo_obj = row
+            return symbol, float(vector_score), file_obj, repo_obj
+        except (TypeError, ValueError):
+            pass
+
+        symbol = getattr(row, "Symbol", None)
+        vector_score = getattr(row, "vector_score", None)
+        file_obj = getattr(row, "File", None)
+        repo_obj = getattr(row, "Repository", None)
+
+        if symbol is None or vector_score is None:
+            raise ValueError("Unexpected vector search row shape")
+
+        return symbol, float(vector_score), file_obj, repo_obj
+
+    @staticmethod
+    def _unpack_keyword_row(
+        row,
+    ) -> Tuple[Symbol, Optional[File], Optional[Repository]]:
+        """Normalize keyword candidate rows from tuple-like SQLAlchemy results."""
+        try:
+            symbol, file_obj, repo_obj = row
+            return symbol, file_obj, repo_obj
+        except (TypeError, ValueError):
+            pass
+
+        symbol = getattr(row, "Symbol", None)
+        file_obj = getattr(row, "File", None)
+        repo_obj = getattr(row, "Repository", None)
+
+        if symbol is None:
+            raise ValueError("Unexpected keyword search row shape")
+
+        return symbol, file_obj, repo_obj
     
     async def store_embeddings(
         self,
@@ -262,24 +303,27 @@ class PgVectorStore:
         
         # Process vector candidates
         for row in vector_candidates:
-            merged_results[row.Symbol.id] = {
-                'symbol': row.Symbol,
-                'vector_score': row.vector_score,
-                'file': row.File,
-                'repo': row.Repository,
+            symbol, vector_score, file_obj, repo_obj = self._unpack_search_row(row)
+            merged_results[symbol.id] = {
+                'symbol': symbol,
+                'vector_score': vector_score,
+                'file': file_obj,
+                'repo': repo_obj,
                 'keyword_match': False
             }
             
         # Process keyword candidates
         for row in keyword_candidates:
-            if row.Symbol.id in merged_results:
-                merged_results[row.Symbol.id]['keyword_match'] = True
+            symbol, file_obj, repo_obj = self._unpack_keyword_row(row)
+
+            if symbol.id in merged_results:
+                merged_results[symbol.id]['keyword_match'] = True
             else:
-                merged_results[row.Symbol.id] = {
-                    'symbol': row.Symbol,
+                merged_results[symbol.id] = {
+                    'symbol': symbol,
                     'vector_score': 0.0, # No vector match
-                    'file': row.File,
-                    'repo': row.Repository,
+                    'file': file_obj,
+                    'repo': repo_obj,
                     'keyword_match': True
                 }
         

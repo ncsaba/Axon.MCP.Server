@@ -17,6 +17,15 @@ from src.utils.metrics import embedding_generation_duration, embeddings_generate
 
 logger = get_logger(__name__)
 
+_EMBEDDING_CONTEXT_ERROR_MARKERS = (
+    "context length",
+    "input length exceeds",
+    "maximum context length",
+    "too many tokens",
+    "prompt is too long",
+)
+_EMBEDDING_MIN_RETRY_CHARS = 64
+
 
 @dataclass
 class EmbeddingResult:
@@ -106,22 +115,32 @@ class EmbeddingGenerator:
             batch = chunks[i:i + batch_size]
             
             try:
-                if self.provider in ("openai", "ollama"):
-                    batch_results = await self._generate_openai_embeddings(batch)
-                else:
-                    batch_results = await self._generate_local_embeddings(batch)
+                batch_results = await self._generate_batch_embeddings(batch)
                 
                 results.extend(batch_results)
                 
                 embeddings_generated_total.labels(
                     model=self.model_name,
                     status="success"
-                ).inc(len(batch))
+                ).inc(len(batch_results))
+                skipped_count = len(batch) - len(batch_results)
+                if skipped_count:
+                    embeddings_generated_total.labels(
+                        model=self.model_name,
+                        status="error"
+                    ).inc(skipped_count)
+                    logger.warning(
+                        "embedding_batch_partial_completion",
+                        batch_num=i // batch_size + 1,
+                        requested=len(batch),
+                        generated=len(batch_results),
+                        skipped=skipped_count,
+                    )
                 
                 logger.info(
                     "embedding_batch_completed",
                     batch_num=i // batch_size + 1,
-                    batch_size=len(batch),
+                    batch_size=len(batch_results),
                     total_processed=len(results)
                 )
                 
@@ -140,6 +159,96 @@ class EmbeddingGenerator:
                 continue
         
         return results
+
+    async def _generate_batch_embeddings(
+        self,
+        chunks: List[Dict[str, Any]]
+    ) -> List[EmbeddingResult]:
+        if self.provider in ("openai", "ollama"):
+            return await self._generate_openai_embeddings_with_retry(chunks)
+        return await self._generate_local_embeddings(chunks)
+
+    async def _generate_openai_embeddings_with_retry(
+        self,
+        chunks: List[Dict[str, Any]]
+    ) -> List[EmbeddingResult]:
+        try:
+            return await self._generate_openai_embeddings(chunks)
+        except Exception as exc:
+            if not self._is_context_limit_error(exc):
+                raise
+
+            if len(chunks) > 1:
+                midpoint = max(1, len(chunks) // 2)
+                logger.warning(
+                    "embedding_batch_context_limit_retry",
+                    chunk_count=len(chunks),
+                    split_left=midpoint,
+                    split_right=len(chunks) - midpoint,
+                )
+                left_results = await self._generate_openai_embeddings_with_retry(chunks[:midpoint])
+                right_results = await self._generate_openai_embeddings_with_retry(chunks[midpoint:])
+                return left_results + right_results
+
+            return await self._generate_single_openai_embedding_with_truncation(chunks[0], exc)
+
+    async def _generate_single_openai_embedding_with_truncation(
+        self,
+        chunk: Dict[str, Any],
+        original_error: Exception,
+    ) -> List[EmbeddingResult]:
+        content = str(chunk.get("content") or "")
+        current_limit = self._next_retry_char_limit(len(content))
+        last_error: Exception = original_error
+
+        while current_limit >= _EMBEDDING_MIN_RETRY_CHARS:
+            truncated_content = self._truncate_embedding_content(content, current_limit)
+            if truncated_content == content:
+                break
+
+            logger.warning(
+                "embedding_input_truncated_for_retry",
+                chunk_id=chunk.get("id"),
+                original_length=len(content),
+                truncated_length=len(truncated_content),
+            )
+
+            try:
+                return await self._generate_openai_embeddings(
+                    [{"id": chunk["id"], "content": truncated_content}]
+                )
+            except Exception as exc:
+                if not self._is_context_limit_error(exc):
+                    raise
+                last_error = exc
+                current_limit = self._next_retry_char_limit(len(truncated_content))
+
+        logger.error(
+            "embedding_chunk_skipped_context_limit",
+            chunk_id=chunk.get("id"),
+            original_length=len(content),
+            error=str(last_error),
+        )
+        return []
+
+    def _is_context_limit_error(self, error: Exception) -> bool:
+        message = str(error).lower()
+        return any(marker in message for marker in _EMBEDDING_CONTEXT_ERROR_MARKERS)
+
+    def _next_retry_char_limit(self, current_length: int) -> int:
+        if current_length <= _EMBEDDING_MIN_RETRY_CHARS:
+            return current_length // 2
+        return max(_EMBEDDING_MIN_RETRY_CHARS, current_length // 2)
+
+    def _truncate_embedding_content(self, content: str, max_chars: int) -> str:
+        if len(content) <= max_chars:
+            return content
+
+        truncated = content[:max_chars]
+        newline_boundary = truncated.rfind("\n")
+        if newline_boundary >= max_chars // 2:
+            truncated = truncated[:newline_boundary]
+        return truncated.rstrip()
     
     async def _generate_openai_embeddings(
         self,
