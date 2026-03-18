@@ -12,6 +12,7 @@ from src.workers.celery_app import celery_app
 from src.workers.utils import _run_with_engine_cleanup
 from src.database.session import AsyncSessionLocal
 from src.database.models import Chunk, Embedding, File
+from src.database.query_helpers import active_file_filter
 from src.embeddings.generator import EmbeddingGenerator, EmbeddingResult
 from src.vector_store.pgvector_store import PgVectorStore
 from src.utils.logging_config import get_logger
@@ -39,7 +40,7 @@ async def _generate_repository_embeddings(
     result = await session.execute(
         select(Chunk)
         .join(File)
-        .where(File.repository_id == repository_id)
+        .where(File.repository_id == repository_id, active_file_filter())
     )
     chunks = result.scalars().all()
     

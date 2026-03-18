@@ -3,7 +3,7 @@
 ## Snapshot
 
 - Date: 2026-03-18
-- Status: `🧭` approved design target, not yet implemented
+- Status: `🚧` active implementation track with core lifecycle foundation landed
 - Purpose: define the data-model split needed for content reuse, multi-variant indexing, and explicit deleted-file handling
 
 ## Objective
@@ -13,7 +13,7 @@ Separate:
 1. **File instance identity**: where a file exists in a specific repository/source/path context.
 2. **Canonical file content identity**: the reusable parsed content for a specific byte stream under a specific parser contract.
 
-This design replaces the previous deferred proposal and is now the canonical reference for the next indexing architecture increment.
+This design replaces the previous deferred proposal and is now the canonical reference for the current highest-priority indexing architecture increment.
 
 ## Why This Exists Now
 

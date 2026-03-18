@@ -6,6 +6,17 @@
 - Status: `🧭` active execution plan
 - Depends on: `docs/architecture/file_instance_content_dedup_proposal.md`
 
+## Current Branch Priority
+
+`🧭` current execution order on `file-instance-content-separation`.
+
+| Priority | Status | Scope |
+| --- | --- | --- |
+| 1. Query-surface classification | `🚧` | Classify remaining `File` / `FileInstance` callers as active-only, lifecycle-aware, or write-path explicit. First user-facing batch is now classified as active-only. |
+| 2. User-facing read-path cleanup | `🚧` | Patch the highest-value API/MCP/operator surfaces to exclude `MISSING` instances by default. First batch is now landed. |
+| 3. Chunk/content consolidation | `🚧` | Continue only after read-path correctness is stable, or earlier if classification reveals a correctness bug. |
+| 4. Broader language-platform work | `🚧` | Keep Java strategy and parser-platform work secondary to the current lifecycle branch until this slice stabilizes. |
+
 ## Objective
 
 Implement the content/instance split with the smallest validated vertical slices:
@@ -224,6 +235,68 @@ Recommendation:
 - Start by adding focused integration tests for lifecycle transitions and cleanup behavior.
 - Use those tests to identify remaining `File` query surfaces that should default to active-instance filtering.
 - Keep chunk/content consolidation out of this increment unless validation exposes a correctness bug that must be fixed immediately.
+
+## Current Execution Batch (2026-03-18)
+
+`🧭` in progress for the next narrow slice.
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Update canonical docs to reflect branch priority | `✅` | Wrapper + roadmap docs now identify instance/content separation as the highest-priority track. |
+| Classify remaining query surfaces from session handover inventory | `🚧` | Completed active-only classification for the first user-facing batch, two extractor/resolver batches, and the first mixed worker batch. |
+| Patch first user-facing/operator-facing read paths | `✅` | `sample_service.py`, `symbols.py`, `module_summary_generator.py`, and `aggregation_worker.py` now exclude `MISSING` instances by default in direct file-backed reads. |
+| Patch repository-wide extractor/resolver scans that should stay active-only | `✅` | `outgoing_call_extractor.py`, `reference_builder.py`, `call_graph_builder.py`, `call_resolver.py`, `import_resolver.py`, `api_extractor.py`, `config_extractor.py`, and `docker_compose_extractor.py` now resolve against active file instances only. |
+| Patch unambiguous worker/pipeline scans that should stay active-only | `✅` | `embedding_worker.py` and `pipeline/steps/combined_extraction_step.py` now exclude `MISSING` instances during repository-wide processing scans. |
+| Capture mixed worker semantics explicitly | `🚧` | `inventory_worker.py`, `file_worker.py`, `file_lifecycle_worker.py`, and `sync_worker.py` are intentionally unchanged write-path/lifecycle code; `incremental_sync.py` is now the active refactor target because it still hard-deletes instead of using the new lifecycle model. |
+| Focused verification after classification/fixes | `✅` | `py_compile` passed for all completed cleanup batches so far. |
+
+## Incremental Git Sync Alignment Slice (2026-03-18)
+
+`🧭` next implementation slice for the remaining legacy git workflow.
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| Preserve commit-diff driven processing | `✅` | The git workflow should keep commit-based change detection instead of being replaced by the local-folder pipeline. |
+| Align file mutations with `FileInstance` / `FileContent` model | `✅` | Incremental sync now reuses `create_or_update_file()` for add/modify/rename target paths instead of creating bare legacy-style file rows. |
+| Replace hard delete with lifecycle-safe missing semantics | `✅` | Deleted paths and rename source paths now become `MISSING` and clear instance-owned extracted artifacts instead of being hard-deleted immediately. |
+| Keep async/concurrency refactor deferred | `✅` | The correctness refactor does not require moving the worker to the newer async pipeline shape yet. |
+| Rebuild only affected file-owned data on change | `✅` | Reparse clears instance-owned extracted artifacts before re-extraction, and the relationship-builder-owned cross-file relations are rebuilt repository-wide to avoid duplicate edges. |
+| Full git-workflow parity with the newer local-folder pipeline | `🚧` | Commit-based sync now respects the new file/content lifecycle model, but broader step parity with the main pipeline remains future work. |
+
+## Incremental Git Workflow Parity Audit (2026-03-18)
+
+`✅` covered, `🚧` missing/partial, `🧭` recommended next slice.
+
+| Pipeline Capability | Main Pipeline | Incremental Git Sync | Priority | Notes |
+| --- | --- | --- | --- | --- |
+| Commit diff detection | `🛑` | `✅` | `✅` | Unique strength of the git workflow; keep this path. |
+| File instance/content lifecycle correctness | `✅` | `✅` | `✅` | Landed in this slice. |
+| Parse + symbol/chunk extraction for changed files | `✅` | `✅` | `✅` | Incremental worker now reparses changed paths correctly. |
+| Cross-file relationship building | `✅` | `✅` | `✅` | Covered via repository-wide rebuild of relationship-builder-owned relations. |
+| API endpoint extraction | `✅` | `✅` | `✅` | Incremental worker now refreshes generated endpoint symbols repository-wide after changed-file parse. |
+| Reference building | `✅` | `🚧` | `🧭` | Incremental worker does not run `ReferenceBuilder`. |
+| Import relationship building | `✅` | `✅` | `✅` | Incremental worker now clears and rebuilds repo-scoped `IMPORTS` edges after changed-file parse. |
+| Call graph / `CALLS` + `USES` selective rebuild | `✅` | `✅` | `✅` | Incremental worker now runs `CallGraphBuilder` selectively for changed files. |
+| Dependency extraction | `✅` | `✅` | `✅` | Incremental worker now refreshes repository dependency manifests after changed-file processing. |
+| Config extraction | `✅` | `✅` | `✅` | Incremental worker now refreshes repository configuration entries after changed-file processing. |
+| Pattern detection | `✅` | `🚧` | `🚧` | Lower priority than relation/config/dependency parity. |
+| Outgoing call + event extraction | `✅` | `✅` | `✅` | Incremental worker now clears stale rows for touched file IDs and reruns combined extraction for changed active files. |
+| Embedding regeneration / reuse | `✅` | `✅` | `✅` | Incremental worker now regenerates embeddings for chunks owned by changed files. |
+| Service detection | `✅` | `🚧` | `🚧` | Useful after graph parity is restored; not first parity blocker. |
+| Service documentation | `✅` | `🚧` | `🚧` | Depends on service detection and richer graph parity. |
+| Module summaries | `✅` | `🚧` | `🚧` | Repository/module summary refresh is still absent in incremental git sync. |
+
+### Recommended Parity Order
+
+1. Restore graph/retrieval correctness parity for changed files:
+   - reference building
+2. Restore repository metadata parity:
+   - metadata parity landed in this slice
+3. Restore higher-level enrichment parity:
+   - pattern detection
+   - service detection
+   - service documentation
+   - module summaries
 
 ## Slice 1: Schema Reset And Model Rewrite
 

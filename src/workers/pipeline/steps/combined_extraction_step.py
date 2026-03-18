@@ -2,6 +2,7 @@ import time
 import asyncio
 from sqlalchemy import select
 from src.database.models import Repository, File
+from src.database.query_helpers import active_file_filter
 from src.extractors.outgoing_call_extractor import OutgoingCallExtractor
 from src.extractors.event_extractor import EventExtractor
 from src.utils.redis_logger import RedisLogPublisher
@@ -42,7 +43,11 @@ class CombinedExtractionStep(PipelineStep):
                 # Fetch next batch
                 stmt = (
                     select(File)
-                    .where(File.repository_id == ctx.repository_id, File.id > last_file_id)
+                    .where(
+                        File.repository_id == ctx.repository_id,
+                        File.id > last_file_id,
+                        active_file_filter(),
+                    )
                     .order_by(File.id)
                     .limit(50)
                 )

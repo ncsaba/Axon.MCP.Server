@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Symbol, File, Relation, Repository
+from src.database.query_helpers import active_file_filter
 from src.database.session import AsyncSessionLocal
 from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum
 from src.extractors.call_analyzer import JavaScriptCallAnalyzer, JavaCallAnalyzer, Call
@@ -78,6 +79,7 @@ class CallGraphBuilder:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind.in_([
                     SymbolKindEnum.METHOD, 
                     SymbolKindEnum.FUNCTION,

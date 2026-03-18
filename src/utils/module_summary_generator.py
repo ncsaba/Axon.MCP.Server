@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import File, ModuleSummary, Repository
+from src.database.query_helpers import active_file_filter
 from src.utils.llm_summarizer import LLMSummarizer
 from src.utils.logging_config import get_logger
 from src.utils.module_identifier import ModuleIdentifier, ModuleInfo
@@ -365,6 +366,7 @@ class ModuleSummaryGenerator:
                 select(File).where(
                     File.repository_id == repository_id,
                     File.path.in_(entry_point_paths),
+                    active_file_filter(),
                 )
             )
             files = result.scalars().all()
@@ -397,6 +399,7 @@ class ModuleSummaryGenerator:
                 .where(
                     File.repository_id == repository_id,
                     File.path.like(f"{module_path}%"),
+                    active_file_filter(),
                 )
                 .order_by(File.path)
             )
@@ -435,4 +438,3 @@ class ModuleSummaryGenerator:
             return "python_main"
         else:
             return "entry_point"
-

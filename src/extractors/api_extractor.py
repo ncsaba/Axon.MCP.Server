@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Symbol, File, Repository
+from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum, LanguageEnum, AccessModifierEnum
 from src.repository_sources import get_repository_source_registry
 from src.extractors.strategy_interfaces import EndpointExtractionStrategy
@@ -118,6 +119,7 @@ class ApiEndpointExtractor:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.CLASS
             )
         )
@@ -167,6 +169,7 @@ class ApiEndpointExtractor:
             .join(File, Symbol.file_id == File.id)
             .where(
                 File.repository_id == repository_id,
+                active_file_filter(),
                 Symbol.kind == SymbolKindEnum.ENDPOINT
             )
         )
@@ -467,6 +470,7 @@ class ApiEndpointExtractor:
             select(File).where(
                 File.repository_id == repository_id,
                 File.language == LanguageEnum.JAVA,
+                active_file_filter(),
             )
         )
         java_files = files_result.scalars().all()

@@ -1,22 +1,49 @@
 """Incremental repository synchronization using git diff."""
 
 import asyncio
-import hashlib
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import List, Optional
 from dataclasses import dataclass
-from datetime import datetime
+
 from git import Repo, GitCommandError
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Repository, File, Symbol, Relation, Chunk, Embedding
-from src.config.enums import RepositoryStatusEnum, SymbolKindEnum, LanguageEnum
+from src.database.models import (
+    Repository,
+    File,
+    Symbol,
+    Relation,
+    RepositoryIndexRun,
+    Dependency,
+    OutgoingApiCall,
+    PublishedEvent,
+    EventSubscription,
+    Chunk,
+)
+from src.config.enums import (
+    FileLifecycleStateEnum,
+    LanguageEnum,
+    RelationTypeEnum,
+    RepositoryIndexRunStatusEnum,
+    SymbolKindEnum,
+)
+from src.config.settings import get_settings
 from src.parsers import parse_file
+from src.extractors.api_extractor import ApiEndpointExtractor
+from src.extractors.call_graph_builder import CallGraphBuilder
+from src.extractors.config_extractor import ConfigExtractor
+from src.extractors.dependency_extractor import DependencyExtractor
+from src.extractors.event_extractor import EventExtractor
+from src.extractors.import_resolver import ImportRelationshipBuilder
 from src.extractors.knowledge_extractor import KnowledgeExtractor
 from src.extractors.relationship_builder import RelationshipBuilder
-from src.embeddings.generator import EmbeddingGenerator
+from src.extractors.outgoing_call_extractor import OutgoingCallExtractor
 from src.utils.logging_config import get_logger
+from src.workers.file_worker import create_or_update_file
+from src.workers.utils import _count_symbols
+from src.workers.embedding_worker import _generate_embeddings_async
 
 logger = get_logger(__name__)
 
@@ -42,6 +69,24 @@ class IncrementalSyncWorker:
         """
         self.session = session
         self.repo_cache_dir = repo_cache_dir
+
+    async def _allocate_repository_run(self, repository_id: int) -> RepositoryIndexRun:
+        """Allocate a repository-scoped run for incremental git processing."""
+        max_run_result = await self.session.execute(
+            select(func.max(RepositoryIndexRun.run_id)).where(
+                RepositoryIndexRun.repository_id == repository_id
+            )
+        )
+        next_run_id = int(max_run_result.scalar() or 0) + 1
+        run = RepositoryIndexRun(
+            repository_id=repository_id,
+            run_id=next_run_id,
+            status=RepositoryIndexRunStatusEnum.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        self.session.add(run)
+        await self.session.flush()
+        return run
     
     async def sync_repository_incremental(
         self,
@@ -68,7 +113,12 @@ class IncrementalSyncWorker:
         Returns:
             Dict with sync results
         """
+        repository_run: RepositoryIndexRun | None = None
         try:
+            repo = await self.session.get(Repository, repository_id)
+            if repo is None:
+                raise ValueError(f"Repository not found: {repository_id}")
+
             # Open git repository
             git_repo = Repo(repo_path)
             
@@ -105,43 +155,69 @@ class IncrementalSyncWorker:
                 repository_id=repository_id,
                 files_changed=len(changed_files)
             )
+
+            repository_run = await self._allocate_repository_run(repository_id)
             
             # Process changes
             files_processed = 0
             files_deleted = 0
             files_added = 0
             files_modified = 0
+            changed_file_ids: list[int] = []
+            removed_file_ids: list[int] = []
             
             for file_change in changed_files:
                 if file_change.change_type == 'D':
-                    # Deleted file
-                    await self._delete_file_data(repository_id, file_change.path)
+                    removed_file_id = await self._mark_file_missing(repository_id, file_change.path)
+                    if removed_file_id is not None:
+                        removed_file_ids.append(removed_file_id)
                     files_deleted += 1
                 elif file_change.change_type in ['A', 'M']:
-                    # Added or modified file
                     full_path = repo_path / file_change.path
                     if full_path.exists():
-                        await self._reparse_file(repository_id, file_change.path, full_path)
+                        file_record = await self._reparse_file(
+                            repository_id,
+                            file_change.path,
+                            full_path,
+                            repo_path,
+                            run_id=repository_run.run_id,
+                        )
+                        changed_file_ids.append(file_record.id)
                         if file_change.change_type == 'A':
                             files_added += 1
                         else:
                             files_modified += 1
                         files_processed += 1
                 elif file_change.change_type == 'R':
-                    # Renamed file
                     if file_change.old_path:
-                        await self._handle_rename(
+                        removed_file_id, file_record = await self._handle_rename(
                             repository_id,
                             file_change.old_path,
                             file_change.path,
-                            repo_path / file_change.path
+                            repo_path / file_change.path,
+                            repo_path,
+                            run_id=repository_run.run_id,
                         )
+                        if removed_file_id is not None:
+                            removed_file_ids.append(removed_file_id)
+                        changed_file_ids.append(file_record.id)
                         files_modified += 1
                         files_processed += 1
+
+            if changed_file_ids or removed_file_ids:
+                await self.rebuild_relationships_for_files(repository_id, changed_file_ids)
+                await self._run_post_parse_parity_stages(
+                    repository_id=repository_id,
+                    repo_path=repo_path,
+                    changed_file_ids=changed_file_ids,
+                    removed_file_ids=removed_file_ids,
+                )
             
-            # Update repository metadata
+            await self._update_repository_statistics(repository_id)
             repo.last_commit_sha = latest_commit
-            repo.last_synced_at = datetime.utcnow()
+            repo.last_synced_at = datetime.now(UTC)
+            repository_run.status = RepositoryIndexRunStatusEnum.SUCCEEDED
+            repository_run.completed_at = datetime.now(UTC)
             await self.session.commit()
             
             logger.info(
@@ -165,6 +241,17 @@ class IncrementalSyncWorker:
             }
             
         except Exception as e:
+            if repository_run is not None:
+                try:
+                    await self.session.rollback()
+                    repository_run = await self.session.get(RepositoryIndexRun, repository_run.id)
+                    if repository_run is not None:
+                        repository_run.status = RepositoryIndexRunStatusEnum.FAILED
+                        repository_run.completed_at = datetime.now(UTC)
+                        repository_run.failure_reason = str(e)
+                        await self.session.commit()
+                except Exception:  # noqa: BLE001
+                    logger.warning("incremental_sync_failed_to_record_run_failure", repository_id=repository_id)
             logger.error(
                 "incremental_sync_failed",
                 repository_id=repository_id,
@@ -240,17 +327,10 @@ class IncrementalSyncWorker:
         
         return changes
     
-    async def _delete_file_data(self, repository_id: int, file_path: str):
-        """
-        Delete all data for a file.
-        
-        Args:
-            repository_id: Repository ID
-            file_path: Path to file within repository
-        """
-        logger.info("deleting_file_data", repository_id=repository_id, file_path=file_path)
-        
-        # Get file record
+    async def _mark_file_missing(self, repository_id: int, file_path: str) -> int | None:
+        """Mark a path as missing and remove active file-owned graph artifacts."""
+        logger.info("marking_file_missing", repository_id=repository_id, file_path=file_path)
+
         result = await self.session.execute(
             select(File).where(
                 File.repository_id == repository_id,
@@ -258,19 +338,29 @@ class IncrementalSyncWorker:
             )
         )
         file_record = result.scalar_one_or_none()
-        
-        if file_record:
-            # Delete file (cascades to symbols, chunks, embeddings via foreign keys)
-            await self.session.delete(file_record)
-            await self.session.commit()
-            
-            logger.info("file_data_deleted", repository_id=repository_id, file_path=file_path)
+
+        if not file_record:
+            return None
+
+        await self._clear_file_owned_artifacts(file_record.id)
+        file_record.lifecycle_state = FileLifecycleStateEnum.MISSING
+        file_record.missing_since = file_record.missing_since or datetime.now(UTC)
+        file_record.last_seen_at = datetime.now(UTC)
+        await self.session.flush()
+        return int(file_record.id)
+
+    async def _clear_file_owned_artifacts(self, file_id: int) -> None:
+        """Clear instance-scoped extracted data before reparse or missing transition."""
+        await self.session.execute(delete(Symbol).where(Symbol.file_id == file_id))
+        await self.session.execute(delete(Dependency).where(Dependency.file_id == file_id))
     
     async def _reparse_file(
         self,
         repository_id: int,
         file_path: str,
-        full_file_path: Path
+        full_file_path: Path,
+        repo_path: Path,
+        run_id: int | None = None,
     ):
         """
         Re-parse a single file and update all related data.
@@ -283,25 +373,18 @@ class IncrementalSyncWorker:
         logger.info("reparsing_file", repository_id=repository_id, file_path=file_path)
         
         try:
-            # Get existing file record
-            result = await self.session.execute(
-                select(File).where(
-                    File.repository_id == repository_id,
-                    File.path == file_path
-                )
+            repo = await self.session.get(Repository, repository_id)
+            if repo is None:
+                raise ValueError(f"Repository not found: {repository_id}")
+
+            file_record = await create_or_update_file(
+                self.session,
+                repository_id,
+                full_file_path,
+                repo_path,
+                run_id=run_id,
             )
-            file_record = result.scalar_one_or_none()
-            
-            if file_record:
-                # Delete existing symbols for this file
-                # This will cascade to relations, chunks, and embeddings
-                await self.session.execute(
-                    delete(Symbol).where(Symbol.file_id == file_record.id)
-                )
-                await self.session.commit()
-            else:
-                # Create new file record
-                file_record = await self._create_file_record(repository_id, file_path, full_file_path)
+            await self._clear_file_owned_artifacts(file_record.id)
             
             # Parse file
             parse_result = await asyncio.to_thread(parse_file, full_file_path)
@@ -312,24 +395,14 @@ class IncrementalSyncWorker:
                 parse_result,
                 file_record.id
             )
-            
-            # Update file metadata
-            try:
-                content = full_file_path.read_text(errors='ignore')
-                file_record.content_hash = hashlib.sha256(content.encode('utf-8', errors='ignore')).hexdigest()
-            except Exception:
-                pass
 
-            file_record.symbol_count = extraction_result.symbols_extracted
-            file_record.line_count = parse_result.parse_duration_ms  # Store actual line count if available
-            
-            await self.session.commit()
+            await self.session.flush()
             
             logger.info(
                 "file_reparsed",
                 repository_id=repository_id,
                 file_path=file_path,
-                symbols_extracted=extraction_result.symbols_extracted
+                symbols_extracted=extraction_result.symbols_created
             )
             
             return file_record
@@ -349,8 +422,10 @@ class IncrementalSyncWorker:
         repository_id: int,
         old_path: str,
         new_path: str,
-        full_file_path: Path
-    ):
+        full_file_path: Path,
+        repo_path: Path,
+        run_id: int | None = None,
+    ) -> tuple[int | None, File]:
         """
         Handle file rename.
         
@@ -367,60 +442,15 @@ class IncrementalSyncWorker:
             new_path=new_path
         )
         
-        # Get old file record
-        result = await self.session.execute(
-            select(File).where(
-                File.repository_id == repository_id,
-                File.path == old_path
-            )
+        removed_file_id = await self._mark_file_missing(repository_id, old_path)
+        file_record = await self._reparse_file(
+            repository_id,
+            new_path,
+            full_file_path,
+            repo_path,
+            run_id=run_id,
         )
-        file_record = result.scalar_one_or_none()
-        
-        if file_record:
-            # Update path
-            file_record.path = new_path
-            await self.session.commit()
-            
-            # Reparse to update line numbers and symbols
-            await self._reparse_file(repository_id, new_path, full_file_path)
-        else:
-            # File not found, treat as new file
-            await self._reparse_file(repository_id, new_path, full_file_path)
-    
-    async def _create_file_record(
-        self,
-        repository_id: int,
-        file_path: str,
-        full_file_path: Path
-    ) -> File:
-        """Create a new file record."""
-        # Determine language
-        language = self._detect_language(full_file_path)
-        
-        # Calculate content hash for module summary optimization
-        try:
-            content = full_file_path.read_text(errors='ignore')
-            line_count = len(content.splitlines())
-            content_hash = hashlib.sha256(content.encode('utf-8', errors='ignore')).hexdigest()
-        except Exception as e:
-            logger.warning("file_read_failed", file_path=str(full_file_path), error=str(e))
-            line_count = 0
-            content_hash = ""
-        
-        file_record = File(
-            repository_id=repository_id,
-            path=file_path,
-            language=language,
-            symbol_count=0,
-            line_count=line_count,
-            content_hash=content_hash
-        )
-        
-        self.session.add(file_record)
-        await self.session.commit()
-        await self.session.refresh(file_record)
-        
-        return file_record
+        return removed_file_id, file_record
     
     def _detect_language(self, file_path: Path) -> LanguageEnum:
         """Detect language from file extension."""
@@ -468,29 +498,226 @@ class IncrementalSyncWorker:
             repository_id=repository_id,
             file_count=len(file_ids)
         )
-        
-        # Get all symbols in these files
-        result = await self.session.execute(
-            select(Symbol).where(Symbol.file_id.in_(file_ids))
+
+        relevant_relation_types = [
+            RelationTypeEnum.INHERITS,
+            RelationTypeEnum.IMPLEMENTS,
+            RelationTypeEnum.REFERENCES,
+            RelationTypeEnum.USES,
+        ]
+
+        repository_symbol_ids_result = await self.session.execute(
+            select(Symbol.id).join(File).where(
+                File.repository_id == repository_id,
+                File.lifecycle_state == FileLifecycleStateEnum.ACTIVE,
+            )
         )
-        affected_symbols = result.scalars().all()
-        affected_symbol_ids = [s.id for s in affected_symbols]
-        
-        # Delete existing relationships involving these symbols
+        repository_symbol_ids = [int(symbol_id) for symbol_id in repository_symbol_ids_result.scalars().all()]
+        if not repository_symbol_ids:
+            return
+
+        # Rebuild relationship-builder-owned relation types repository-wide to avoid duplicates.
         await self.session.execute(
             delete(Relation).where(
-                (Relation.from_symbol_id.in_(affected_symbol_ids)) |
-                (Relation.to_symbol_id.in_(affected_symbol_ids))
+                Relation.relation_type.in_(relevant_relation_types),
+                (Relation.from_symbol_id.in_(repository_symbol_ids)) |
+                (Relation.to_symbol_id.in_(repository_symbol_ids))
             )
         )
         await self.session.commit()
-        
+
         # Rebuild relationships
         relationship_builder = RelationshipBuilder(self.session)
-        await relationship_builder.build_relationships(repository_id)
+        await relationship_builder.build_cross_file_relationships(repository_id)
         
         logger.info(
             "relationships_rebuilt",
             repository_id=repository_id,
-            affected_symbols=len(affected_symbol_ids)
+            affected_symbols=len(repository_symbol_ids)
         )
+
+    async def _update_repository_statistics(self, repository_id: int) -> None:
+        """Refresh repository counters from active file instances after incremental sync."""
+        repo = await self.session.get(Repository, repository_id)
+        if repo is None:
+            return
+
+        size_result = await self.session.execute(
+            select(func.sum(File.size_bytes)).where(
+                File.repository_id == repository_id,
+                File.lifecycle_state == FileLifecycleStateEnum.ACTIVE,
+            )
+        )
+        total_files_result = await self.session.execute(
+            select(func.count(File.id)).where(
+                File.repository_id == repository_id,
+                File.lifecycle_state == FileLifecycleStateEnum.ACTIVE,
+            )
+        )
+
+        repo.size_bytes = int(size_result.scalar() or 0)
+        repo.total_files = int(total_files_result.scalar() or 0)
+        repo.total_symbols = await _count_symbols(self.session, repository_id)
+
+    async def _run_post_parse_parity_stages(
+        self,
+        repository_id: int,
+        repo_path: Path,
+        changed_file_ids: List[int],
+        removed_file_ids: List[int],
+    ) -> None:
+        """Run the first post-parse parity stages needed for git-sync correctness."""
+        settings = get_settings()
+
+        if settings.extract_imports:
+            await self._rebuild_import_relationships(repository_id, repo_path)
+
+        if settings.build_call_graph:
+            await self._rebuild_call_graph(repository_id, changed_file_ids)
+
+        if settings.extract_api_endpoints:
+            await self._refresh_api_endpoints(repository_id)
+
+        await self._refresh_outgoing_calls_and_events(
+            repository_id=repository_id,
+            repo_path=repo_path,
+            changed_file_ids=changed_file_ids,
+            removed_file_ids=removed_file_ids,
+        )
+
+        if settings.extract_dependencies:
+            await self._refresh_dependencies(repository_id, repo_path)
+
+        if settings.extract_configuration:
+            await self._refresh_configuration(repository_id, repo_path)
+
+        await self._refresh_embeddings(repository_id, changed_file_ids)
+
+    async def _rebuild_import_relationships(self, repository_id: int, repo_path: Path) -> None:
+        """Refresh IMPORTS edges repository-wide to match pipeline behavior."""
+        repository_symbol_ids_result = await self.session.execute(
+            select(Symbol.id).join(File).where(
+                File.repository_id == repository_id,
+                File.lifecycle_state == FileLifecycleStateEnum.ACTIVE,
+            )
+        )
+        repository_symbol_ids = [int(symbol_id) for symbol_id in repository_symbol_ids_result.scalars().all()]
+        await self.session.execute(
+            delete(Relation).where(
+                Relation.relation_type == RelationTypeEnum.IMPORTS,
+                (Relation.from_symbol_id.in_(repository_symbol_ids)) |
+                (Relation.to_symbol_id.in_(repository_symbol_ids)),
+            )
+        )
+        await self.session.flush()
+
+        import_builder = ImportRelationshipBuilder(self.session, repo_path)
+        await import_builder.build_import_relationships(repository_id)
+
+    async def _rebuild_call_graph(self, repository_id: int, changed_file_ids: List[int]) -> None:
+        """Refresh call graph relationships for changed files."""
+        if not changed_file_ids:
+            return
+        call_graph_builder = CallGraphBuilder(self.session)
+        await call_graph_builder.build_call_relationships(
+            repository_id,
+            changed_file_ids=changed_file_ids,
+        )
+
+    async def _refresh_api_endpoints(self, repository_id: int) -> None:
+        """Refresh generated endpoint symbols repository-wide to avoid duplicates."""
+        endpoint_symbol_ids_result = await self.session.execute(
+            select(Symbol.id).join(File).where(
+                File.repository_id == repository_id,
+                Symbol.kind == SymbolKindEnum.ENDPOINT,
+            )
+        )
+        endpoint_symbol_ids = [int(symbol_id) for symbol_id in endpoint_symbol_ids_result.scalars().all()]
+        if endpoint_symbol_ids:
+            await self.session.execute(delete(Symbol).where(Symbol.id.in_(endpoint_symbol_ids)))
+            await self.session.flush()
+
+        api_extractor = ApiEndpointExtractor(self.session)
+        endpoints = await api_extractor.extract_endpoints(repository_id)
+        await api_extractor.save_endpoints(endpoints)
+        await self.session.flush()
+
+    async def _refresh_outgoing_calls_and_events(
+        self,
+        repository_id: int,
+        repo_path: Path,
+        changed_file_ids: List[int],
+        removed_file_ids: List[int],
+    ) -> None:
+        """Refresh outgoing calls and events for changed files and clear stale rows for removed files."""
+        touched_file_ids = sorted({int(file_id) for file_id in changed_file_ids + removed_file_ids})
+        if not touched_file_ids:
+            return
+
+        await self.session.execute(delete(OutgoingApiCall).where(OutgoingApiCall.file_id.in_(touched_file_ids)))
+        await self.session.execute(delete(PublishedEvent).where(PublishedEvent.file_id.in_(touched_file_ids)))
+        await self.session.execute(delete(EventSubscription).where(EventSubscription.file_id.in_(touched_file_ids)))
+        await self.session.flush()
+
+        outgoing_extractor = OutgoingCallExtractor(self.session)
+        event_extractor = EventExtractor(self.session)
+
+        result = await self.session.execute(
+            select(File).where(
+                File.repository_id == repository_id,
+                File.id.in_(changed_file_ids),
+                File.lifecycle_state == FileLifecycleStateEnum.ACTIVE,
+            )
+        )
+        changed_files = result.scalars().all()
+
+        for file_obj in changed_files:
+            file_path = repo_path / file_obj.path
+            if not file_path.exists():
+                continue
+
+            try:
+                content = await asyncio.to_thread(file_path.read_text, encoding="utf-8", errors="ignore")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "incremental_sync_post_parse_file_read_failed",
+                    repository_id=repository_id,
+                    file_path=file_obj.path,
+                    error=str(exc),
+                )
+                continue
+
+            for call in await outgoing_extractor.extract_from_file(file_obj, repo_path, content=content):
+                self.session.add(call)
+
+            events = await event_extractor.extract_from_file(file_obj, repo_path, content=content)
+            for event in events["published"]:
+                self.session.add(event)
+            for subscription in events["subscribed"]:
+                self.session.add(subscription)
+
+        await self.session.flush()
+
+    async def _refresh_dependencies(self, repository_id: int, repo_path: Path) -> None:
+        """Refresh repository dependency manifests to match main pipeline behavior."""
+        extractor = DependencyExtractor(self.session)
+        await extractor.extract_dependencies(repository_id, repo_path)
+
+    async def _refresh_configuration(self, repository_id: int, repo_path: Path) -> None:
+        """Refresh repository configuration entries to match main pipeline behavior."""
+        extractor = ConfigExtractor(self.session)
+        await extractor.extract_configuration(repository_id, repo_path)
+
+    async def _refresh_embeddings(self, repository_id: int, changed_file_ids: List[int]) -> None:
+        """Generate embeddings for chunks produced by changed active files."""
+        if not changed_file_ids:
+            return
+
+        chunk_ids_result = await self.session.execute(
+            select(Chunk.id).where(Chunk.file_id.in_(changed_file_ids))
+        )
+        chunk_ids = [int(chunk_id) for chunk_id in chunk_ids_result.scalars().all()]
+        if not chunk_ids:
+            return
+
+        await _generate_embeddings_async(chunk_ids)

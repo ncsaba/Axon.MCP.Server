@@ -8,7 +8,7 @@ This fork prioritizes:
 - Integration-first validation with real local infrastructure
 - Python-only runtime toolchain (no C# / Roslyn path)
 
-## Current Baseline (2026-03-11)
+## Current Baseline (2026-03-18)
 
 `✅` complete/available, `🚧` incomplete/partial.
 
@@ -18,6 +18,7 @@ This fork prioritizes:
 | Java parser routing | `✅` | Active and functioning in parser factory. |
 | Schema baseline reset | `✅` | Clean baseline established for current development track. |
 | Local infra alignment | `✅` | PostgreSQL 17 + pgvector, Redis, manual Celery worker. |
+| File instance/content lifecycle foundation | `🚧` | Run stamping, missing finalization, cleanup worker, and lifecycle tests are in place; remaining read-path cleanup is the current branch priority. |
 | Java semantic relation depth | `🚧` | Not yet at target for imports/calls/endpoints/dependencies. |
 
 ## Capability Snapshot
@@ -53,10 +54,11 @@ Adopt selectively from `external-inspiration/kilocode`:
 
 | Phase | Status | Focus | Risk |
 | --- | --- | --- | --- |
-| Phase 1: Parser platform consolidation | `🧭` | Capability matrix integration, strategy interfaces, fallback policy. | `🔥` temporary extractor regressions during refactor. |
-| Phase 2: Java semantic completeness (parity gate) | `🧭` | Reach at least kilocode-equivalent Java capability coverage for imports/calls/endpoints/dependencies. | `🔥` feature surface parity can expose parser/query gaps. |
-| Phase 3: Axon differentiation (surpass gate) | `🧭` | Exceed kilocode baseline via graph-native relations, richer traversal context, and MCP retrieval quality. | `🔥` requires representative benchmark repos and stable scoring criteria. |
-| Phase 4: Integration validation at scale | `🧭` | Repeated end-to-end runs on real Java repositories. | `🔥` infra/runtime variance can mask parser issues. |
+| Phase 1: File instance/content separation | `🧭` | Finish lifecycle-safe query semantics, remaining active-instance read-path cleanup, and content-owned artifact consolidation. | `🔥` stale lifecycle rows can leak into user-facing outputs until query surfaces are classified deliberately. |
+| Phase 2: Parser platform consolidation | `🧭` | Capability matrix integration, strategy interfaces, fallback policy. | `🔥` temporary extractor regressions during refactor. |
+| Phase 3: Java semantic completeness (parity gate) | `🧭` | Reach at least kilocode-equivalent Java capability coverage for imports/calls/endpoints/dependencies. | `🔥` feature surface parity can expose parser/query gaps. |
+| Phase 4: Axon differentiation (surpass gate) | `🧭` | Exceed kilocode baseline via graph-native relations, richer traversal context, and MCP retrieval quality. | `🔥` requires representative benchmark repos and stable scoring criteria. |
+| Phase 5: Integration validation at scale | `🧭` | Repeated end-to-end runs on real Java repositories. | `🔥` infra/runtime variance can mask parser issues. |
 
 ## Near-Term Execution Queue
 
@@ -65,11 +67,12 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Item | Status |
 | --- | --- |
 | Parser capability matrix document at `docs/architecture/parser_capability_matrix.md` | `✅` |
-| File instance/content architecture design and deleted-file policy decision | `🧭` |
+| File instance/content architecture design and deleted-file policy decision | `✅` |
 | File instance/content implementation plan | `✅` |
-| Foundational file instance/content runtime slice (runs + instance/content upsert + missing finalization) | `🚧` |
+| Foundational file instance/content runtime slice (runs + instance/content upsert + missing finalization) | `✅` |
 | Lifecycle validation + remaining active-instance read-path cleanup | `🧭` |
-| Sync-worker lifecycle validation (successful vs failed run finalization) | `🧭` |
+| Sync-worker lifecycle validation (successful vs failed run finalization) | `✅` |
+| Remaining query-surface classification for `File`/`FileInstance` callers | `🧭` |
 | Complete Java feature coverage to kilocode-equivalent baseline (parity gate) | `🧭` |
 | Java import parity expansion (package wildcard + static wildcard/member imports) | `✅` |
 | Java call parity expansion (qualified static calls + overload arity resolution) | `✅` |
@@ -80,7 +83,7 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Streaming indexing implementation plan (slice-by-slice execution) | `✅` |
 | Approve incremental indexing implementation contract | `🧭` |
 | Execute streaming indexing slices (metadata contract -> gate -> parse fanout -> embed -> aggregate) | `🧭` |
-| Implement file instance/content separation vertical slice (chunks + embeddings first) | `🧭` |
+| Implement file instance/content separation vertical slice (chunks + embeddings first) | `🚧` |
 | Introduce interfaces for import/call/dependency extraction by language | `🚧` |
 | Implement first Java semantic extractor set | `🚧` |
 | Add integration checks focused on relation creation quality | `🚧` |
