@@ -64,19 +64,19 @@ Current request shape:
 
 ```json
 {
-  "provider": "GITLAB",
+  "provider": "GIT",
   "name": "axon-src",
   "path_with_namespace": "team/axon-src",
   "url": "https://gitlab.example.org/team/axon-src.git",
   "clone_url": "https://gitlab.example.org/team/axon-src.git",
-  "default_branch": "main",
-  "gitlab_project_id": 1234
+  "default_branch": "main"
 }
 ```
 
 Notes:
 - This endpoint exists and is the main registration API.
-- The runtime has a generic git/local-directory source abstraction, but the current public provider enum is still `GITLAB`-only.
+- Supported providers are now `GITLAB`, `GITHUB`, and provider-neutral `GIT`.
+- `gitlab_project_id` remains optional and is only used for `GITLAB`.
 - A successful create request also enqueues the first background sync automatically.
 
 #### `GET /repositories/discover/{group_id}`
@@ -86,8 +86,8 @@ Discover GitLab repositories for a group and identify tracked/untracked entries.
 Register multiple repositories and enqueue sync for newly added entries.
 
 Notes:
-- The current implementation accepts GitLab-shaped payloads only.
-- Generic Git/GitHub registration is not documented or supported end-to-end yet, even though the runtime sync layer already has generic git primitives.
+- Bulk registration accepts the same provider-neutral payload shape as single-repository create.
+- GitLab discovery remains the only discovery-oriented bulk source today.
 
 #### `POST /repositories/{id}/sync`
 Manually trigger a full synchronization (pull, parse, analyze) for a repository.
@@ -106,7 +106,8 @@ Get representative repository sample data.
 
 Status note:
 - Repository registration is API-driven, not config-only.
-- Periodic polling for new commits is not exposed as a repository API yet; sync is currently triggered manually or by internal worker flows.
+- Periodic polling for new commits is handled internally by Celery Beat; there is no separate repository polling REST endpoint.
+- The normal sync path now performs a full initial index, then prefers incremental commit-diff refresh when the repository already has a known `last_commit_sha`.
 
 ### 🔐 Authentication
 

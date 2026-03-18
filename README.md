@@ -6,7 +6,7 @@ Axon is a code-indexing MCP server focused on Python, Java, JavaScript/TypeScrip
 
 - Parser stack: Tree-sitter-based language parsers
 - Runtime stack: FastAPI + Celery + PostgreSQL (pgvector) + Redis
-- Supported repository providers: GitLab
+- Supported repository providers: GitLab, GitHub, and generic Git remotes
 - Primary output: symbols, relations, call traversal context, dependency/config/documentation search
 
 ## Language Scope

@@ -13,16 +13,18 @@ from src.workers.celery_app import celery_app
 from src.workers.utils import _run_with_engine_cleanup, _count_symbols
 from src.workers.summary_worker import _generate_module_summaries
 from src.database.session import AsyncSessionLocal
-from src.database.models import Repository, Job, FileInstance as File, RepositoryIndexRun
+from src.database.models import Commit, Repository, Job, FileInstance as File, RepositoryIndexRun
 from src.config.enums import (
     RepositoryStatusEnum,
     JobStatusEnum,
     FileLifecycleStateEnum,
     RepositoryIndexRunStatusEnum,
 )
+from src.repository_sources import get_repository_source_registry
 from src.utils.logging_config import get_logger
 from src.utils.redis_logger import RedisLogPublisher
 from src.workers.distributed_lock import get_distributed_lock
+from src.workers.incremental_sync import IncrementalSyncWorker
 from src.parsers import ParserFactory
 
 logger = get_logger(__name__)
@@ -64,6 +66,114 @@ async def _mark_missing_file_instances(session, repository_id: int, current_run_
             updated_at=now,
         )
     )
+
+
+async def _try_incremental_sync(
+    session,
+    repository_id: int,
+    repo: Repository,
+    publisher: RedisLogPublisher,
+):
+    """Attempt git-aware incremental sync and return result when handled."""
+    if not repo.last_commit_sha:
+        return None
+
+    source = get_repository_source_registry().resolve(repo)
+    try:
+        repo_path = await asyncio.to_thread(source.sync, repo)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "incremental_sync_clone_update_failed_falling_back_to_full",
+            repository_id=repository_id,
+            error=str(exc),
+        )
+        await publisher.publish_log(
+            repository_id,
+            f"Incremental refresh preflight failed, falling back to full sync: {str(exc)}",
+            level="WARNING",
+        )
+        return None
+
+    worker = IncrementalSyncWorker(session, repo_path.parent)
+    try:
+        result = await worker.sync_repository_incremental(repository_id, repo, repo_path)
+    except Exception as exc:  # noqa: BLE001
+        await session.rollback()
+        logger.warning(
+            "incremental_sync_failed_falling_back_to_full",
+            repository_id=repository_id,
+            error=str(exc),
+        )
+        await publisher.publish_log(
+            repository_id,
+            f"Incremental refresh failed, falling back to full sync: {str(exc)}",
+            level="WARNING",
+        )
+        return None
+
+    repo = await session.get(Repository, repository_id)
+    if repo is None:
+        return None
+    try:
+        commit_info = source.get_head_commit(repo_path)
+        if commit_info:
+            stmt = select(Commit).where(Commit.sha == commit_info["sha"])
+            existing_commit = (await session.execute(stmt)).scalar_one_or_none()
+            if existing_commit is None:
+                session.add(
+                    Commit(
+                        repository_id=repository_id,
+                        sha=commit_info["sha"],
+                        message=commit_info["message"],
+                        author_name=commit_info["author_name"],
+                        author_email=commit_info["author_email"],
+                        committed_date=commit_info["committed_date"],
+                        parent_sha=commit_info["parent_sha"],
+                    )
+                )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "incremental_sync_commit_metadata_refresh_failed",
+            repository_id=repository_id,
+            error=str(exc),
+        )
+    repo.status = RepositoryStatusEnum.COMPLETED
+    repo.last_synced_at = datetime.now(UTC)
+    await session.flush()
+    result["sync_mode"] = "incremental"
+    result["repository_source"] = source.source_kind
+    return result
+
+
+@celery_app.task(bind=True, name="src.workers.tasks.poll_repositories_for_updates")
+def poll_repositories_for_updates(self):
+    """Enqueue refresh for tracked repositories on the polling cadence."""
+    return asyncio.run(_run_with_engine_cleanup(_poll_repositories_for_updates_async()))
+
+
+async def _poll_repositories_for_updates_async():
+    """Async implementation of repository polling scheduler."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Repository.id).where(
+                Repository.status.in_(
+                    [
+                        RepositoryStatusEnum.PENDING,
+                        RepositoryStatusEnum.COMPLETED,
+                        RepositoryStatusEnum.FAILED,
+                    ]
+                )
+            )
+        )
+        repository_ids = [int(repository_id) for repository_id in result.scalars().all()]
+
+    queued = 0
+    for repository_id in repository_ids:
+        sync_repository.delay(repository_id)
+        queued += 1
+
+    logger.info("repository_poll_enqueued", repositories=queued)
+    return {"status": "queued", "repositories_enqueued": queued}
 
 
 @celery_app.task(bind=True, name="src.workers.tasks.sync_repository", max_retries=3, time_limit=14400)
@@ -286,6 +396,40 @@ async def _sync_repository_async(task, repository_id: int):
                         job_id=job.id
                     )
                     await publisher.publish_log(repository_id, f"Repository sync job created (Job ID: {job.id})", details={"job_id": job.id})
+
+                    incremental_result = await _try_incremental_sync(
+                        session=session,
+                        repository_id=repository_id,
+                        repo=repo,
+                        publisher=publisher,
+                    )
+                    if incremental_result is not None:
+                        repo = await session.get(Repository, repository_id)
+                        job_result = await session.execute(select(Job).where(Job.id == job_id))
+                        job = job_result.scalar_one()
+                        job.status = JobStatusEnum.COMPLETED
+                        job.completed_at = datetime.now(UTC)
+                        job.duration_seconds = int(
+                            (job.completed_at - job_started_at_ts).total_seconds()
+                        )
+                        job.job_metadata = {
+                            **(job.job_metadata or {}),
+                            **incremental_result,
+                        }
+                        await session.commit()
+                        await publisher.publish_log(
+                            repository_id,
+                            "Repository refresh completed successfully.",
+                            level="SUCCESS",
+                            details=incremental_result,
+                        )
+                        logger.info(
+                            "repository_incremental_sync_completed",
+                            repository_id=repository_id,
+                            result=incremental_result,
+                            duration_seconds=job.duration_seconds,
+                        )
+                        return incremental_result
                 
                     # Initialize Pipeline Context
                     from src.workers.pipeline.context import PipelineContext, PipelineMetrics

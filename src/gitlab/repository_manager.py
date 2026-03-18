@@ -8,7 +8,7 @@ from urllib.parse import quote, urlparse
 from git import Repo, GitCommandError
 
 from src.config.settings import get_settings
-from src.config.enums import LanguageEnum
+from src.config.enums import LanguageEnum, SourceControlProviderEnum
 from src.utils.logging_config import get_logger
 from src.utils.metrics import repository_sync_duration, repository_sync_total
 
@@ -36,6 +36,7 @@ class RepositoryManager:
         repo_name: str,
         branch: str = "main",
         depth: Optional[int] = 1,
+        provider: Optional[SourceControlProviderEnum] = None,
     ) -> Path:
         """
         Clone repository or update if already exists.
@@ -55,10 +56,10 @@ class RepositoryManager:
             try:
                 if repo_path.exists():
                     logger.info("repository_updating", repo_name=repo_name, path=str(repo_path))
-                    repo_path = self._update_repository(repo_path, branch)
+                    repo_path = self._update_repository(repo_url, repo_path, branch, provider)
                 else:
                     logger.info("repository_cloning", repo_name=repo_name, path=str(repo_path))
-                    repo_path = self._clone_repository(repo_url, repo_path, branch, depth)
+                    repo_path = self._clone_repository(repo_url, repo_path, branch, depth, provider)
 
                 repository_sync_total.labels(status="success").inc()
                 logger.info("repository_sync_successful", repo_name=repo_name)
@@ -74,31 +75,53 @@ class RepositoryManager:
                 )
                 raise
 
+    def _build_git_transport(
+        self,
+        repo_url: str,
+        provider: Optional[SourceControlProviderEnum],
+    ) -> tuple[str, dict[str, str], str]:
+        """Return clone/fetch URL, environment, and the canonical remote URL to persist."""
+        env = os.environ.copy()
+        parsed_url = urlparse(repo_url)
+
+        if parsed_url.scheme == "https":
+            env["GIT_TERMINAL_PROMPT"] = "0"
+            auth_netloc = None
+
+            if provider == SourceControlProviderEnum.GITLAB and get_settings().gitlab_token:
+                safe_token = quote(get_settings().gitlab_token, safe="")
+                auth_netloc = f"oauth2:{safe_token}@{parsed_url.netloc}"
+            elif provider == SourceControlProviderEnum.GITHUB and get_settings().github_token:
+                safe_token = quote(get_settings().github_token, safe="")
+                auth_netloc = f"x-access-token:{safe_token}@{parsed_url.netloc}"
+            elif provider == SourceControlProviderEnum.GIT and get_settings().generic_git_token:
+                username = quote(get_settings().generic_git_username or "git", safe="")
+                token = quote(get_settings().generic_git_token, safe="")
+                auth_netloc = f"{username}:{token}@{parsed_url.netloc}"
+
+            authenticated_url = (
+                parsed_url._replace(netloc=auth_netloc).geturl()
+                if auth_netloc
+                else repo_url
+            )
+            return authenticated_url, env, repo_url
+
+        ssh_key_path = os.getenv("GITLAB_SSH_KEY_PATH", str(Path.home() / ".ssh" / "id_rsa"))
+        env[
+            "GIT_SSH_COMMAND"
+        ] = f"ssh -i {ssh_key_path} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+        return repo_url, env, repo_url
+
     def _clone_repository(
         self,
         repo_url: str,
         repo_path: Path,
         branch: str,
         depth: Optional[int],
+        provider: Optional[SourceControlProviderEnum],
     ) -> Path:
         """Clone a new repository using secure authentication."""
-        # Use Git credential helper to avoid exposing tokens in URLs/logs
-        env = os.environ.copy()
-
-        parsed_url = urlparse(repo_url)
-        if parsed_url.scheme == "https":
-            # Embed OAuth token in clone URL to ensure non-interactive authentication
-            env["GIT_TERMINAL_PROMPT"] = "0"
-            safe_token = quote(get_settings().gitlab_token, safe="")
-            token_netloc = f"oauth2:{safe_token}@{parsed_url.netloc}"
-            authenticated_url = parsed_url._replace(netloc=token_netloc).geturl()
-        else:
-            # Assume SSH - ensure SSH key is configured
-            ssh_key_path = os.getenv("GITLAB_SSH_KEY_PATH", str(Path.home() / ".ssh" / "id_rsa"))
-            env[
-                "GIT_SSH_COMMAND"
-            ] = f"ssh -i {ssh_key_path} -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
-            authenticated_url = repo_url
+        authenticated_url, env, canonical_remote_url = self._build_git_transport(repo_url, provider)
 
         clone_kwargs = {
             "branch": branch,
@@ -109,7 +132,9 @@ class RepositoryManager:
             clone_kwargs["depth"] = depth
 
         try:
-            Repo.clone_from(authenticated_url, str(repo_path), **clone_kwargs)
+            repo = Repo.clone_from(authenticated_url, str(repo_path), **clone_kwargs)
+            if authenticated_url != canonical_remote_url:
+                repo.remotes.origin.set_url(canonical_remote_url)
             logger.info("repository_cloned", repo_path=str(repo_path), method="secure_credentials")
             return repo_path
         except GitCommandError as e:  # noqa: BLE001
@@ -119,15 +144,28 @@ class RepositoryManager:
                 shutil.rmtree(repo_path)
             raise
 
-    def _update_repository(self, repo_path: Path, branch: str) -> Path:
+    def _update_repository(
+        self,
+        repo_url: str,
+        repo_path: Path,
+        branch: str,
+        provider: Optional[SourceControlProviderEnum],
+    ) -> Path:
         """Update existing repository."""
         try:
             repo = Repo(repo_path)
             origin = repo.remotes.origin
+            authenticated_url, env, canonical_remote_url = self._build_git_transport(repo_url, provider)
+            restore_remote_url = authenticated_url != canonical_remote_url
+            if restore_remote_url:
+                origin.set_url(authenticated_url)
 
-            # Fetch all branches from remote
-            # Use repo.git.fetch to fetch all branches from origin
-            repo.git.fetch("origin")
+            try:
+                with repo.git.custom_environment(**env):
+                    repo.git.fetch("origin")
+            finally:
+                if restore_remote_url:
+                    origin.set_url(canonical_remote_url)
 
             remote_branch_ref = f"origin/{branch}"
             
@@ -401,4 +439,3 @@ class RepositoryManager:
         except Exception as e:
             logger.error("failed_to_get_head_commit", repo_path=str(repo_path), error=str(e))
             return None
-

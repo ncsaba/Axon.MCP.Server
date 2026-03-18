@@ -25,9 +25,9 @@ The runtime layer is ahead of the public registration/API layer.
 
 Today:
 - runtime sync/index paths can resolve between generic git and local-directory sources
-- repository registration still uses a `GITLAB`-only public provider enum and GitLab-shaped API payloads
+- repository registration now accepts `GITLAB`, `GITHUB`, and `GIT`
 - MCP exposes repository read/navigation tools only; it does not expose repository registration or sync initiation
-- periodic repository polling is not part of this abstraction and is not implemented here
+- periodic repository polling exists, but it is orchestrated by the sync layer rather than this abstraction
 
 Practical takeaway:
 - this document describes the runtime source model
@@ -56,8 +56,8 @@ Practical takeaway:
 | Refactor runtime call sites to source resolver | `✅` | Pipeline/workers/extractors/MCP repository tool now use source registry |
 | Remove Azure runtime branches and discovery routes | `✅` | Azure discovery route/service paths removed from active runtime |
 | Validate end-to-end sync/indexing for git + local path | `🚧` | Unit + parity integration checks pass; benchmark local-directory e2e run pending |
-| Expose generic git source through public repository registration APIs | `🛑` | Not yet landed; current API/provider surface is still GitLab-shaped |
-| Add scheduled polling/orchestration for registered git repositories | `🛑` | Outside the current source-abstraction slice |
+| Expose generic git source through public repository registration APIs | `✅` | Public registration now accepts generic GitHub and Git providers |
+| Add scheduled polling/orchestration for registered git repositories | `✅` | Implemented in the sync/orchestration layer, not inside this abstraction |
 
 ## Local Directory Contract
 
@@ -68,7 +68,7 @@ Local source is encoded in repository metadata without schema expansion:
 - `path_with_namespace`: stable logical name used by APIs/UI
 
 Current caveat:
-- while the runtime resolver accepts this model, the current public create/bulk-add APIs are still oriented around GitLab provider values and GitLab discovery flows
+- the runtime resolver accepts this model, but GitLab discovery remains the only provider-specific discovery flow
 
 Resolver behavior:
 - If `clone_url` is local-path-like (`/abs/path`, `./rel/path`, or `file://...`), use `LocalDirectorySource`.

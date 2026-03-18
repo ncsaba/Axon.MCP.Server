@@ -41,6 +41,7 @@ This fork targets Python + Java + docs/config indexing with a graph-oriented cod
 - [Data Models](architecture/data_models.md)
 - [MCP Tools](api/mcp_tools.md)
 - [MCP Server Startup Guide](guides/mcp_server_startup.md)
+- [GitHub Repository Sync Scenario](guides/github_repository_sync_scenario.md)
 - [Semantic Search Embedding Runbook](guides/semantic_search_embedding_runbook.md)
 - [Setup Guide](guides/setup.md)
 - [Semantic Search Index Validation](validation/semantic_search_index_validation_20260318.md)

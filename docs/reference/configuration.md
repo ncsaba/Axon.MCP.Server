@@ -14,6 +14,9 @@ ENVIRONMENT=development
 GITLAB_URL=https://gitlab.example.org
 GITLAB_TOKEN=your_gitlab_token_here
 GITLAB_GROUP_ID=your_group_id  # Optional
+GITHUB_TOKEN=
+GENERIC_GIT_USERNAME=
+GENERIC_GIT_TOKEN=
 
 # Database Configuration
 DATABASE_URL=postgresql+asyncpg://axon:password@localhost:5432/axon_mcp
@@ -47,6 +50,10 @@ KEYCLOAK_AUDIENCES='[]'
 # Logging
 LOG_LEVEL=INFO
 LOG_FORMAT=json
+
+# Repository polling
+REPOSITORY_POLL_ENABLED=true
+REPOSITORY_POLL_INTERVAL_MINUTES=15
 ```
 
 ## Configuration Files
@@ -87,6 +94,25 @@ Explicitly deferred:
 
 See:
 - `docs/architecture/authentication_and_mcp_token_plan.md`
+
+## Repository Sync Settings
+
+Current shipped repository-sync controls:
+
+- `GITLAB_TOKEN`: used for GitLab HTTPS clone/update auth when needed
+- `GITHUB_TOKEN`: used for GitHub HTTPS clone/update auth when needed
+- `GENERIC_GIT_USERNAME` / `GENERIC_GIT_TOKEN`: optional HTTPS basic-auth pair for provider-neutral `GIT` remotes
+- `REPOSITORY_POLL_ENABLED`: enables the scheduled repository refresh loop
+- `REPOSITORY_POLL_INTERVAL_MINUTES`: polling cadence for tracked repositories
+
+Current status:
+- repository registration accepts `GITLAB`, `GITHUB`, and `GIT`
+- new registrations trigger the first sync automatically
+- the scheduled poller re-enqueues tracked repositories automatically
+- the main sync path prefers incremental commit-diff refresh after the initial full index when `last_commit_sha` is known
+
+See:
+- `docs/architecture/repository_registration_and_sync_architecture.md`
 
 ## Database Separation
 

@@ -93,6 +93,9 @@ class Settings(BaseSettings):
     gitlab_token: str = ""
     gitlab_group_id: Optional[str] = None
     gitlab_webhook_secret: Optional[str] = None
+    github_token: str = ""
+    generic_git_username: Optional[str] = None
+    generic_git_token: Optional[str] = None
 
     # Database
     database_url: str
@@ -183,6 +186,8 @@ class Settings(BaseSettings):
     repo_cache_dir: str = "./cache/repos"
     repo_max_size_mb: int = 1000
     repo_cleanup_days: int = 7
+    repository_poll_enabled: bool = True
+    repository_poll_interval_minutes: int = 15
 
     # Parsing
     parse_timeout_seconds: int = 300

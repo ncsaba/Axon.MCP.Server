@@ -22,7 +22,8 @@ Axon MCP Server is an AI-oriented code indexer and query surface.
 
 - Repositories are registered through the REST API and the initial sync is enqueued automatically.
 - Runtime repository access already resolves between generic git and local-directory sources.
-- Public provider support and recurring poll/incremental refresh orchestration are still narrower than the runtime foundation.
+- Public registration supports `GITLAB`, `GITHUB`, and provider-neutral `GIT`.
+- Scheduled refresh now reuses the main sync path and prefers incremental commit-diff updates after the initial full index when safe.
 
 Canonical references:
 - `docs/architecture/repository_registration_and_sync_architecture.md`

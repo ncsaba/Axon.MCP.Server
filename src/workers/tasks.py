@@ -1,5 +1,10 @@
 from src.workers.celery_app import celery_app
-from src.workers.sync_worker import sync_repository, _sync_repository_async
+from src.workers.sync_worker import (
+    sync_repository,
+    _sync_repository_async,
+    poll_repositories_for_updates,
+    _poll_repositories_for_updates_async,
+)
 from src.workers.file_worker import parse_file_task, create_or_update_file as _create_or_update_file
 from src.workers.embedding_worker import generate_embeddings_task, _generate_repository_embeddings
 from src.workers.summary_worker import generate_module_summaries_task, _generate_module_summaries, _generate_module_summaries_task_async as _generate_module_summaries_async
@@ -15,6 +20,8 @@ from src.workers.file_lifecycle_worker import cleanup_missing_file_instances
 __all__ = [
     'sync_repository',
     '_sync_repository_async',
+    'poll_repositories_for_updates',
+    '_poll_repositories_for_updates_async',
     'parse_file_task',
     '_create_or_update_file',
     'generate_embeddings_task',

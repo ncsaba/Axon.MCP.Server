@@ -27,12 +27,12 @@ Related docs:
 | Immediate initial indexing after registration | `✅` | Registration triggers background sync automatically |
 | Runtime git source abstraction | `✅` | Runtime resolves between generic git and local-directory sources |
 | Local-directory indexing through standard pipeline | `✅` | Supported through repository metadata + source resolver |
-| Public provider enum for generic Git/GitHub | `🛑` | Current API/provider surface is still `GITLAB`-only |
+| Public provider enum for generic Git/GitHub | `✅` | Public API now accepts `GITLAB`, `GITHUB`, and `GIT` |
 | GitLab discovery flow | `✅` | Group discovery route exists |
-| Generic Git/GitHub registration through public API | `🚧` | Single-create path can persist repository metadata, but the provider/auth model is still GitLab-shaped |
-| Periodic polling for new commits | `🛑` | No scheduled repository poller is configured today |
+| Generic Git/GitHub registration through public API | `✅` | Create and bulk-add now accept provider-neutral registration payloads |
+| Periodic polling for new commits | `✅` | Celery Beat enqueues scheduled refresh for tracked repositories |
 | Incremental commit-diff sync worker | `✅` | `IncrementalSyncWorker` exists and has integration coverage |
-| Incremental commit-diff sync wired into production orchestration | `🛑` | Worker exists but is not part of the normal sync/poll flow |
+| Incremental commit-diff sync wired into production orchestration | `✅` | The normal sync entrypoint now prefers incremental refresh when safe |
 | MCP tool to register repositories | `🛑` | MCP currently exposes read/navigation tools only |
 | MCP tool to trigger repository sync | `🛑` | Not exposed today |
 
@@ -58,10 +58,27 @@ flowchart TD
 
 ### What is not yet true
 
-1. The public registration contract does not cleanly model `GITHUB` or generic `GIT`.
-2. HTTPS clone auth is still GitLab-oriented in the current repository manager path.
-3. There is no scheduled polling loop that compares remote/head state and chooses incremental processing.
-4. MCP does not yet expose repository registration or sync initiation.
+1. GitLab discovery is still the only provider-specific discovery workflow.
+2. Credentials are still configured globally by provider/runtime settings rather than per repository.
+3. MCP does not yet expose repository registration or sync initiation.
+
+## Current Implementation Slice
+
+This increment implements the minimum production contract for repository onboarding and refresh:
+
+1. add `GIT` and `GITHUB` to the public provider model
+2. keep GitLab discovery, but remove the `GITLAB`-only restriction from the registration path
+3. decouple clone authentication from GitLab-only token injection
+4. make the main sync entrypoint choose:
+   - full sync for first index or unsafe states
+   - incremental commit-diff sync after the repository has a known `last_commit_sha`
+5. add a Celery Beat poller that enqueues refresh for tracked repositories on a fixed interval
+
+Non-goals for this increment:
+
+1. webhook-driven refresh
+2. MCP repository registration/sync tools
+3. per-repository polling policies or credentials stored in the database
 
 ## Repository Access Model
 
@@ -74,8 +91,8 @@ flowchart TD
 | GitLab API discovery | `✅` | Explicit GitLab client + discovery route |
 | Generic git clone/update runtime | `✅` | Available through `GitRepositorySource` |
 | Local path indexing | `✅` | Available through `LocalDirectorySource` |
-| Provider-neutral credential model | `🛑` | Current HTTPS clone auth injects GitLab token semantics |
-| GitHub/private generic Git credential handling | `🛑` | Not modeled explicitly yet |
+| Provider-neutral credential model | `✅` | HTTPS clone/update auth now branches by provider/runtime settings instead of GitLab-only token injection |
+| GitHub/private generic Git credential handling | `✅` | Runtime settings support GitHub token auth and generic HTTPS username/token auth |
 
 ## Target Product Flow
 
@@ -149,10 +166,10 @@ Update existing docs, but do not overload them:
 | Item | Status | Notes |
 | --- | --- | --- |
 | Document current registration/sync state clearly | `✅` | This doc + linked API docs |
-| Introduce provider enum/support for `GIT` and likely `GITHUB` | `🧭` | Needed for end-to-end generic repository onboarding |
-| Decouple clone auth from GitLab-only token injection | `🧭` | Required for private GitHub and generic HTTPS remotes |
-| Add scheduled poller for registered repositories | `🧭` | Missing orchestration layer today |
-| Wire commit-diff incremental worker into poll flow | `🧭` | Worker exists; orchestration is missing |
+| Introduce provider enum/support for `GIT` and likely `GITHUB` | `✅` | Public registration and runtime support are landed |
+| Decouple clone auth from GitLab-only token injection | `✅` | Provider-aware HTTPS auth is landed |
+| Add scheduled poller for registered repositories | `✅` | Celery Beat now enqueues repository refresh |
+| Wire commit-diff incremental worker into poll flow | `✅` | Main sync task now attempts incremental refresh first |
 | Add MCP registration/manual sync tools | `🧭` | Product UX enhancement after REST contract stabilizes |
 | Add webhook-triggered refresh later | `🚧` | Useful later, but polling is the simpler first contract |
 
@@ -162,9 +179,9 @@ Update existing docs, but do not overload them:
 
 | Criterion | Gate |
 | --- | --- |
-| A repository can be registered through a stable public API contract | `🚧` |
+| A repository can be registered through a stable public API contract | `✅` |
 | New registrations trigger initial indexing automatically | `✅` |
-| Registered repositories can be refreshed on a schedule without manual intervention | `🛑` |
-| Incremental commit-diff sync is used after the initial full index when safe | `🛑` |
-| Generic Git/GitHub support is explicit in the provider and credential model | `🛑` |
+| Registered repositories can be refreshed on a schedule without manual intervention | `✅` |
+| Incremental commit-diff sync is used after the initial full index when safe | `✅` |
+| Generic Git/GitHub support is explicit in the provider and credential model | `✅` |
 | MCP support for repository registration/sync is explicitly documented as present or absent | `✅` |

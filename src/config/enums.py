@@ -112,6 +112,8 @@ class SourceControlProviderEnum(str, Enum):
     """Source control provider types."""
 
     GITLAB = "GITLAB"
+    GITHUB = "GITHUB"
+    GIT = "GIT"
 
 
 class MCPToolEnum(str, Enum):

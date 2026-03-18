@@ -43,7 +43,7 @@ def upgrade() -> None:
     op.create_table(
         "repositories",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("provider", sa.Enum("GITLAB", name="sourcecontrolproviderenum"), nullable=False),
+        sa.Column("provider", sa.Enum("GITLAB", "GITHUB", "GIT", name="sourcecontrolproviderenum"), nullable=False),
         sa.Column("gitlab_project_id", sa.Integer(), nullable=True),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("path_with_namespace", sa.String(length=500), nullable=False),

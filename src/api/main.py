@@ -53,6 +53,27 @@ async def _ensure_semantic_search_vector_index() -> None:
         logger.error("semantic_search_vector_index_ensure_failed", error=str(exc))
 
 
+async def _ensure_source_control_provider_enum_values(conn) -> None:
+    """Ensure new provider enum values exist in PostgreSQL before ORM usage."""
+    try:
+        for provider in ("GITHUB", "GIT"):
+            await conn.execute(
+                sa.text(
+                    f"""
+                    DO $$
+                    BEGIN
+                        ALTER TYPE sourcecontrolproviderenum ADD VALUE '{provider}';
+                    EXCEPTION
+                        WHEN duplicate_object THEN NULL;
+                    END $$;
+                    """
+                )
+            )
+        logger.info("source_control_provider_enum_aligned")
+    except Exception as exc:
+        logger.warning("source_control_provider_enum_alignment_failed", error=str(exc))
+
+
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
     logger.info("application_startup", environment=settings.environment)
@@ -128,6 +149,7 @@ async def _lifespan(_: FastAPI):
         async with engine.begin() as conn:
             await conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
             logger.info("database_extension_enabled", extension="vector")
+            await _ensure_source_control_provider_enum_values(conn)
             await conn.run_sync(Base.metadata.create_all)
             logger.info("database_tables_initialized")
     except Exception as exc:

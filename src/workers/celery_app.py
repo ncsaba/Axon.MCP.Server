@@ -6,6 +6,7 @@ including repository synchronization, parsing, extraction, and embedding generat
 """
 
 from celery import Celery, signals
+from datetime import timedelta
 from src.config.settings import get_settings
 
 # Initialize Celery app
@@ -50,6 +51,7 @@ celery_app.conf.update(
         'src.workers.enrichment_worker.enrich_batch': {'queue': 'ai_enrichment'},
         'src.workers.aggregation_worker.aggregate_repository_summary': {'queue': 'repository_aggregation'},
         'src.workers.file_lifecycle_worker.cleanup_missing_file_instances': {'queue': 'repository_aggregation'},
+        'src.workers.tasks.poll_repositories_for_updates': {'queue': 'repository_sync'},
     },
     
     # Default queue settings
@@ -86,6 +88,13 @@ celery_app.conf.beat_schedule = {
         "args": (),
     },
 }
+
+if get_settings().repository_poll_enabled:
+    celery_app.conf.beat_schedule["poll-repositories-for-updates"] = {
+        "task": "src.workers.tasks.poll_repositories_for_updates",
+        "schedule": timedelta(minutes=get_settings().repository_poll_interval_minutes),
+        "args": (),
+    }
 
 # Auto-discover tasks
 celery_app.autodiscover_tasks(['src.workers'])

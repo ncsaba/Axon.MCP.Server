@@ -85,8 +85,8 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Keycloak REST auth + personalized MCP token architecture doc | `✅` |
 | Incremental indexing spec (file metadata gate + optional hash fallback + batch DB strategy) | `✅` |
 | Streaming indexing implementation plan (slice-by-slice execution) | `✅` |
-| Implement provider-neutral repository registration (`GIT`/`GITHUB`) | `🧭` |
-| Add scheduled repository polling + incremental commit-diff orchestration | `🧭` |
+| Implement provider-neutral repository registration (`GIT`/`GITHUB`) | `✅` |
+| Add scheduled repository polling + incremental commit-diff orchestration | `✅` |
 | Implement Keycloak-backed REST auth | `✅` |
 | Implement Keycloak browser login/session flow | `✅` |
 | Implement personalized MCP token issuance/revocation | `✅` |

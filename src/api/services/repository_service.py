@@ -37,6 +37,24 @@ class RepositoryService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def _find_existing_repository(self, payload: RepositoryCreate) -> Optional[Repository]:
+        """Find an existing repository using provider-specific identity rules."""
+        if (
+            payload.provider == SourceControlProviderEnum.GITLAB
+            and payload.gitlab_project_id is not None
+        ):
+            stmt = select(Repository).where(
+                Repository.provider == SourceControlProviderEnum.GITLAB,
+                Repository.gitlab_project_id == payload.gitlab_project_id,
+            )
+        else:
+            stmt = select(Repository).where(
+                Repository.provider == payload.provider,
+                Repository.path_with_namespace == payload.path_with_namespace,
+            )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list(self, *, offset: int, limit: int) -> Tuple[List[RepositoryResponse], int]:
         """List repositories with total count."""
         # Get total count
@@ -110,9 +128,18 @@ class RepositoryService:
             )
 
     async def create(self, payload: RepositoryCreate) -> RepositoryResponse:
+        existing = await self._find_existing_repository(payload)
+        if existing is not None:
+            raise IntegrityError("Repository already exists", params=None, orig=None)
+
+        gitlab_project_id = (
+            payload.gitlab_project_id
+            if payload.provider == SourceControlProviderEnum.GITLAB
+            else None
+        )
         repository = Repository(
             provider=payload.provider,
-            gitlab_project_id=payload.gitlab_project_id,
+            gitlab_project_id=gitlab_project_id,
             name=payload.name,
             path_with_namespace=payload.path_with_namespace,
             url=payload.url,
@@ -242,23 +269,7 @@ class RepositoryService:
 
         for repo_data in repositories:
             try:
-                if repo_data.provider != SourceControlProviderEnum.GITLAB:
-                    raise ValueError(f"Unsupported provider: {repo_data.provider}")
-
-                if repo_data.gitlab_project_id is not None:
-                    stmt = select(Repository).where(
-                        Repository.provider == SourceControlProviderEnum.GITLAB,
-                        Repository.gitlab_project_id == repo_data.gitlab_project_id
-                    )
-                else:
-                    # Local-directory and generic git entries may not have GitLab project IDs.
-                    stmt = select(Repository).where(
-                        Repository.provider == SourceControlProviderEnum.GITLAB,
-                        Repository.path_with_namespace == repo_data.path_with_namespace
-                    )
-
-                result = await self._session.execute(stmt)
-                existing = result.scalar_one_or_none()
+                existing = await self._find_existing_repository(repo_data)
 
                 if existing:
                     skipped_count += 1
@@ -270,34 +281,39 @@ class RepositoryService:
                     )
                     continue
 
-                # Determine optimal branch using priority rules
-                try:
-                    gitlab_client = GitLabClient()
-                    optimal_branch = gitlab_client.get_optimal_branch_for_project(
-                        repo_data.gitlab_project_id
-                    )
-                        
-                    logger.info(
-                        "optimal_branch_determined",
-                        provider=repo_data.provider,
-                        gitlab_project_id=repo_data.gitlab_project_id,
-                        optimal_branch=optimal_branch,
-                        provided_branch=repo_data.default_branch
-                    )
-                except Exception as e:  # noqa: BLE001
-                    # Fallback to provided branch if optimization fails
-                    optimal_branch = repo_data.default_branch
-                    logger.warning(
-                        "optimal_branch_fallback",
-                        provider=repo_data.provider,
-                        gitlab_project_id=repo_data.gitlab_project_id,
-                        error=str(e)
-                    )
+                optimal_branch = repo_data.default_branch
+                if (
+                    repo_data.provider == SourceControlProviderEnum.GITLAB
+                    and repo_data.gitlab_project_id is not None
+                ):
+                    try:
+                        gitlab_client = GitLabClient()
+                        optimal_branch = gitlab_client.get_optimal_branch_for_project(
+                            repo_data.gitlab_project_id
+                        )
+                        logger.info(
+                            "optimal_branch_determined",
+                            provider=repo_data.provider,
+                            gitlab_project_id=repo_data.gitlab_project_id,
+                            optimal_branch=optimal_branch,
+                            provided_branch=repo_data.default_branch
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning(
+                            "optimal_branch_fallback",
+                            provider=repo_data.provider,
+                            gitlab_project_id=repo_data.gitlab_project_id,
+                            error=str(e)
+                        )
 
                 # Create new repository
                 repository = Repository(
                     provider=repo_data.provider,
-                    gitlab_project_id=repo_data.gitlab_project_id,
+                    gitlab_project_id=(
+                        repo_data.gitlab_project_id
+                        if repo_data.provider == SourceControlProviderEnum.GITLAB
+                        else None
+                    ),
                     name=repo_data.name,
                     path_with_namespace=repo_data.path_with_namespace,
                     url=repo_data.url,

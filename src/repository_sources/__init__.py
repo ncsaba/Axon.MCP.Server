@@ -65,6 +65,7 @@ class GitRepositorySource:
             repository.clone_url or repository.url,
             repository.path_with_namespace,
             repository.default_branch,
+            provider=getattr(repository, "provider", None),
         )
 
     def get_repository_path(self, repository: Any) -> Path:
