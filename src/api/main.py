@@ -37,6 +37,7 @@ settings = get_settings()
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
     logger.info("application_startup", environment=settings.environment)
+    mcp_http_manager_cm = None
 
     if "*" in settings.api_cors_origins:
         logger.warning(
@@ -105,8 +106,25 @@ async def _lifespan(_: FastAPI):
         logger.error("startup_job_cleanup_failed", error=str(exc))
 
     try:
+        if settings.mcp_transport == "http":
+            from src.api.routes.mcp_http import (
+                create_mcp_http_session_manager,
+                set_mcp_http_session_manager,
+            )
+
+            manager = create_mcp_http_session_manager()
+            set_mcp_http_session_manager(manager)
+            mcp_http_manager_cm = manager.run()
+            await mcp_http_manager_cm.__aenter__()
+            logger.info("mcp_http_session_manager_started", json_response=True)
+
         yield
     finally:
+        if mcp_http_manager_cm is not None:
+            from src.api.routes.mcp_http import set_mcp_http_session_manager
+
+            await mcp_http_manager_cm.__aexit__(None, None, None)
+            set_mcp_http_session_manager(None)
         logger.info("application_shutdown")
 
 
@@ -189,7 +207,7 @@ app.include_router(mcp_test_router, prefix="/api/v1", tags=["MCP Testing"])
 # Import lazily only when HTTP transport is enabled to reduce API startup/import overhead
 # for the default stdio deployment mode.
 if settings.mcp_transport == "http":
-    from src.api.routes.mcp_http import router as mcp_http_router
+    from src.api.routes.mcp_http import mount_mcp_http_app, router as mcp_http_router
 
     app.include_router(mcp_http_router, tags=["MCP HTTP Transport"])
-
+    mount_mcp_http_app(app)

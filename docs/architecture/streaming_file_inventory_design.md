@@ -116,6 +116,6 @@ Current local benchmark command:
 
 ```bash
 cd /workspaces/axon-mcp/axon-src
-source /home/vscode/.venv-axon-mcp/bin/activate
+source /home/vscode/.venv-dev/bin/activate
 python scripts/benchmark_file_discovery.py /workspaces/axon-mcp/domeus-core --runs 6
 ```

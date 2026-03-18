@@ -104,6 +104,9 @@ Formatted markdown text with:
 
 ## Running the MCP Server
 
+Canonical operational guide:
+- `/workspaces/axon-mcp/axon-src/docs/guides/mcp_server_startup.md`
+
 ### Using Makefile (Recommended)
 
 ```bash
@@ -236,6 +239,10 @@ For remote connections, use HTTP transport:
 
 4. **Use the tools:**
    Your client will now connect to the remote MCP server over HTTP.
+
+Notes:
+- Some MCP clients, including Codex app, probe OAuth metadata endpoints during server discovery even when static headers are configured. Axon's MCP HTTP transport exposes compatibility metadata routes for that handshake.
+- Codex app also sends `notifications/initialized` after `initialize`; Axon's MCP HTTP transport accepts that as a no-op success before normal `tools/list` and `tools/call` traffic.
 
 ## Testing
 
