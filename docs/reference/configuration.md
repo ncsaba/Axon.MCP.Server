@@ -17,6 +17,7 @@ GITLAB_GROUP_ID=your_group_id  # Optional
 
 # Database Configuration
 DATABASE_URL=postgresql+asyncpg://axon:password@localhost:5432/axon_mcp
+TEST_DATABASE_URL=postgresql+asyncpg://axon:password@localhost:5432/axon_mcp_test
 
 # Redis Configuration
 REDIS_URL=redis://localhost:6379/0
@@ -45,3 +46,16 @@ LOG_FORMAT=json
 - **`alembic.ini`**: Alembic migration settings for the migration-based workflow
 - **`docker-compose.yml`**: Docker service definitions
 - **`pyproject.toml`**: Python project metadata
+
+## Database Separation
+
+- `DATABASE_URL`: main runtime database for the API, workers, and manual local runs
+- `TEST_DATABASE_URL`: dedicated test database used by `pytest`
+
+Keep them different. The test harness creates and drops schema in `TEST_DATABASE_URL`.
+
+In the workspace devcontainer, both are exported by default and point at:
+- `indexer`
+- `indexer_test`
+
+The devcontainer Postgres bootstrap initializes both databases automatically.

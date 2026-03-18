@@ -33,6 +33,7 @@ make test               # Run tests with coverage
 
 # Database
 make db-reset           # Reset and recreate the schema (current WIP default)
+make db-reset-test      # Reset the dedicated test database schema
 make migrate            # Alembic migration path when you explicitly want it
 make seed               # Seed test data
 
@@ -63,6 +64,15 @@ pytest -m integration
 # Run tests in parallel
 pytest -n auto
 ```
+
+Use a dedicated test database when running DB-backed tests:
+
+```bash
+source /home/vscode/.venv-dev/bin/activate
+```
+
+In the devcontainer, `DATABASE_URL` and `TEST_DATABASE_URL` are already exported as `indexer` and `indexer_test`, and both databases are created during the Postgres bootstrap.
+The test harness creates and drops schema in `TEST_DATABASE_URL`; it should never match `DATABASE_URL`.
 
 ### Test Coverage
 

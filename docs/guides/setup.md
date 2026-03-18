@@ -30,6 +30,7 @@ cd axon.mcp.server
 # Configure environment
 cp .env.example .env
 # Edit .env with your credentials
+# Keep DATABASE_URL and TEST_DATABASE_URL pointed at different databases.
 
 # Start all services
 docker-compose -f docker/docker-compose.yml up -d
@@ -92,3 +93,11 @@ curl http://localhost:8080/api/v1/health
 ```
 
 Both workflows remain valid. For current development on this fork, use `make db-reset` when you want a clean schema quickly; use `make migrate` only when you intentionally want to exercise the Alembic path.
+
+For DB-backed tests, keep a dedicated test database, for example:
+
+```bash
+source /home/vscode/.venv-dev/bin/activate
+```
+
+In the devcontainer, `DATABASE_URL` and `TEST_DATABASE_URL` are already set to `indexer` and `indexer_test`, and the Postgres bootstrap initializes both databases automatically after rebuild.

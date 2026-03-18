@@ -7,7 +7,7 @@ export environment=development
 export DEBUG=false
 
 export DATABASE_URL='postgresql+asyncpg://indexer:indexer@localhost:5432/indexer'
-export TEST_DATABASE_URL='postgresql+asyncpg://indexer:indexer@localhost:5432/indexer'
+export TEST_DATABASE_URL='postgresql+asyncpg://indexer:indexer@localhost:5432/indexer_test'
 
 export AUTH_ENABLED=true
 export ADMIN_API_KEY='dev-admin-key'
