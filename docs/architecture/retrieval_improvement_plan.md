@@ -91,6 +91,7 @@ flowchart LR
 | R1B. Curated query set and expected outcomes | `🧭` | Creates the first real quality gate. |
 | R2A. Search query normalization and tokenization review | `🧭` | Cheap improvement path with immediate retrieval impact. |
 | R2B. Fusion, boosts, and snippet selection tuning | `🧭` | Directly affects top-result usefulness in MCP and REST. |
+| R2C. Semantic-search subplan execution | `🧭` | Semantic search now has a dedicated plan for chunk quality, benchmark-driven tuning, and ranking cleanup. See `docs/architecture/semantic_search_improvement_plan.md`. |
 | R3A. Search-to-symbol-context contract | `🧭` | Makes existing search results more actionable. |
 | R4A. Architecture tool validation on representative repos | `🧭` | Distinguishes shipped tool surface from actually useful retrieval. |
 | R5A. Retrieval benchmark harness/reporting | `🧭` | Keeps future tuning changes evidence-based. |
