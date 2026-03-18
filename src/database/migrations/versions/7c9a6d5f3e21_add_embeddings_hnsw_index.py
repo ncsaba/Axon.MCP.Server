@@ -15,7 +15,7 @@ down_revision = "cd4ad910d3fe"
 branch_labels = None
 depends_on = None
 
-FIXED_EMBEDDING_DIMENSION = 768
+FIXED_EMBEDDING_DIMENSION = 1024
 
 
 def upgrade() -> None:

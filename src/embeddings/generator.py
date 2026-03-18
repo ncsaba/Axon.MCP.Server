@@ -46,6 +46,18 @@ class EmbeddingGenerator:
             self.model_name = get_settings().openai_embedding_model
             self.dimension = get_settings().openai_embedding_dimension
             self.model_version = "1.0"
+        elif self.provider == "ollama":
+            if not OPENAI_AVAILABLE:
+                raise ImportError(
+                    "Failed to initialize embedding generator: OpenAI package not installed. Install with: pip install openai"
+                )
+            self.client = AsyncOpenAI(
+                api_key="ollama",
+                base_url=get_settings().ollama_base_url,
+            )
+            self.model_name = get_settings().ollama_embedding_model
+            self.dimension = FIXED_EMBEDDING_DIMENSION
+            self.model_version = "1.0"
         else:
             # Local model using sentence-transformers
             from sentence_transformers import SentenceTransformer
@@ -94,7 +106,7 @@ class EmbeddingGenerator:
             batch = chunks[i:i + batch_size]
             
             try:
-                if self.provider == "openai":
+                if self.provider in ("openai", "ollama"):
                     batch_results = await self._generate_openai_embeddings(batch)
                 else:
                     batch_results = await self._generate_local_embeddings(batch)

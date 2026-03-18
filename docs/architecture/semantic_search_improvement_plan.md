@@ -27,7 +27,7 @@ Reference analysis:
 | Hybrid keyword + semantic search | `✅` | `SearchService` fuses keyword and semantic candidates with reciprocal-rank fusion. |
 | Symbol-linked chunk storage | `✅` | Chunks and embeddings are stored against symbols and files. |
 | Incremental embedding reuse | `✅` | Existing chunk embeddings are skipped or reused by hash. |
-| Vector ANN index on `embeddings.vector` | `✅` | `embeddings.vector` now uses a fixed `vector(768)` contract with a direct HNSW index, and the parameterized semantic query uses it on the live DB. |
+| Vector ANN index on `embeddings.vector` | `✅` | `embeddings.vector` now targets a fixed `vector(1024)` contract for `mxbai-embed-large`, with a direct HNSW index. |
 | Implementation chunk body inclusion | `🚧` | Chunker supports body extraction, but current ingestion passes `file_content=None`, so body text is often omitted from implementation chunks. |
 | Import/context population | `🛑` | `ChunkContextBuilder._extract_imports()` currently returns an empty list. |
 | Semantic snippet selection | `🚧` | Search previews return the first chunk per symbol, not the best matching chunk. |
@@ -83,7 +83,7 @@ flowchart LR
 
 | Phase | Status | Focus | Risk |
 | --- | --- | --- | --- |
-| S0. Semantic-search DB indexing baseline | `🚧` | Fixed-size ANN indexing is implemented and validated; the remaining work is operational model-change/runbook clarity. | `🔥` Model or dimension churn could still create operational confusion if rebuild behavior stays implicit. |
+| S0. Semantic-search DB indexing baseline | `🚧` | Fixed-size ANN indexing now targets `mxbai-embed-large` at `1024`; the remaining work is corpus reset, live re-embedding, and post-reset validation on the new corpus. | `🔥` A partial corpus reset or partial re-embed would leave mixed operational assumptions. |
 | S1. Benchmark baseline and semantic-search contract | `🧭` | Create seed queries, expected outcomes, and evaluation workflow before tuning. | `🔥` Tuning without a benchmark will create churn and regressions. |
 | S2. Chunk corpus quality | `🧭` | Add symbol body text, imports, and explicit fallback-chunking policy. | `🔥` Larger chunks can shift embedding behavior and storage costs. |
 | S3. Semantic-ranking cleanup | `🧭` | Use one coherent semantic reranking contract and remove dead paths. | `🔥` Ranking changes can destabilize existing search behavior. |
@@ -98,11 +98,11 @@ Make ANN indexing of `embeddings.vector` a first-class runtime contract instead 
 
 Current implementation status:
 
-- `✅` Alembic migration now converts `embeddings.vector` to `vector(768)`, enforces `dimension = 768`, and creates `embeddings_vector_idx`
+- `✅` Alembic migration now converts `embeddings.vector` to `vector(1024)`, enforces `dimension = 1024`, and creates `embeddings_vector_idx`
 - `✅` API startup ensures the fixed HNSW index exists at runtime
-- `✅` embedding generation now fails fast if the configured model dimension is not `768`
+- `✅` embedding generation now fails fast if the configured model dimension is not `1024`
 - `✅` semantic search now uses the fixed-size vector column directly with a KNN candidate query shape that can use pgvector ANN indexes
-- `✅` Live validation showed the parameterized semantic-search path using `Index Scan using embeddings_vector_idx`
+- `🚧` The previous live planner validation was captured on the old `768` corpus; the `1024` contract still needs to be rerun after deleting the old corpus and re-embedding with `mxbai-embed-large`
 - `🚧` Rebuild/upgrade behavior is still not captured in an operational runbook
 
 This slice should decide and document:
@@ -117,7 +117,7 @@ Recommended default:
 
 - prefer `hnsw` first for operational simplicity and better small-to-medium corpus behavior
 - keep `ivfflat` available only as an explicitly chosen alternative
-- use a fixed `vector(768)` contract for the current semantic-search baseline
+- use a fixed `vector(1024)` contract for the current `mxbai-embed-large` semantic-search baseline
 
 Acceptance:
 
@@ -130,7 +130,7 @@ Implementation note:
 - Current default: `hnsw`
 - Creation path: migration-backed baseline plus startup enforcement
 - Existing non-HNSW ANN index: detected and logged as a mismatch rather than silently replaced
-- Chosen fix: lock `embeddings.vector` to `vector(768)`, enforce `dimension = 768`, and use a direct raw-column HNSW index
+- Chosen fix: lock `embeddings.vector` to `vector(1024)`, enforce `dimension = 1024`, and use a direct raw-column HNSW index
 - Validation artifact: `/workspaces/axon-mcp/axon-src/docs/validation/semantic_search_index_validation_20260318.md`
 
 ### S0B. Validate Planner And Latency Behavior
@@ -365,12 +365,13 @@ Use a small but varied set:
 
 ## Immediate Next Actions
 
-1. Write the operational runbook for changing embedding model or dimension under the fixed `768` contract.
-2. Create the benchmark seed document.
-3. Implement implementation-chunk body inclusion.
-4. Implement import/context population for Python and Java first.
-5. Activate the existing `query_text` semantic reranking path.
-6. Replace first-chunk snippet selection with best-match snippet selection.
+1. Delete the old `768` corpus from the local DB and rebuild it with `mxbai-embed-large`.
+2. Rerun live planner validation under the fixed `1024` contract.
+3. Create the benchmark seed document.
+4. Implement implementation-chunk body inclusion.
+5. Implement import/context population for Python and Java first.
+6. Activate the existing `query_text` semantic reranking path.
+7. Replace first-chunk snippet selection with best-match snippet selection.
 
 ## Explicit Answers To Current Questions
 

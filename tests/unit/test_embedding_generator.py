@@ -33,13 +33,39 @@ def test_generate_openai_embeddings_rejects_wrong_dimension(mock_openai_client):
                     EmbeddingGenerator()
 
 
+@pytest.mark.skipif(not OPENAI_AVAILABLE, reason="OpenAI not installed")
+@pytest.mark.asyncio
+async def test_generate_ollama_embeddings(mock_openai_client):
+    """Test Ollama embedding generation with the fixed 1024-dimensional contract."""
+    with patch('src.embeddings.generator.AsyncOpenAI', return_value=mock_openai_client):
+        with patch('src.embeddings.generator.get_settings') as mock_get_settings:
+            mock_settings = mock_get_settings.return_value
+            mock_settings.embedding_provider = "ollama"
+            mock_settings.ollama_base_url = "http://localhost:11434/v1"
+            mock_settings.ollama_embedding_model = "mxbai-embed-large"
+            mock_settings.embedding_batch_size = 100
+
+            generator = EmbeddingGenerator()
+
+            chunks = [
+                {'id': 1, 'content': 'Test content'}
+            ]
+
+            results = await generator.generate_embeddings(chunks)
+
+            assert len(results) == 1
+            assert results[0].chunk_id == 1
+            assert len(results[0].vector) == FIXED_EMBEDDING_DIMENSION
+            assert generator.model_name == "mxbai-embed-large"
+
+
 @pytest.mark.asyncio
 async def test_generate_local_embeddings():
     """Test local embedding generation."""
     with patch('src.embeddings.generator.get_settings') as mock_get_settings:
         mock_settings = mock_get_settings.return_value
         mock_settings.embedding_provider = "local"
-        mock_settings.local_embedding_model = "sentence-transformers/all-mpnet-base-v2"
+        mock_settings.local_embedding_model = "custom-local-1024"
         mock_settings.embedding_batch_size = 100
         
         with patch('sentence_transformers.SentenceTransformer') as mock_st:
@@ -67,7 +93,7 @@ async def test_generate_single_embedding():
     with patch('src.embeddings.generator.get_settings') as mock_get_settings:
         mock_settings = mock_get_settings.return_value
         mock_settings.embedding_provider = "local"
-        mock_settings.local_embedding_model = "sentence-transformers/all-mpnet-base-v2"
+        mock_settings.local_embedding_model = "custom-local-1024"
         mock_settings.embedding_batch_size = 100
         
         with patch('sentence_transformers.SentenceTransformer') as mock_st:
@@ -90,7 +116,7 @@ async def test_batch_processing():
     with patch('src.embeddings.generator.get_settings') as mock_get_settings:
         mock_settings = mock_get_settings.return_value
         mock_settings.embedding_provider = "local"
-        mock_settings.local_embedding_model = "sentence-transformers/all-mpnet-base-v2"
+        mock_settings.local_embedding_model = "custom-local-1024"
         mock_settings.embedding_batch_size = 2  # Small batch size for testing
         
         with patch('sentence_transformers.SentenceTransformer') as mock_st:
@@ -126,7 +152,7 @@ async def test_embedding_error_handling():
     with patch('src.embeddings.generator.get_settings') as mock_get_settings:
         mock_settings = mock_get_settings.return_value
         mock_settings.embedding_provider = "local"
-        mock_settings.local_embedding_model = "sentence-transformers/all-mpnet-base-v2"
+        mock_settings.local_embedding_model = "custom-local-1024"
         mock_settings.embedding_batch_size = 2
         
         with patch('sentence_transformers.SentenceTransformer') as mock_st:

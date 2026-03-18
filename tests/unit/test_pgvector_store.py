@@ -48,7 +48,7 @@ async def test_store_embeddings_success(vector_store, mock_session):
         EmbeddingResult(
             chunk_id=1,
             vector=[0.1] * FIXED_EMBEDDING_DIMENSION,
-            model_name="sentence-transformers/all-mpnet-base-v2",
+            model_name="mxbai-embed-large",
             model_version="1.0",
             dimension=FIXED_EMBEDDING_DIMENSION
         )
@@ -412,7 +412,7 @@ async def test_store_embeddings_rejects_wrong_dimension(vector_store, mock_sessi
     embedding_results = [
         EmbeddingResult(
             chunk_id=1,
-            vector=[0.1] * 384,
+            vector=[0.1] * FIXED_EMBEDDING_DIMENSION,
             model_name="test-model",
             model_version="1.0",
             dimension=384,

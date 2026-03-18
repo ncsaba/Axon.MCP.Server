@@ -1,5 +1,11 @@
 # Semantic Search Index Validation 2026-03-18
 
+Note:
+
+- this validation was captured before the later switch to the `mxbai-embed-large` / fixed-`1024` embedding contract
+- the current code contract has changed and this validation should be treated as historical until rerun on a real `1024` corpus
+- the old `768` corpus should be deleted before rerunning this validation so the post-fix results are not mixed with historical embeddings
+
 ## Objective
 
 Validate the new semantic-search DB indexing baseline against a real local corpus:
@@ -116,10 +122,10 @@ Axon now uses a fixed-size embedding contract instead of an unbounded vector col
 
 Implemented behavior:
 
-- lock `embeddings.vector` to `vector(768)`
-- enforce `dimension = 768` in the schema
+- lock `embeddings.vector` to `vector(1024)`
+- enforce `dimension = 1024` in the schema
 - create one raw-column HNSW index: `embeddings_vector_idx`
-- make embedding generation fail fast if the configured model dimension is not `768`
+- make embedding generation fail fast if the configured model dimension is not `1024`
 - keep the KNN candidate query shape: `ORDER BY distance LIMIT N`, then deduplicate back to symbols
 
 Why this works:
@@ -205,4 +211,4 @@ Capture the operational rebuild/runbook contract next:
 
 1. what happens when someone wants to change embedding model or dimension
 2. how schema migration and full re-embedding should be run safely
-3. where the fixed `768` contract is documented for operators
+3. where the fixed `1024` contract is documented for operators
