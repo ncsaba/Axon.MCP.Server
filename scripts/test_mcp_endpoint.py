@@ -38,6 +38,7 @@ def _load_dev_env(path: Path) -> Dict[str, str]:
 def _request_json(url: str, *, payload: Dict[str, Any] | None = None, headers: Dict[str, str] | None = None, timeout: int = 10) -> tuple[int, Dict[str, Any] | str]:
     data = None
     req_headers = headers.copy() if headers else {}
+    req_headers.setdefault("Accept", "application/json")
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         req_headers["Content-Type"] = "application/json"
@@ -66,6 +67,7 @@ def _request_json_with_headers(
 ) -> tuple[int, Dict[str, Any] | str, Dict[str, str]]:
     data = None
     req_headers = headers.copy() if headers else {}
+    req_headers.setdefault("Accept", "application/json")
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         req_headers["Content-Type"] = "application/json"
@@ -128,6 +130,8 @@ def test_mcp_endpoint(base_url: str = "http://localhost:8001", api_key: str = "d
                 return False
         else:
             print(f"   ❌ HTTP error: {status_code}")
+            if result:
+                print(f"   📄 Response: {result}")
             return False
     except Exception as e:
         print(f"   ❌ Request failed: {e}")
@@ -164,6 +168,8 @@ def test_mcp_endpoint(base_url: str = "http://localhost:8001", api_key: str = "d
                 return False
         else:
             print(f"   ❌ HTTP error: {status_code}")
+            if result:
+                print(f"   📄 Response: {result}")
             return False
     except Exception as e:
         print(f"   ❌ Request failed: {e}")
@@ -201,6 +207,8 @@ def test_mcp_endpoint(base_url: str = "http://localhost:8001", api_key: str = "d
                 return False
         else:
             print(f"   ❌ HTTP error: {status_code}")
+            if result:
+                print(f"   📄 Response: {result}")
             return False
     except Exception as e:
         print(f"   ❌ Request failed: {e}")

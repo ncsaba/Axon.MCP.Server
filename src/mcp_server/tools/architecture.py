@@ -14,6 +14,11 @@ from src.utils.layer_detector import LayerDetector
 from src.extractors.pattern_detector import PatternDetector
 from src.extractors.api_extractor import ApiEndpointExtractor
 from src.mcp_server.formatters.hierarchy import format_call_chain
+from src.api.services.repository_connection_service import RepositoryConnectionService
+from src.mcp_server.tools.architecture_support import (
+    find_architecture_support_matches,
+    format_architecture_support_section,
+)
 
 logger = get_logger(__name__)
 
@@ -147,6 +152,51 @@ async def analyze_architecture(
             else:
                 formatted.append("## Project Structure\n\n")
                 formatted.append("No services detected in this repository.\n\n")
+
+            # ============================================================
+            # SECTION 1B: EXTERNAL REPOSITORY CONNECTIONS
+            # ============================================================
+            support_repo, support_matches = await find_architecture_support_matches(
+                session,
+                subject_text=repo.name,
+            )
+
+            connection_service = RepositoryConnectionService(session)
+            subgraph_repo_refs = [repository_id]
+            if support_repo and support_repo.id != repository_id:
+                subgraph_repo_refs.append(support_repo.id)
+            connection_subgraph = await connection_service.get_repository_connection_subgraph(subgraph_repo_refs)
+            external_edges = [
+                edge
+                for edge in connection_subgraph.direct_edges
+                if edge.source_repository_id == repository_id or edge.target_repository_id == repository_id
+            ]
+
+            formatted.append("## External Repository Connections\n\n")
+            if external_edges:
+                for edge in external_edges[:6]:
+                    formatted.append(
+                        f"- **{edge.source_repository_name} -> {edge.target_repository_name}** "
+                        f"via `{edge.connection_type}` "
+                        f"(confidence {edge.confidence:.2f}, evidence {edge.evidence_count})\n"
+                    )
+                    for sample in edge.evidence_samples:
+                        formatted.append(f"  - {sample}\n")
+                formatted.append(
+                    "\nUse `find_repository_connections(repo_a, repo_b)` or "
+                    "`explain_repository_dependency(repo_a, repo_b)` for a deeper explanation.\n\n"
+                )
+            else:
+                formatted.append("No grounded external repository connections found.\n\n")
+
+            if support_repo and support_repo.id != repository_id:
+                formatted.append(
+                    format_architecture_support_section(
+                        support_repo_name=support_repo.name,
+                        subject_label=repo.name,
+                        matches=support_matches,
+                    )
+                )
             
             # ============================================================
             # SECTION 2: PATTERN DETECTION

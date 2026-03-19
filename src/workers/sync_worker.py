@@ -24,6 +24,7 @@ from src.utils.logging_config import get_logger
 from src.utils.redis_logger import RedisLogPublisher
 from src.workers.distributed_lock import get_distributed_lock
 from src.parsers import ParserFactory
+from src.api.services.repository_grouping_service import RepositoryGroupingService
 
 logger = get_logger(__name__)
 
@@ -582,6 +583,23 @@ async def _sync_repository_async(task, repository_id: int):
                             )
                             # Re-raise the original commit error
                             raise commit_error
+
+                    try:
+                        grouping_service = RepositoryGroupingService(session)
+                        groups = await grouping_service.refresh_inferred_groups()
+                        await session.commit()
+                        logger.info(
+                            "repository_groups_refreshed_after_sync",
+                            repository_id=repository_id,
+                            group_count=len(groups),
+                        )
+                    except Exception as grouping_error:
+                        await session.rollback()
+                        logger.warning(
+                            "repository_group_refresh_failed_after_sync",
+                            repository_id=repository_id,
+                            error=str(grouping_error),
+                        )
                 
 
                     # Trigger AI Enrichment (Axon v3.2)

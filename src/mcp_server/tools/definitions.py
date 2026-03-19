@@ -579,4 +579,92 @@ TOOLS = [
             }
         }
     ),
+    Tool(
+        name=MCPToolEnum.FIND_REPOSITORY_CONNECTIONS.value,
+        description="Find grounded direct and indirect connections between two repositories",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "repo_a": {
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"type": "string"}
+                    ],
+                    "description": "First repository reference (id or name)"
+                },
+                "repo_b": {
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"type": "string"}
+                    ],
+                    "description": "Second repository reference (id or name)"
+                },
+                "max_depth": {
+                    "type": "integer",
+                    "description": "Maximum path depth for indirect links",
+                    "default": 2,
+                    "minimum": 1,
+                    "maximum": 4
+                }
+            },
+            "required": ["repo_a", "repo_b"]
+        }
+    ),
+    Tool(
+        name=MCPToolEnum.EXPLAIN_REPOSITORY_DEPENDENCY.value,
+        description="Explain how one repository depends on another using grounded evidence",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "repo_a": {
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"type": "string"}
+                    ],
+                    "description": "First repository reference (id or name)"
+                },
+                "repo_b": {
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"type": "string"}
+                    ],
+                    "description": "Second repository reference (id or name)"
+                },
+                "max_depth": {
+                    "type": "integer",
+                    "description": "Maximum path depth for indirect links",
+                    "default": 2,
+                    "minimum": 1,
+                    "maximum": 4
+                }
+            },
+            "required": ["repo_a", "repo_b"]
+        }
+    ),
+    Tool(
+        name=MCPToolEnum.GET_REPOSITORY_CONNECTION_SUBGRAPH.value,
+        description="Summarize connection structure across multiple repositories",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "repository_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Repository IDs to include"
+                },
+                "repository_names": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Repository names to include"
+                },
+                "max_depth": {
+                    "type": "integer",
+                    "description": "Maximum path depth for indirect links",
+                    "default": 2,
+                    "minimum": 1,
+                    "maximum": 4
+                }
+            }
+        }
+    ),
 ]

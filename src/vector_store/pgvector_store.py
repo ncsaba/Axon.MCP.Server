@@ -253,7 +253,9 @@ class PgVectorStore:
         if filters:
             if 'language' in filters:
                 vector_query = vector_query.where(Symbol.language == filters['language'])
-            if 'repository_id' in filters:
+            if 'repository_ids' in filters:
+                vector_query = vector_query.where(File.repository_id.in_(filters['repository_ids']))
+            elif 'repository_id' in filters:
                 vector_query = vector_query.where(File.repository_id == filters['repository_id'])
             if 'symbol_kind' in filters:
                 vector_query = vector_query.where(Symbol.kind == filters['symbol_kind'])
@@ -287,7 +289,9 @@ class PgVectorStore:
             if filters:
                 if 'language' in filters:
                     keyword_query = keyword_query.where(Symbol.language == filters['language'])
-                if 'repository_id' in filters:
+                if 'repository_ids' in filters:
+                    keyword_query = keyword_query.where(File.repository_id.in_(filters['repository_ids']))
+                elif 'repository_id' in filters:
                     keyword_query = keyword_query.where(File.repository_id == filters['repository_id'])
                 if 'symbol_kind' in filters:
                     keyword_query = keyword_query.where(Symbol.kind == filters['symbol_kind'])

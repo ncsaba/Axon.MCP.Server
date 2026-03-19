@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from mcp.types import TextContent
 
 import src.api.routes.mcp_http as mcp_http_module
 from src.api.auth import get_current_user
@@ -147,6 +148,129 @@ def test_mcp_http_tools_list_works_after_initialize():
     payload = response.json()
     assert "tools" in payload["result"]
     assert any(tool["name"] == "search_code" for tool in payload["result"]["tools"])
+    assert any(tool["name"] == "find_repository_connections" for tool in payload["result"]["tools"])
+    assert any(tool["name"] == "explain_repository_dependency" for tool in payload["result"]["tools"])
+
+
+def test_mcp_http_tools_list_recovers_stale_session():
+    app = _build_app((mcp_http_router, "/api/v1"))
+
+    async def _scenario():
+        manager = create_mcp_http_session_manager()
+        set_mcp_http_session_manager(manager)
+        original_authorize = mcp_http_module._authorize_mcp_request
+
+        async def _fake_authorize(_request):
+            return {"user_id": "test"}
+
+        mcp_http_module._authorize_mcp_request = _fake_authorize
+        try:
+            async with manager.run():
+                async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                    init_response = await client.post(
+                        "/api/v1/mcp",
+                        headers={"Accept": "application/json", "Content-Type": "application/json"},
+                        json=_initialize_request_payload(),
+                    )
+                    session_id = init_response.headers["mcp-session-id"]
+                    manager._server_instances.pop(session_id)
+
+                    recovered_response = await client.post(
+                        "/api/v1/mcp",
+                        headers={
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                            "mcp-session-id": session_id,
+                        },
+                        json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                    )
+                    follow_up_response = await client.post(
+                        "/api/v1/mcp",
+                        headers={
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                            "mcp-session-id": session_id,
+                        },
+                        json={"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}},
+                    )
+                    return recovered_response, follow_up_response
+        finally:
+            mcp_http_module._authorize_mcp_request = original_authorize
+            set_mcp_http_session_manager(None)
+
+    recovered_response, follow_up_response = asyncio.run(_scenario())
+
+    assert recovered_response.status_code == 200
+    assert recovered_response.headers["x-axon-mcp-session-recovered"] == "true"
+    recovered_payload = recovered_response.json()
+    assert any(tool["name"] == "search_code" for tool in recovered_payload["result"]["tools"])
+
+    assert follow_up_response.status_code == 200
+    assert "x-axon-mcp-session-recovered" not in follow_up_response.headers
+
+
+def test_mcp_http_tools_call_recovers_stale_session(monkeypatch):
+    app = _build_app((mcp_http_router, "/api/v1"))
+
+    import src.mcp_server.tools.router as tool_router
+
+    async def _fake_search_code(**kwargs):
+        assert kwargs["query"] == "billing"
+        return [TextContent(type="text", text="recovered tool call")]
+
+    original_handler = tool_router.TOOL_HANDLERS["search_code"]
+    tool_router.TOOL_HANDLERS["search_code"] = _fake_search_code
+
+    async def _scenario():
+        manager = create_mcp_http_session_manager()
+        set_mcp_http_session_manager(manager)
+        original_authorize = mcp_http_module._authorize_mcp_request
+
+        async def _fake_authorize(_request):
+            return {"user_id": "test"}
+
+        mcp_http_module._authorize_mcp_request = _fake_authorize
+        try:
+            async with manager.run():
+                async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                    init_response = await client.post(
+                        "/api/v1/mcp",
+                        headers={"Accept": "application/json", "Content-Type": "application/json"},
+                        json=_initialize_request_payload(),
+                    )
+                    session_id = init_response.headers["mcp-session-id"]
+                    manager._server_instances.pop(session_id)
+
+                    return await client.post(
+                        "/api/v1/mcp",
+                        headers={
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                            "mcp-session-id": session_id,
+                        },
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": 4,
+                            "method": "tools/call",
+                            "params": {
+                                "name": "search_code",
+                                "arguments": {"query": "billing", "limit": 1},
+                            },
+                        },
+                    )
+        finally:
+            mcp_http_module._authorize_mcp_request = original_authorize
+            set_mcp_http_session_manager(None)
+
+    try:
+        response = asyncio.run(_scenario())
+    finally:
+        tool_router.TOOL_HANDLERS["search_code"] = original_handler
+
+    assert response.status_code == 200
+    assert response.headers["x-axon-mcp-session-recovered"] == "true"
+    payload = response.json()
+    assert payload["result"]["content"][0]["text"] == "recovered tool call"
 
 
 def test_mcp_http_notification_is_accepted():

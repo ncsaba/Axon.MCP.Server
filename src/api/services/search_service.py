@@ -13,6 +13,10 @@ from sqlalchemy import select, or_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.schemas.search import SearchResult
+from src.api.services.repository_grouping_service import (
+    RepositoryGroupingService,
+    RepositoryQueryScope,
+)
 from src.config.enums import LanguageEnum, SymbolKindEnum
 from src.database.models import (
     FileInstance as File,
@@ -259,6 +263,7 @@ class SearchService:
         """
         self.session = session
         self.vector_store = PgVectorStore(session)
+        self.grouping_service = RepositoryGroupingService(session)
         
         # Use provided generator or shared singleton
         if embedding_generator:
@@ -312,6 +317,12 @@ class SearchService:
             raise ValueError(f"Invalid repository_id: {repository_id}")
         
         search_type = "hybrid" if hybrid else "keyword"
+        query_scope: Optional[RepositoryQueryScope] = None
+        repository_scope_ids: Optional[List[int]] = None
+
+        if repository_id is not None:
+            query_scope = await self.grouping_service.get_query_scope(repository_id)
+            repository_scope_ids = query_scope.repository_ids
         
         # Try to get from cache
         cache = await _get_redis_cache()
@@ -319,7 +330,15 @@ class SearchService:
         
         if cache:
             # Generate cache key from parameters
-            cache_key = self._generate_cache_key(query, limit, repository_id, language, symbol_kind, hybrid)
+            cache_key = self._generate_cache_key(
+                query,
+                limit,
+                repository_id,
+                repository_scope_ids,
+                language,
+                symbol_kind,
+                hybrid,
+            )
             
             # Try to get cached results
             cached_results = await cache.get(cache_key)
@@ -337,11 +356,23 @@ class SearchService:
             with search_duration.labels(search_type=search_type).time():
                 if hybrid:
                     results = await self._hybrid_search(
-                        query, limit, repository_id, language, symbol_kind
+                        query,
+                        limit,
+                        repository_id,
+                        language,
+                        symbol_kind,
+                        repository_scope_ids=repository_scope_ids,
+                        query_scope=query_scope,
                     )
                 else:
                     results = await self._keyword_search(
-                        query, limit, repository_id, language, symbol_kind
+                        query,
+                        limit,
+                        repository_id,
+                        language,
+                        symbol_kind,
+                        repository_scope_ids=repository_scope_ids,
+                        query_scope=query_scope,
                     )
                 
                 # Cache results if cache is available
@@ -368,6 +399,8 @@ class SearchService:
                             'snippet_match_type': r.snippet_match_type,
                             'match_reason': r.match_reason,
                             'follow_up_tools': r.follow_up_tools,
+                            'query_scope_group': r.query_scope_group,
+                            'query_scope_repositories': r.query_scope_repositories,
                             'updated_at': r.updated_at.isoformat() if r.updated_at else None,
                             'context_url': r.context_url
                         }
@@ -424,17 +457,31 @@ class SearchService:
         limit: int,
         repository_id: Optional[int],
         language: Optional[LanguageEnum],
-        symbol_kind: Optional[SymbolKindEnum]
+        symbol_kind: Optional[SymbolKindEnum],
+        repository_scope_ids: Optional[List[int]] = None,
+        query_scope: Optional[RepositoryQueryScope] = None,
     ) -> List[SearchResult]:
         """Combine keyword and semantic search using reciprocal rank fusion."""
         # Get keyword results
         keyword_results = await self._keyword_search(
-            query, limit * 2, repository_id, language, symbol_kind
+            query,
+            limit * 2,
+            repository_id,
+            language,
+            symbol_kind,
+            repository_scope_ids=repository_scope_ids,
+            query_scope=query_scope,
         )
         
         # Get semantic results
         semantic_results = await self._semantic_search(
-            query, limit * 2, repository_id, language, symbol_kind
+            query,
+            limit * 2,
+            repository_id,
+            language,
+            symbol_kind,
+            repository_scope_ids=repository_scope_ids,
+            query_scope=query_scope,
         )
 
         query_tokens = self._tokenize_query(query)
@@ -454,7 +501,9 @@ class SearchService:
         limit: int,
         repository_id: Optional[int],
         language: Optional[LanguageEnum],
-        symbol_kind: Optional[SymbolKindEnum]
+        symbol_kind: Optional[SymbolKindEnum],
+        repository_scope_ids: Optional[List[int]] = None,
+        query_scope: Optional[RepositoryQueryScope] = None,
     ) -> List[SearchResult]:
         """
         Perform keyword-based search with multi-word tokenization.
@@ -507,7 +556,9 @@ class SearchService:
         stmt = stmt.where(or_(*search_conditions), active_file_filter())
         
         # Apply filters
-        if repository_id:
+        if repository_scope_ids:
+            stmt = stmt.where(Repository.id.in_(repository_scope_ids))
+        elif repository_id:
             stmt = stmt.where(Repository.id == repository_id)
         if language:
             stmt = stmt.where(Symbol.language == language)
@@ -545,6 +596,10 @@ class SearchService:
                 query_intents=query_intents,
                 query_tokens=query_tokens,
             )
+            score += self._calculate_repository_scope_boost(
+                result_repository_id=repo.id,
+                query_scope=query_scope,
+            )
 
             search_result = SearchResult(
                 symbol_id=symbol.id,
@@ -569,6 +624,8 @@ class SearchService:
                     snippet_selection=snippet_selection,
                 ),
                 follow_up_tools=self._build_follow_up_tools(symbol),
+                query_scope_group=query_scope.group_display_name if query_scope and query_scope.expanded else None,
+                query_scope_repositories=query_scope.repository_names if query_scope and query_scope.expanded else [],
                 updated_at=symbol.created_at,
                 context_url=f"/api/symbols/{symbol.id}"  # Add context URL
             )
@@ -590,7 +647,9 @@ class SearchService:
         limit: int,
         repository_id: Optional[int],
         language: Optional[LanguageEnum],
-        symbol_kind: Optional[SymbolKindEnum]
+        symbol_kind: Optional[SymbolKindEnum],
+        repository_scope_ids: Optional[List[int]] = None,
+        query_scope: Optional[RepositoryQueryScope] = None,
     ) -> List[SearchResult]:
         """Perform semantic search using embeddings."""
         # Generate query embedding
@@ -602,7 +661,9 @@ class SearchService:
         
         # Build filters
         filters = {}
-        if repository_id:
+        if repository_scope_ids:
+            filters['repository_ids'] = repository_scope_ids
+        elif repository_id:
             filters['repository_id'] = repository_id
         if language:
             filters['language'] = language
@@ -672,6 +733,9 @@ class SearchService:
                         chunk_content=snippet_selection.content if snippet_selection else None,
                         query_intents=query_intents,
                         query_tokens=query_tokens,
+                    ) + self._calculate_repository_scope_boost(
+                        result_repository_id=repo.id,
+                        query_scope=query_scope,
                     ),
                     match_type="semantic",
                     snippet_match_type=snippet_selection.match_type if snippet_selection else None,
@@ -680,6 +744,8 @@ class SearchService:
                         snippet_selection=snippet_selection,
                     ),
                     follow_up_tools=self._build_follow_up_tools(symbol),
+                    query_scope_group=query_scope.group_display_name if query_scope and query_scope.expanded else None,
+                    query_scope_repositories=query_scope.repository_names if query_scope and query_scope.expanded else [],
                     updated_at=symbol.created_at,
                     context_url=f"/api/symbols/{symbol.id}"  # Add context URL
                 ))
@@ -691,6 +757,7 @@ class SearchService:
         query: str,
         limit: int,
         repository_id: Optional[int],
+        repository_scope_ids: Optional[List[int]],
         language: Optional[LanguageEnum],
         symbol_kind: Optional[SymbolKindEnum],
         hybrid: bool
@@ -702,6 +769,7 @@ class SearchService:
             query,
             str(limit),
             str(repository_id) if repository_id else "all",
+            ",".join(str(repo_id) for repo_id in (repository_scope_ids or [])) or "scope:all",
             language.value if language else "all",
             symbol_kind.value if symbol_kind else "all",
             "hybrid" if hybrid else "keyword"
@@ -878,6 +946,27 @@ class SearchService:
             score += 0.5
 
         return score
+
+    def _calculate_repository_scope_boost(
+        self,
+        *,
+        result_repository_id: int,
+        query_scope: Optional[RepositoryQueryScope],
+    ) -> float:
+        """Keep the requested repository ahead of related-group spillover results."""
+        if query_scope is None or not query_scope.expanded:
+            return 0.0
+
+        if result_repository_id == query_scope.primary_repository_id:
+            return 2.5
+
+        if result_repository_id in (query_scope.support_repository_ids or []):
+            return 0.2
+
+        if result_repository_id in query_scope.repository_ids:
+            return 0.8
+
+        return 0.0
 
     def _infer_query_intents(self, query: str, query_tokens: List[str]) -> set[str]:
         intents: set[str] = set()
