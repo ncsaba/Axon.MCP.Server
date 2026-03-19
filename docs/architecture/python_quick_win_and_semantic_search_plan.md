@@ -59,11 +59,11 @@ flowchart LR
 | Phase | Status | Focus | Why now |
 | --- | --- | --- | --- |
 | P0. Establish current Python baseline | `✅` | Confirm Python already has discovery, symbol extraction, and dependency manifest support. | Starting point is already known. |
-| P1. Python import quick win | `🧭` | Persist `IMPORTS` edges for intra-repo Python imports. | Smallest vertical slice with immediate user-visible value. |
-| P2. Python call quick win | `🧭` | Add Python `CALLS` extraction using a Python-specific AST strategy seam. | High-value graph improvement without waiting on tree-sitter refactor. |
-| P3. Python endpoint quick win | `🧭` | Add FastAPI/Flask baseline endpoint extraction. | Gives immediate practical value on real Python service repos. |
-| P4. Python parity validation | `🧭` | Add focused Python integration and retrieval benchmarks. | Prevents semantics work from drifting into unmeasured changes. |
-| P5. Semantic-search overhaul | `🧭` | Redesign retrieval chunking using kilocode-inspired parser-backed chunk builders plus Axon-native graph/context strengths. | Better done after Python graph truth is stronger and benchmark gaps are visible. |
+| P1. Python import quick win | `✅` | Persist `IMPORTS` edges for intra-repo Python imports. | Smallest vertical slice with immediate user-visible value. |
+| P2. Python call quick win | `✅` | Add Python `CALLS` extraction using a Python-specific AST strategy seam. | High-value graph improvement without waiting on tree-sitter refactor. |
+| P3. Python endpoint quick win | `✅` | Add FastAPI/Flask baseline endpoint extraction. | Gives immediate practical value on real Python service repos. |
+| P4. Python parity validation | `🚧` | Add focused Python integration and retrieval benchmarks. | Focused integration tests are landed; retrieval benchmark seeding is now explicit and the live benchmark run remains next. |
+| P5. Semantic-search overhaul | `🚧` | Redesign retrieval chunking using kilocode-inspired parser-backed chunk builders plus Axon-native graph/context strengths. | Can now start in thin retrieval-only slices because Python graph truth is stronger. |
 
 ## Phase P1: Python Import Quick Win
 
@@ -89,6 +89,16 @@ flowchart LR
 2. Relative imports resolve correctly for normal package layouts.
 3. Imports inside strings/comments do not create false relations.
 4. Focused integration coverage exists.
+
+### Remaining Parser-Fidelity Work
+
+These items are intentionally deferred from the quick-win slice and still need follow-up work:
+
+- preserve alias information for `import x as y` and `from x import y as z`
+- emit structured import records instead of flat strings
+- distinguish imported modules, imported symbols, and wildcard imports at parse level
+- consider dynamic import patterns such as `importlib.import_module(...)` only if benchmarked retrieval or graph use-cases justify it
+- model `__init__.py` re-export/package-surface semantics when they materially affect resolution quality
 
 ## Phase P2: Python Call Quick Win
 
@@ -206,9 +216,18 @@ Separate:
 | Slice | Status | Scope |
 | --- | --- | --- |
 | S1. Capability signaling for chunk builders | `🧭` | Make parser-backed vs fallback-backed chunk behavior explicit by file type/language. |
-| S2. Python retrieval chunk builder | `🧭` | Create Python-specific semantic chunks that combine decorators, signature, body, imports, and bounded framework context. |
+| S2. Python retrieval chunk builder | `🚧` | Start with decorator-aware Python chunks so FastAPI/Flask route context is embedded with the definition body instead of being dropped. |
 | S3. Search benchmark comparison vs pre-overhaul baseline | `🧭` | Prove chunking changes improved usefulness before broader rollout. |
 | S4. Cross-language chunk-builder platform | `🧭` | Generalize only after Python proves the design. |
+
+## Current Retrieval Increment (2026-03-19)
+
+`🚧` partially implemented in this increment.
+
+| Increment | Scope | Validation |
+| --- | --- | --- |
+| Python decorator-aware chunk coherence | Preserve Python decorators in retrieval chunk bodies and metadata so FastAPI/Flask route declarations stay semantically attached to the symbol they describe | Verified on 2026-03-19 by running `tests/unit/test_python_parser.py` and `tests/unit/test_symbol_chunker.py` against the local devcontainer Python environment |
+| Call-neighbor retrieval context | Include incoming `called_by` context in chunk content/metadata so service-flow and entrypoint-to-helper queries have graph-adjacent retrieval text | Verified on 2026-03-19 by running `tests/unit/test_symbol_chunker.py` against the local devcontainer Python environment |
 
 ## Execution Order
 

@@ -1,5 +1,6 @@
 """Call graph analyzers for supported languages."""
 
+import ast
 from dataclasses import dataclass
 from typing import List, Optional, Protocol
 
@@ -239,3 +240,69 @@ class JavaCallAnalyzer:
             return ""
         code_bytes = code.encode("utf-8")
         return code_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="ignore")
+
+
+class PythonCallAnalyzer:
+    """Analyzes Python AST nodes to extract function and method calls."""
+
+    def extract_calls(self, symbol_node: ast.AST, code: str) -> List[Call]:
+        calls: List[Call] = []
+
+        for node in ast.walk(symbol_node):
+            if not isinstance(node, ast.Call):
+                continue
+
+            parsed = self._parse_call(node, code)
+            if parsed is not None:
+                calls.append(parsed)
+
+        return calls
+
+    def extract_usages(self, symbol_node: ast.AST, code: str) -> List[Call]:
+        # Python usage extraction is not implemented in this slice.
+        return []
+
+    def _parse_call(self, node: ast.Call, code: str) -> Optional[Call]:
+        func = node.func
+        method_name: Optional[str] = None
+        receiver: Optional[str] = None
+
+        if isinstance(func, ast.Name):
+            method_name = func.id
+        elif isinstance(func, ast.Attribute):
+            method_name = func.attr
+            receiver = self._receiver_name(func.value)
+
+        if not method_name:
+            return None
+
+        arguments: List[str] = []
+        for arg in node.args:
+            rendered = self._safe_unparse(arg)
+            if rendered:
+                arguments.append(rendered)
+
+        return Call(
+            method_name=method_name,
+            receiver=receiver,
+            arguments=arguments,
+            line_number=getattr(node, "lineno", 0),
+            end_line=getattr(node, "end_lineno", getattr(node, "lineno", 0)),
+            start_column=getattr(node, "col_offset", 0) + 1,
+            end_column=getattr(node, "end_col_offset", getattr(node, "col_offset", 0)) + 1,
+            is_async=False,
+            is_static=bool(receiver and receiver[:1].isupper()),
+        )
+
+    def _receiver_name(self, node: ast.AST) -> Optional[str]:
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            return self._safe_unparse(node)
+        return None
+
+    def _safe_unparse(self, node: ast.AST) -> Optional[str]:
+        try:
+            return ast.unparse(node)
+        except Exception:
+            return None

@@ -28,7 +28,9 @@ def mock_vector_store():
 @pytest.fixture
 def search_service(mock_session, mock_vector_store):
     """Create SearchService instance."""
-    return SearchService(mock_session, mock_vector_store)
+    service = SearchService(mock_session, mock_vector_store)
+    service._get_code_snippets = AsyncMock(return_value={})
+    return service
 
 
 @pytest.mark.asyncio
@@ -78,7 +80,7 @@ async def test_keyword_search_scores_all_matches_before_limit(search_service, mo
         repo.name = "test-repo"
         
         # SQL score: 0.0 for documentation-only matches
-        mock_symbols.append((symbol, file, repo))
+        mock_symbols.append((symbol, file, repo, None))
         mock_files.append(file)
         mock_repos.append(repo)
     
@@ -107,7 +109,7 @@ async def test_keyword_search_scores_all_matches_before_limit(search_service, mo
         repo.name = "test-repo"
         
         # SQL score: 0.7 for partial name matches
-        mock_symbols.append((symbol, file, repo))
+        mock_symbols.append((symbol, file, repo, None))
         mock_files.append(file)
         mock_repos.append(repo)
     
@@ -136,7 +138,7 @@ async def test_keyword_search_scores_all_matches_before_limit(search_service, mo
         repo.name = "test-repo"
         
         # SQL score: 1.0 for exact name matches
-        mock_symbols.append((symbol, file, repo))
+        mock_symbols.append((symbol, file, repo, None))
         mock_files.append(file)
         mock_repos.append(repo)
     
@@ -213,7 +215,7 @@ async def test_keyword_search_safety_limit(search_service, mock_session):
         repo.name = "test-repo"
         
         # SQL score: 0.7 for partial name matches
-        mock_symbols.append((symbol, file, repo))
+        mock_symbols.append((symbol, file, repo, None))
     
     mock_result = MagicMock()
     mock_result.all.return_value = mock_symbols
@@ -274,7 +276,7 @@ async def test_keyword_search_deterministic_tie_breaking(search_service, mock_se
         repo.name = "test-repo"
         
         # SQL score: 0.7 for partial name matches (all contain "process")
-        mock_symbols.append((symbol, file, repo))
+        mock_symbols.append((symbol, file, repo, None))
     
     mock_result = MagicMock()
     mock_result.all.return_value = mock_symbols

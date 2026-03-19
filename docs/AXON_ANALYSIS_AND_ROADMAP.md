@@ -20,7 +20,7 @@ This fork prioritizes:
 | Schema baseline reset | `✅` | Clean baseline established for current development track. |
 | Local infra alignment | `✅` | PostgreSQL 17 + pgvector, Redis, manual Celery worker. |
 | File instance/content lifecycle foundation | `✅` | Lifecycle/query correctness, content-ID-based refresh, chunk-link association, ORM compatibility-alias removal, baseline-schema alignment, and reset-schema full-suite validation are landed. For the current WIP cycle, fresh-schema reset/recreate is the preferred schema workflow, while Alembic remains available when explicitly needed. |
-| Python semantic relation depth | `🚧` | Import strings are parsed, but import graph edges, call relations, and endpoint extraction are not yet parity-level. |
+| Python semantic relation depth | `🚧` | Import graph edges, call relations, and FastAPI/Flask baseline endpoint extraction are landed; remaining work is richer import parse fidelity plus broader retrieval/chunk-quality validation. |
 | Java semantic relation depth | `🚧` | Not yet at target for imports/calls/endpoints/dependencies. |
 
 ## Capability Snapshot
@@ -33,10 +33,9 @@ This fork prioritizes:
 
 ### Gaps
 
-- Python semantic extractors are the clearest parity gap relative to the stated fork priorities:
-- import strings exist in parse output, but `IMPORTS` graph persistence is not wired in
-- `CALLS` extraction currently assumes tree-sitter-backed symbol nodes, so Python has no active call-graph path
-- API endpoint extraction has no Python framework strategy yet
+- Python semantic quick wins are now landed for imports, calls, and baseline FastAPI/Flask endpoint extraction.
+- The next Python gap is retrieval quality: semantic chunk coherence, corpus discipline, and benchmark evidence versus kilocode-style chunking.
+- Python import parsing is still intentionally lightweight: aliases, structured import records, wildcard typing, dynamic imports, and `__init__.py` re-export semantics remain to be done.
 
 - Java semantic coverage is much stronger than before, but still needs benchmark-backed parity validation on shared repositories.
 
@@ -83,11 +82,14 @@ Implementation plan for the current session direction:
 | Remaining query-surface classification for `File`/`FileInstance` callers | `✅` |
 | Shared-chunk association model for true content-owned reuse | `✅` |
 | Reset-schema full-suite validation for the current branch worktree | `✅` |
-| Python import graph vertical slice (`IMPORTS` edges for intra-repo imports) | `🧭` |
-| Python call graph strategy vertical slice (`CALLS` edges without tree-sitter-only assumptions) | `🧭` |
-| Python endpoint extraction baseline (FastAPI/Flask-first) | `🧭` |
+| Python import graph vertical slice (`IMPORTS` edges for intra-repo imports) | `✅` |
+| Python call graph strategy vertical slice (`CALLS` edges without tree-sitter-only assumptions) | `✅` |
+| Python endpoint extraction baseline (FastAPI/Flask-first) | `✅` |
 | Python quick-win + later semantic-search overhaul plan | `✅` |
-| Complete Java feature coverage to kilocode-equivalent baseline (parity gate) | `🧭` |
+| Python decorator-aware retrieval chunk slice | `✅` |
+| Python retrieval benchmark seed expansion | `✅` |
+| Call-neighbor retrieval chunk context | `✅` |
+| Complete Java feature coverage to kilocode-equivalent baseline (parity gate) | `🚧` |
 | Java import parity expansion (package wildcard + static wildcard/member imports) | `✅` |
 | Java call parity expansion (qualified static calls + overload arity resolution) | `✅` |
 | Java endpoint parity expansion (JAX-RS `@Path` + Spring multi-method `@RequestMapping`) | `✅` |
@@ -110,8 +112,8 @@ Implementation plan for the current session direction:
 | Execute streaming indexing slices (metadata contract -> gate -> parse fanout -> embed -> aggregate) | `🧭` |
 | Implement file instance/content separation vertical slice (chunks + embeddings first) | `✅` |
 | Introduce interfaces for import/call/dependency extraction by language | `🚧` |
-| Implement Python semantic extractor set on the shared strategy seams | `🧭` |
-| Add integration checks focused on Python relation creation quality | `🧭` |
-| Implement first Java semantic extractor set | `🚧` |
-| Add integration checks focused on relation creation quality | `🚧` |
+| Implement Python semantic extractor set on the shared strategy seams | `✅` |
+| Add integration checks focused on Python relation creation quality | `✅` |
+| Implement first Java semantic extractor set | `✅` |
+| Add integration checks focused on relation creation quality | `✅` |
 | Define and track Axon-surpass metrics after parity gate completion | `🧭` |

@@ -2,6 +2,7 @@
 
 from typing import Optional, List, Dict, Any, Tuple
 import asyncio
+import ast
 import re
 from pathlib import Path
 from sqlalchemy import select
@@ -345,6 +346,122 @@ class JavaImportExtractionStrategy:
         return target_file_id, symbol_ids
 
 
+class PythonImportExtractionStrategy:
+    """Python import extraction + resolution strategy."""
+
+    def __init__(self, resolver: ImportResolver):
+        self.resolver = resolver
+
+    async def extract_imports(
+        self,
+        code: str,
+        file: File,
+        file_path: Path,
+    ) -> List[Dict[str, Any]]:
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            return []
+
+        imports: List[Dict[str, Any]] = []
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    module_path = (alias.name or "").strip()
+                    if not module_path:
+                        continue
+
+                    target_file_id = await self.resolver.resolve_import(module_path, file, file_path)
+                    if not target_file_id:
+                        continue
+
+                    symbol_ids = await self._resolve_module_symbols(target_file_id)
+                    imports.append(
+                        {
+                            "import_path": module_path,
+                            "file_id": target_file_id,
+                            "symbols": symbol_ids,
+                        }
+                    )
+
+            elif isinstance(node, ast.ImportFrom):
+                base_import = ("." * node.level) + (node.module or "")
+
+                for alias in node.names:
+                    if alias.name == "*":
+                        target_file_id = await self.resolver.resolve_import(base_import, file, file_path)
+                        if not target_file_id:
+                            continue
+
+                        imports.append(
+                            {
+                                "import_path": base_import,
+                                "file_id": target_file_id,
+                                "symbols": await self._resolve_module_symbols(target_file_id),
+                            }
+                        )
+                        continue
+
+                    submodule_import = self._join_python_import(base_import, alias.name)
+                    target_file_id = await self.resolver.resolve_import(submodule_import, file, file_path)
+                    if target_file_id:
+                        imports.append(
+                            {
+                                "import_path": submodule_import,
+                                "file_id": target_file_id,
+                                "symbols": await self._resolve_module_symbols(target_file_id),
+                            }
+                        )
+                        continue
+
+                    target_file_id = await self.resolver.resolve_import(base_import, file, file_path)
+                    if not target_file_id:
+                        continue
+
+                    symbol_id = await self.resolver.resolve_symbol_import(
+                        base_import,
+                        alias.name,
+                        file,
+                        file_path,
+                    )
+                    if symbol_id:
+                        imports.append(
+                            {
+                                "import_path": self._join_python_import(base_import, alias.name),
+                                "file_id": target_file_id,
+                                "symbols": [symbol_id],
+                            }
+                        )
+
+        return imports
+
+    async def _resolve_module_symbols(self, target_file_id: int) -> List[int]:
+        result = await self.resolver.session.execute(
+            select(Symbol.id).where(
+                Symbol.file_instance_id == target_file_id,
+                Symbol.parent_name.is_(None),
+                Symbol.kind.in_(
+                    [
+                        SymbolKindEnum.CLASS,
+                        SymbolKindEnum.FUNCTION,
+                        SymbolKindEnum.CONSTANT,
+                        SymbolKindEnum.VARIABLE,
+                        SymbolKindEnum.MODULE,
+                    ]
+                ),
+            )
+        )
+        return [row[0] for row in result.all()]
+
+    def _join_python_import(self, base_import: str, symbol_name: str) -> str:
+        if not base_import:
+            return symbol_name
+        if base_import.endswith("."):
+            return f"{base_import}{symbol_name}"
+        return f"{base_import}.{symbol_name}"
+
+
 class ImportRelationshipBuilder:
     """Builds IMPORTS relationships between files."""
     
@@ -362,6 +479,7 @@ class ImportRelationshipBuilder:
             LanguageEnum.JAVASCRIPT: JSImportExtractionStrategy(self.resolver),
             LanguageEnum.TYPESCRIPT: JSImportExtractionStrategy(self.resolver),
             LanguageEnum.JAVA: JavaImportExtractionStrategy(self.resolver),
+            LanguageEnum.PYTHON: PythonImportExtractionStrategy(self.resolver),
         }
     
     async def build_import_relationships(

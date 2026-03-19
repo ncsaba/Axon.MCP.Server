@@ -18,8 +18,8 @@
 
 | Language / Asset | Discovery + Routing | Symbol Extraction | Import Extraction (Parse) | Import Relations (Graph) | Call Graph Relations | API Endpoint Extraction | Dependency Extraction | Notes |
 |---|---|---|---|---|---|---|---|---|
-| Python (`.py`) | `✅` | `✅` | `🚧` | `🛑` | `🛑` | `🛑` | `✅` | Python dependency manifests are supported; semantic graph extractors are limited |
-| Java (`.java`) | `✅` | `✅` | `✅` | `🚧` | `🚧` | `🚧` | `🚧` | Basic import/call/endpoint/dependency extraction is implemented with partial fidelity |
+| Python (`.py`) | `✅` | `✅` | `🚧` | `✅` | `✅` | `✅` | `✅` | Python import, call graph, and FastAPI/Flask baseline endpoint slices are landed; import parsing still uses flat strings rather than rich import records |
+| Java (`.java`) | `✅` | `✅` | `✅` | `✅` | `✅` | `✅` | `✅` | Java import, call, endpoint, and dependency parity slices are landed; shared-repo benchmark validation remains next |
 | JavaScript (`.js/.jsx/.mjs`) | `✅` | `✅` | `✅` | `✅` | `✅` | `✅` | `✅` | Strongest semantic path today |
 | TypeScript (`.ts/.tsx`) | `✅` | `✅` | `✅` | `✅` | `✅` | `✅` | `✅` | Shares most JS extractor behavior |
 | Vue (`.vue`) | `✅` | `✅` | `🚧` | `🚧` | `🚧` | `🚧` | `🛑` | Backed by JS/TS parser logic; fidelity depends on embedded script content |
@@ -33,12 +33,12 @@
 
 | Capability | JS/TS | Java | Python | Other |
 |---|---|---|---|---|
-| Import relationship resolver | `✅` | `🚧` | `🛑` | `🛑` |
-| Call extraction + `CALLS` relation | `✅` | `🚧` | `🛑` | `🛑` |
+| Import relationship resolver | `✅` | `✅` | `✅` | `🛑` |
+| Call extraction + `CALLS` relation | `✅` | `✅` | `✅` | `🛑` |
 | Outgoing API call extraction | `✅` | `🛑` | `🛑` | `🛑` |
 | Event publish/subscribe extraction | `✅` | `🛑` | `🛑` | `🛑` |
-| API endpoint extraction | `✅` | `🚧` | `🛑` | `🚧` |
-| Dependency manifest extraction | `✅` | `🚧` | `✅` | `🛑` |
+| API endpoint extraction | `✅` | `✅` | `✅` | `🚧` |
+| Dependency manifest extraction | `✅` | `✅` | `✅` | `🛑` |
 
 ## Source Mapping (Current Implementation)
 
@@ -78,19 +78,32 @@
 | Phase | Status | Scope |
 | --- | --- | --- |
 | Define strategy interfaces and register existing JS/TS implementations | `🚧` | Strategy interfaces + registry seams added across import/call/endpoint/dependency extractors |
-| Add Python implementations for imports, calls, endpoints | `🧭` | Deliver the first Python semantic relation wave without tree-sitter-only assumptions |
+| Add Python implementations for imports, calls, endpoints | `✅` | First Python semantic relation wave is landed without tree-sitter-only assumptions in shared paths |
 | Close Java benchmark validation and remaining precision gaps | `🧭` | Confirm current Java breadth on shared benchmark repos |
 | Add parser capability flags and fallback chunking policy | `🧭` | Improve resilience for parser-weak formats |
 
 ## Current Increment (2026-03-19)
 
-`🧭` planned in this increment.
+`🚧` partially implemented in this increment.
 
 | Increment | Scope | Validation |
 | --- | --- | --- |
-| Python import relations vertical slice | Add `PythonImportStrategy` in `ImportRelationshipBuilder` and persist `IMPORTS` edges for intra-repo `import` / `from ... import ...` cases, including relative imports | Planned validation: focused integration test covering absolute and relative Python imports against local PostgreSQL test DB |
-| Python call strategy seam | Refactor `CallGraphBuilder` so Python call extraction can operate on builtin AST-derived nodes instead of tree-sitter-only nodes | Planned validation: focused call-graph integration test on a small Python package |
-| Python endpoint extraction baseline | Add framework-aware endpoint extraction for FastAPI/Flask-first patterns and persist endpoint symbols | Planned validation: focused endpoint extraction integration test on representative Python route declarations |
+| Python import relations vertical slice | Add `PythonImportStrategy` in `ImportRelationshipBuilder` and persist `IMPORTS` edges for intra-repo `import` / `from ... import ...` cases, including relative imports | Verified on 2026-03-19 by running `tests/integration/test_python_import_relationships.py` and `tests/unit/test_python_parser.py` against the local devcontainer Python environment |
+| Python call strategy seam | Refactor `CallGraphBuilder` so Python call extraction can operate on builtin AST-derived nodes instead of tree-sitter-only nodes | Verified on 2026-03-19 by running `tests/integration/test_python_call_relationships.py` against the local devcontainer Python environment |
+| Python endpoint extraction baseline | Add framework-aware endpoint extraction for FastAPI/Flask-first patterns and persist endpoint symbols | Verified on 2026-03-19 by running `tests/integration/test_python_api_endpoint_extraction.py` against the local devcontainer Python environment |
+
+## Known Python Import Parsing Gaps
+
+`🧭` next parser-fidelity follow-ups, `✅` already covered by current parse output.
+
+| Gap | Status | Why it is still open |
+| --- | --- | --- |
+| Module-relative and absolute import string capture | `✅` | Current builtin-AST parser emits enough flat import strings to support the first `IMPORTS` graph slice. |
+| Structured import records (`module`, `symbol`, `alias`, `is_wildcard`) | `🧭` | Parser output is still a flat string list, which limits downstream precision and chunk-context quality. |
+| Alias capture (`import x as y`, `from x import y as z`) | `🧭` | Alias targets are not preserved explicitly in parse output today. |
+| Wildcard vs symbol-vs-module distinction | `🧭` | `from x import *` and `from x import y` are not represented as typed import records at parse level. |
+| Dynamic/runtime import detection (`importlib.import_module`, `__import__`) | `🧭` | Current parser intentionally focuses on static AST imports only. |
+| Re-export semantics through `__init__.py` / package surfaces | `🧭` | Parse output does not yet model package-level re-exports as a first-class import surface. |
 
 ## Acceptance Criteria for "Java Semantic Parity v1"
 
@@ -98,10 +111,10 @@
 
 | Criterion | Gate |
 | --- | --- |
-| Java import relations persisted as `IMPORTS` edges with measurable resolution rate | `🚧` |
-| Java call relations persisted as `CALLS` edges for common invocation patterns | `🚧` |
-| Java endpoint extraction supports common controller/router patterns in target repos | `🚧` |
-| Java dependency manifests (`pom.xml`, `build.gradle*`) are parsed and stored | `🚧` |
+| Java import relations persisted as `IMPORTS` edges with measurable resolution rate | `✅` |
+| Java call relations persisted as `CALLS` edges for common invocation patterns | `✅` |
+| Java endpoint extraction supports common controller/router patterns in target repos | `✅` |
+| Java dependency manifests (`pom.xml`, `build.gradle*`) are parsed and stored | `✅` |
 | Integration tests validate end-to-end indexing on real Java repositories in dev-container | `🚧` |
 
 ## Acceptance Criteria for "Python Semantic Parity v1"
@@ -110,10 +123,10 @@
 
 | Criterion | Gate |
 | --- | --- |
-| Python intra-repo imports persist as `IMPORTS` edges for absolute and relative imports | `🧭` |
-| Python call relations persist as `CALLS` edges for common direct and attribute call patterns | `🧭` |
-| Python framework endpoint extraction supports FastAPI and Flask baseline patterns | `🧭` |
-| Integration tests validate end-to-end indexing on representative Python repositories in dev-container | `🧭` |
+| Python intra-repo imports persist as `IMPORTS` edges for absolute and relative imports | `✅` |
+| Python call relations persist as `CALLS` edges for common direct and attribute call patterns | `✅` |
+| Python framework endpoint extraction supports FastAPI and Flask baseline patterns | `✅` |
+| Integration tests validate end-to-end indexing on representative Python repositories in dev-container | `🚧` |
 
 ## Benchmark Gates: Match Then Surpass
 

@@ -196,6 +196,7 @@ class TestSymbolChunker:
         context = ChunkContext(
             file_path=file.path,
             calls=["ValidateOrder", "CalculateTotal", "SaveOrder"],
+            called_by=["OrderController.submit"],
             implements=["IOrderProcessor"],
             inherits_from=["BaseService"]
         )
@@ -211,8 +212,55 @@ class TestSymbolChunker:
         # Check calls are included
         assert len(metadata['calls']) == 3
         assert 'ValidateOrder' in metadata['calls']
-        
+        assert metadata['called_by'] == ["OrderController.submit"]
+        assert 'Called by: OrderController.submit' in content
+
         # Check implements/inherits
         assert len(metadata['implements']) == 1
         assert len(metadata['inherits_from']) == 1
 
+    def test_python_decorators_are_preserved_in_chunk_body_and_metadata(self):
+        """Decorated Python definitions should keep route decorators in the chunk."""
+        symbol = Mock(spec=Symbol)
+        symbol.id = 1
+        symbol.name = "get_user"
+        symbol.kind = SymbolKindEnum.FUNCTION
+        symbol.signature = "async def get_user(user_id) -> dict"
+        symbol.documentation = None
+        symbol.structured_docs = {
+            "decorators": ['router.get("/{user_id}")'],
+            "chunk_start_line": 5,
+        }
+        symbol.start_line = 6
+        symbol.end_line = 7
+
+        file = Mock(spec=File)
+        file.path = "src/app/routes.py"
+        file.id = 1
+
+        context = ChunkContext(
+            file_path=file.path,
+            namespace="src.app.routes",
+            imports=["fastapi.APIRouter"],
+        )
+
+        chunks = self.chunker.create_chunks_for_symbol(
+            symbol,
+            file,
+            context,
+            file_content=(
+                "from fastapi import APIRouter\n"
+                "\n"
+                "router = APIRouter(prefix=\"/api/users\")\n"
+                "\n"
+                "@router.get(\"/{user_id}\")\n"
+                "async def get_user(user_id: str) -> dict:\n"
+                "    return {\"user_id\": user_id}\n"
+            ),
+        )
+
+        code_chunk = next((c for c in chunks if c["chunk_subtype"] == "implementation"), None)
+        assert code_chunk is not None
+        assert code_chunk["start_line"] == 5
+        assert 'router.get("/{user_id}")' in code_chunk["context_metadata"]["decorators"]
+        assert "@router.get(\"/{user_id}\")" in code_chunk["content"]
