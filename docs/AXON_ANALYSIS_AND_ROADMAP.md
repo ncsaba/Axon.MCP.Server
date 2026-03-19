@@ -87,6 +87,10 @@ Adopt selectively from `external-inspiration/kilocode`:
 | Streaming indexing implementation plan (slice-by-slice execution) | `✅` |
 | Implement provider-neutral repository registration (`GIT`/`GITHUB`) | `✅` |
 | Add scheduled repository polling + incremental commit-diff orchestration | `✅` |
+| Add GitHub/provider-neutral discovery workflows | `🧭` |
+| Add per-repository credentials and polling controls | `🧭` |
+| Add webhook-triggered repository refresh | `🧭` |
+| Replace runtime provider-enum alignment with explicit migration path | `🧭` |
 | Implement Keycloak-backed REST auth | `✅` |
 | Implement Keycloak browser login/session flow | `✅` |
 | Implement personalized MCP token issuance/revocation | `✅` |
