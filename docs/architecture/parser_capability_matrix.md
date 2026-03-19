@@ -2,9 +2,9 @@
 
 ## Snapshot
 
-- Date: 2026-03-11
+- Date: 2026-03-19
 - Scope: Current Axon parser/extractor capabilities and next implementation steps
-- Goal: Provide the execution checklist for Java semantic parity and parser-platform consolidation
+- Goal: Provide the execution checklist for Python semantic parity first, then parser-platform consolidation and Java validation closure
 
 ## Status Icons
 
@@ -60,11 +60,11 @@
 
 2. `CallExtractionStrategy`
 - `extract_calls(symbol_ast, file_ctx) -> list[CallRef]`
-- Implementations: `JavaScriptCallStrategy`, `JavaCallStrategy`
+- Implementations: `JavaScriptCallStrategy`, `JavaCallStrategy`, `PythonCallStrategy`
 
 3. `EndpointExtractionStrategy`
 - `extract_endpoints(symbols_or_ast, file_ctx) -> list[EndpointRef]`
-- Implementations: `JavaScriptEndpointStrategy`, `JavaEndpointStrategy`
+- Implementations: `JavaScriptEndpointStrategy`, `JavaEndpointStrategy`, `PythonEndpointStrategy`
 
 4. `DependencyManifestStrategy`
 - `supports(file_name) -> bool`
@@ -78,21 +78,19 @@
 | Phase | Status | Scope |
 | --- | --- | --- |
 | Define strategy interfaces and register existing JS/TS implementations | `🚧` | Strategy interfaces + registry seams added across import/call/endpoint/dependency extractors |
-| Add Java implementations for imports, calls, endpoints | `🧭` | Deliver first Java semantic relation wave |
-| Add Java dependency strategies (Maven/Gradle) and relation persistence | `🧭` | Expand dependency intelligence for Java repos |
+| Add Python implementations for imports, calls, endpoints | `🧭` | Deliver the first Python semantic relation wave without tree-sitter-only assumptions |
+| Close Java benchmark validation and remaining precision gaps | `🧭` | Confirm current Java breadth on shared benchmark repos |
 | Add parser capability flags and fallback chunking policy | `🧭` | Improve resilience for parser-weak formats |
 
-## Current Increment (2026-03-11)
+## Current Increment (2026-03-19)
 
-`✅` implemented in this increment.
+`🧭` planned in this increment.
 
 | Increment | Scope | Validation |
 | --- | --- | --- |
-| Java import relations vertical slice | Add Java import extraction/resolution in `ImportRelationshipBuilder` and persist `IMPORTS` edges for basic class imports | Verified on 2026-03-11 by running `tests/integration/test_java_import_relationships.py` and `tests/integration/test_post_cleanup_integration.py` against local PostgreSQL test DB (`indexer`) |
-| Java call relations vertical slice | Add Java method call extraction in `CallGraphBuilder` path and persist `CALLS` edges for common invocation patterns | Verified on 2026-03-11 by running `tests/integration/test_java_call_relationships.py` against local PostgreSQL test DB (`indexer`) |
-| Java endpoint extraction vertical slice | Add Java annotation-based endpoint extraction (Spring/JAX-RS baseline) and persist endpoint symbols | Verified on 2026-03-11 by running `tests/integration/test_java_api_endpoint_extraction.py` against local PostgreSQL test DB (`indexer`) |
-| Java dependency extraction vertical slice | Add Maven/Gradle manifest extraction in `DependencyExtractor` and persist repository dependencies | Verified on 2026-03-11 by running `tests/integration/test_java_dependency_extraction.py` against local PostgreSQL test DB (`indexer`) |
-| Strategy seam refactor (non-breaking) | Introduce explicit strategy interfaces + language/file strategy registries for import/call/endpoint/dependency extraction | Verified on 2026-03-12 by rerunning Java integration slices and baseline post-cleanup integration tests |
+| Python import relations vertical slice | Add `PythonImportStrategy` in `ImportRelationshipBuilder` and persist `IMPORTS` edges for intra-repo `import` / `from ... import ...` cases, including relative imports | Planned validation: focused integration test covering absolute and relative Python imports against local PostgreSQL test DB |
+| Python call strategy seam | Refactor `CallGraphBuilder` so Python call extraction can operate on builtin AST-derived nodes instead of tree-sitter-only nodes | Planned validation: focused call-graph integration test on a small Python package |
+| Python endpoint extraction baseline | Add framework-aware endpoint extraction for FastAPI/Flask-first patterns and persist endpoint symbols | Planned validation: focused endpoint extraction integration test on representative Python route declarations |
 
 ## Acceptance Criteria for "Java Semantic Parity v1"
 
@@ -105,6 +103,17 @@
 | Java endpoint extraction supports common controller/router patterns in target repos | `🚧` |
 | Java dependency manifests (`pom.xml`, `build.gradle*`) are parsed and stored | `🚧` |
 | Integration tests validate end-to-end indexing on real Java repositories in dev-container | `🚧` |
+
+## Acceptance Criteria for "Python Semantic Parity v1"
+
+`✅` required.
+
+| Criterion | Gate |
+| --- | --- |
+| Python intra-repo imports persist as `IMPORTS` edges for absolute and relative imports | `🧭` |
+| Python call relations persist as `CALLS` edges for common direct and attribute call patterns | `🧭` |
+| Python framework endpoint extraction supports FastAPI and Flask baseline patterns | `🧭` |
+| Integration tests validate end-to-end indexing on representative Python repositories in dev-container | `🧭` |
 
 ## Benchmark Gates: Match Then Surpass
 
