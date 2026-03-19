@@ -4,6 +4,7 @@ from typing import List, Optional
 from mcp.types import TextContent
 
 from src.config.enums import MCPToolEnum
+from src.database.models import Repository
 from src.database.session import get_async_session
 from src.utils.logging_config import get_logger
 from src.utils.metrics import mcp_tool_calls_total, mcp_tool_duration
@@ -11,6 +12,10 @@ from src.utils.project_mapper import ProjectMapper
 from src.utils.module_summary_generator import ModuleSummaryGenerator
 from src.utils.text_to_sql import TextToSQLTranslator
 from src.mcp_server.formatters.hierarchy import format_module_summary
+from src.mcp_server.tools.architecture_support import (
+    find_architecture_support_matches,
+    format_architecture_support_section,
+)
 
 logger = get_logger(__name__)
 
@@ -42,10 +47,30 @@ async def get_project_map(
 
     try:
         async with get_async_session() as session:
+            repo = await session.get(Repository, repository_id)
+            if repo is None:
+                return [
+                    TextContent(
+                        type="text",
+                        text=f"❌ Repository ID {repository_id} not found.\n\n"
+                        "💡 Use `list_repositories()` to find available repositories and their IDs.",
+                    )
+                ]
             mapper = ProjectMapper(session)
             project_map = await mapper.generate_project_map(
                 repository_id=repository_id, max_depth=max_depth
             )
+            support_repo, support_matches = await find_architecture_support_matches(
+                session,
+                subject_text=repo.name,
+            )
+            formatted_map = project_map
+            if support_repo and support_repo.id != repository_id:
+                formatted_map += "\n\n" + format_architecture_support_section(
+                    support_repo_name=support_repo.name,
+                    subject_label=repo.name,
+                    matches=support_matches,
+                )
 
             duration = time.time() - start_time
             mcp_tool_duration.labels(tool_name=MCPToolEnum.GET_PROJECT_MAP.value).observe(
@@ -62,7 +87,7 @@ async def get_project_map(
                 duration=duration,
             )
 
-            return [TextContent(type="text", text=project_map)]
+            return [TextContent(type="text", text=formatted_map)]
 
     except Exception as e:
         duration = time.time() - start_time
@@ -232,6 +257,7 @@ async def query_codebase_structure(
     try:
         async with get_async_session() as session:
             translator = TextToSQLTranslator(session)
+            repo = await session.get(Repository, repository_id) if repository_id else None
             
             # Translate natural language to SQL
             sql_query = await translator.translate(
@@ -262,6 +288,17 @@ async def query_codebase_structure(
             
             # Format results
             formatted_text = translator.format_results_markdown(result)
+            support_subject = repo.name if repo else query
+            support_repo, support_matches = await find_architecture_support_matches(
+                session,
+                subject_text=support_subject,
+            )
+            if support_repo and (repo is None or support_repo.id != repo.id):
+                formatted_text += "\n\n" + format_architecture_support_section(
+                    support_repo_name=support_repo.name,
+                    subject_label=support_subject,
+                    matches=support_matches,
+                )
             
             duration = time.time() - start_time
             mcp_tool_duration.labels(tool_name="query_codebase_structure").observe(duration)

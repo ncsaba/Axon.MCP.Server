@@ -48,6 +48,11 @@ from src.mcp_server.tools.service_tools import (
     get_service_documentation,
 )
 from src.mcp_server.tools.system_map import get_system_map
+from src.mcp_server.tools.repository_connections import (
+    explain_repository_dependency,
+    find_repository_connections,
+    get_repository_connection_subgraph,
+)
 
 logger = get_logger(__name__)
 
@@ -79,6 +84,9 @@ TOOL_HANDLERS = {
     MCPToolEnum.GET_SERVICE_DETAILS.value: get_service_details,
     MCPToolEnum.GET_SERVICE_DOCUMENTATION.value: get_service_documentation,
     MCPToolEnum.GET_SYSTEM_MAP.value: get_system_map,
+    MCPToolEnum.FIND_REPOSITORY_CONNECTIONS.value: find_repository_connections,
+    MCPToolEnum.EXPLAIN_REPOSITORY_DEPENDENCY.value: explain_repository_dependency,
+    MCPToolEnum.GET_REPOSITORY_CONNECTION_SUBGRAPH.value: get_repository_connection_subgraph,
 }
 
 

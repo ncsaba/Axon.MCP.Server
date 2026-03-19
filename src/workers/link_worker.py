@@ -13,6 +13,7 @@ from src.workers.utils import _run_with_engine_cleanup
 from src.database.session import AsyncSessionLocal
 from src.database.models import Job
 from src.config.enums import JobStatusEnum
+from src.api.services.repository_grouping_service import RepositoryGroupingService
 from src.services.link_service import LinkService
 from src.utils.redis_logger import RedisLogPublisher
 from src.utils.logging_config import get_logger
@@ -112,6 +113,21 @@ async def _link_microservices_async(task, repository_ids: Optional[List[int]] = 
                 results = await link_service.link_all(repository_ids)
                 
                 await session.commit()
+
+                try:
+                    grouping_service = RepositoryGroupingService(session)
+                    groups = await grouping_service.refresh_inferred_groups()
+                    await session.commit()
+                    logger.info(
+                        "repository_groups_refreshed_after_linking",
+                        group_count=len(groups),
+                    )
+                except Exception as grouping_error:
+                    await session.rollback()
+                    logger.warning(
+                        "repository_group_refresh_failed_after_linking",
+                        error=str(grouping_error),
+                    )
                 
                 # Update job with results
                 job.status = JobStatusEnum.COMPLETED

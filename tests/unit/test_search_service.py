@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
 
+from src.api.services.repository_grouping_service import RepositoryQueryScope
 from src.api.services.search_service import SearchService
 from src.api.schemas.search import SearchResult
 from src.config.embedding_contract import FIXED_EMBEDDING_DIMENSION
@@ -115,6 +116,64 @@ async def test_semantic_search(search_service, mock_session):
 
 
 @pytest.mark.asyncio
+async def test_semantic_search_uses_repository_group_scope_filters(search_service, mock_session):
+    search_service.embedding_generator.generate_single_embedding.return_value = [0.1] * FIXED_EMBEDDING_DIMENSION
+    search_service.embedding_generator.model_name = "mxbai-embed-large"
+    search_service.embedding_generator.model_version = "1.0"
+    search_service.embedding_generator.dimension = FIXED_EMBEDDING_DIMENSION
+
+    mock_symbol = MagicMock()
+    mock_symbol.id = 11
+    mock_symbol.name = "PredictionSchedulingConfigService"
+    mock_symbol.kind = SymbolKindEnum.CLASS
+    mock_symbol.language = LanguageEnum.JAVA
+    mock_symbol.signature = "class PredictionSchedulingConfigService"
+    mock_symbol.fully_qualified_name = "de.webtrekk.prediction.management.service.config.PredictionSchedulingConfigService"
+    mock_symbol.start_line = 1
+    mock_symbol.end_line = 20
+    mock_symbol.documentation = "Service for prediction scheduling config."
+    mock_symbol.created_at = datetime.now(timezone.utc)
+
+    mock_file = MagicMock()
+    mock_file.id = 5
+    mock_file.path = "src/main/java/.../PredictionSchedulingConfigService.java"
+
+    mock_repo = MagicMock()
+    mock_repo.id = 4
+    mock_repo.name = "dasc-prediction-domain"
+
+    search_service.vector_store.search_similar = AsyncMock(
+        return_value=[(mock_symbol, 0.9, mock_file, mock_repo)]
+    )
+    query_scope = RepositoryQueryScope(
+        primary_repository_id=5,
+        repository_ids=[5, 4, 7],
+        repository_names=[
+            "dasc-prediction-management",
+            "dasc-prediction-domain",
+            "infrastructure-automation",
+        ],
+        group_display_name="Inferred prediction stack",
+        support_repository_ids=[7],
+    )
+
+    results = await search_service._semantic_search(
+        "prediction scheduling config",
+        10,
+        5,
+        None,
+        None,
+        repository_scope_ids=[5, 4, 7],
+        query_scope=query_scope,
+    )
+
+    kwargs = search_service.vector_store.search_similar.await_args.kwargs
+    assert kwargs["filters"]["repository_ids"] == [5, 4, 7]
+    assert results[0].query_scope_group == "Inferred prediction stack"
+    assert results[0].query_scope_repositories == query_scope.repository_names
+
+
+@pytest.mark.asyncio
 async def test_get_code_snippets_prefers_best_keyword_matching_chunk():
     mock_session = AsyncMock()
     with patch('src.api.services.search_service.EmbeddingGenerator'):
@@ -198,6 +257,90 @@ async def test_keyword_search_scores_chunk_content_matches():
 
     assert len(results) == 1
     assert results[0].score > 0
+
+
+@pytest.mark.asyncio
+async def test_keyword_search_prefers_primary_repository_over_support_repo_when_scope_expands():
+    mock_session = AsyncMock()
+    with patch('src.api.services.search_service.EmbeddingGenerator'):
+        service = SearchService(mock_session)
+        service._get_code_snippets = AsyncMock(return_value={})
+
+    primary_symbol = MagicMock()
+    primary_symbol.id = 1
+    primary_symbol.name = "PredictiveServiceClient"
+    primary_symbol.kind = SymbolKindEnum.CLASS
+    primary_symbol.language = LanguageEnum.JAVA
+    primary_symbol.signature = ""
+    primary_symbol.fully_qualified_name = "de.webtrekk.prediction.management.service.PredictiveServiceClient"
+    primary_symbol.start_line = 1
+    primary_symbol.end_line = 20
+    primary_symbol.documentation = "Calls predictive service."
+    primary_symbol.created_at = datetime.now(timezone.utc)
+
+    support_symbol = MagicMock()
+    support_symbol.id = 2
+    support_symbol.name = "prediction-management.j2"
+    support_symbol.kind = SymbolKindEnum.MODULE
+    support_symbol.language = LanguageEnum.UNKNOWN
+    support_symbol.signature = ""
+    support_symbol.fully_qualified_name = "roles.internal.deployment-swat-service.templates.prediction-management"
+    support_symbol.start_line = 1
+    support_symbol.end_line = 20
+    support_symbol.documentation = "Support template for prediction management."
+    support_symbol.created_at = datetime.now(timezone.utc)
+
+    primary_file = MagicMock()
+    primary_file.id = 11
+    primary_file.path = "src/main/java/de/webtrekk/prediction/management/service/PredictiveServiceClient.java"
+
+    support_file = MagicMock()
+    support_file.id = 12
+    support_file.path = "roles/internal/deployment-swat-service/templates/prediction-management.j2"
+
+    primary_repo = MagicMock()
+    primary_repo.id = 5
+    primary_repo.name = "dasc-prediction-management"
+
+    support_repo = MagicMock()
+    support_repo.id = 7
+    support_repo.name = "infrastructure-automation"
+
+    mock_result = MagicMock()
+    mock_result.all.return_value = [
+        (support_symbol, support_file, support_repo, "service.predictive.host={{ predictive_service_url }}"),
+        (primary_symbol, primary_file, primary_repo, "Calls predictive service for management flows"),
+    ]
+    mock_session.execute.return_value = mock_result
+
+    query_scope = RepositoryQueryScope(
+        primary_repository_id=5,
+        repository_ids=[5, 4, 7],
+        repository_names=[
+            "dasc-prediction-management",
+            "dasc-prediction-domain",
+            "infrastructure-automation",
+        ],
+        group_display_name="Inferred prediction stack",
+        support_repository_ids=[7],
+    )
+
+    results = await service._keyword_search(
+        "predictive service",
+        10,
+        5,
+        None,
+        None,
+        repository_scope_ids=[5, 4, 7],
+        query_scope=query_scope,
+    )
+
+    assert [result.repository_name for result in results[:2]] == [
+        "dasc-prediction-management",
+        "infrastructure-automation",
+    ]
+    assert results[0].query_scope_group == "Inferred prediction stack"
+    assert results[0].query_scope_repositories == query_scope.repository_names
 
 
 def test_tokenize_query_normalizes_natural_language_scaffolding():
@@ -583,10 +726,22 @@ async def test_hybrid_search_with_filters(search_service, mock_session):
     # Verify filters were passed
     # Hybrid search now uses limit * 2 for individual searches
     search_service._keyword_search.assert_called_once_with(
-        "test", 20, 1, LanguageEnum.PYTHON, SymbolKindEnum.FUNCTION
+        "test",
+        20,
+        1,
+        LanguageEnum.PYTHON,
+        SymbolKindEnum.FUNCTION,
+        repository_scope_ids=None,
+        query_scope=None,
     )
     search_service._semantic_search.assert_called_once_with(
-        "test", 20, 1, LanguageEnum.PYTHON, SymbolKindEnum.FUNCTION
+        "test",
+        20,
+        1,
+        LanguageEnum.PYTHON,
+        SymbolKindEnum.FUNCTION,
+        repository_scope_ids=None,
+        query_scope=None,
     )
     
     assert isinstance(results, list)

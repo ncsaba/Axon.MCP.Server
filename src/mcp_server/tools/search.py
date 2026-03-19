@@ -96,6 +96,8 @@ async def search_code(
                         "snippet_match_type": result.snippet_match_type,
                         "match_reason": result.match_reason,
                         "follow_up_tools": result.follow_up_tools,
+                        "query_scope_group": result.query_scope_group,
+                        "query_scope_repositories": result.query_scope_repositories,
                         # Quick access (ENHANCED)
                         "context_url": result.context_url,
                     }

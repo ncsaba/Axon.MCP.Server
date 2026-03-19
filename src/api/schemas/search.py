@@ -41,6 +41,8 @@ class SearchResult(BaseModel):
     snippet_match_type: Optional[str] = None
     match_reason: Optional[str] = None
     follow_up_tools: list[str] = Field(default_factory=list)
+    query_scope_group: Optional[str] = None
+    query_scope_repositories: list[str] = Field(default_factory=list)
     updated_at: datetime
     
     # Helpful URLs for getting full content (NEW)
@@ -56,4 +58,3 @@ class SearchRequest(BaseModel):
     language: Optional[LanguageEnum] = None
     symbol_kind: Optional[SymbolKindEnum] = None
     hybrid: bool = True
-

@@ -148,3 +148,6 @@ class MCPToolEnum(str, Enum):
     GET_SERVICE_DETAILS = "get_service_details"
     GET_SERVICE_DOCUMENTATION = "get_service_documentation"
     GET_SYSTEM_MAP = "get_system_map"
+    FIND_REPOSITORY_CONNECTIONS = "find_repository_connections"
+    EXPLAIN_REPOSITORY_DEPENDENCY = "explain_repository_dependency"
+    GET_REPOSITORY_CONNECTION_SUBGRAPH = "get_repository_connection_subgraph"

@@ -24,6 +24,16 @@ The MCP server is built using the [MCP Python SDK](https://modelcontextprotocol.
 
 ## Available Tools
 
+The MCP surface now includes repository- and architecture-level tools in addition to basic symbol search. The most relevant demo-friendly tools are:
+- `search_code`
+- `get_symbol_context`
+- `list_repositories`
+- `find_repository_connections`
+- `explain_repository_dependency`
+- `get_repository_connection_subgraph`
+- `analyze_architecture`
+- `get_system_map`
+
 ### 1. search_code
 
 Search for code symbols across repositories using hybrid search.
@@ -192,7 +202,7 @@ For local connections, use stdio transport:
    ```
 
 3. **Use the tools:**
-   ChatGPT/Cursor will now have access to the three MCP tools for searching and exploring your code.
+   ChatGPT/Cursor will now have access to Axon's search, repository, architecture, and cross-repo dependency tools.
 
 ### Using HTTP Transport (Remote)
 
@@ -243,6 +253,7 @@ For remote connections, use HTTP transport:
 Notes:
 - Some MCP clients, including Codex app, probe OAuth metadata endpoints during server discovery even when static headers are configured. Axon's MCP HTTP transport exposes compatibility metadata routes for that handshake.
 - Codex app also sends `notifications/initialized` after `initialize`; Axon's MCP HTTP transport accepts that as a no-op success before normal `tools/list` and `tools/call` traffic.
+- If a long-lived HTTP client keeps using an old `mcp-session-id` after server-side session loss, Axon now recreates the transport behind that same session id and bootstraps initialization server-side instead of hard-failing the next request.
 
 ## Testing
 

@@ -46,25 +46,36 @@ async def test_discovery_step_emits_inventory_batches(tmp_path):
         step = DiscoveryStep()
         await step.execute(ctx)
 
-    assert len(ctx.files) == 3
-    assert repository.total_files == 3
+    assert len(ctx.files) == 5
+    assert repository.total_files == 5
     assert session.commit.await_count == 1
-    assert send_task.call_count == 2
+    assert send_task.call_count == 3
 
     first_payload = send_task.call_args_list[0].kwargs["kwargs"]["payload"]
     second_payload = send_task.call_args_list[1].kwargs["kwargs"]["payload"]
     assert first_payload["repository_id"] == 123
     assert first_payload["batch_seq"] == 1
+    assert first_payload["idempotency_key"].startswith("123:")
     assert first_payload["idempotency_key"].endswith(":1")
     assert second_payload["batch_seq"] == 2
+    assert second_payload["idempotency_key"].startswith("123:")
     assert second_payload["idempotency_key"].endswith(":2")
     assert len(first_payload["files"]) == 2
-    assert len(second_payload["files"]) == 1
+    assert len(second_payload["files"]) == 2
+    third_payload = send_task.call_args_list[2].kwargs["kwargs"]["payload"]
+    assert third_payload["batch_seq"] == 3
+    assert third_payload["idempotency_key"].startswith("123:")
+    assert third_payload["idempotency_key"].endswith(":3")
+    assert len(third_payload["files"]) == 1
     assert ctx.metadata["parse_task_ids"] == []
     assert ctx.metadata["parse_enqueued_total"] == 0
-    all_rel_paths = [item["rel_path"] for payload in (first_payload, second_payload) for item in payload["files"]]
-    assert "pom.xml" not in all_rel_paths
-    assert "config.yaml" not in all_rel_paths
+    all_rel_paths = [
+        item["rel_path"]
+        for payload in (first_payload, second_payload, third_payload)
+        for item in payload["files"]
+    ]
+    assert "pom.xml" in all_rel_paths
+    assert "config.yaml" in all_rel_paths
 
 
 @pytest.mark.asyncio
@@ -122,3 +133,8 @@ async def test_discovery_step_processes_batches_inline_when_metadata_gate_enable
     assert ctx.metadata["parse_file_ids"] == [42]
     assert ctx.metadata["changed_content_ids"] == [1001, 1002]
     assert ctx.metadata["parse_task_ids"] == ["task-a"]
+
+
+def test_discovery_step_idempotency_keys_are_repository_scoped() -> None:
+    assert DiscoveryStep._build_idempotency_key(repository_id=4, run_id="1", batch_seq=1) == "4:1:1"
+    assert DiscoveryStep._build_idempotency_key(repository_id=5, run_id="1", batch_seq=1) == "5:1:1"

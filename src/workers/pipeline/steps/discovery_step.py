@@ -239,7 +239,13 @@ class DiscoveryStep(PipelineStep):
             "batch_seq": batch_seq,
             "observed_at": datetime.now(UTC).isoformat(),
             "files": [self._serialize_file_meta(file_meta) for file_meta in batch_files],
-            "idempotency_key": f"{run_id}:{batch_seq}",
+            # Repository-scoped keys avoid Redis collisions between distinct repos
+            # that each start their own run_id sequence at 1.
+            "idempotency_key": self._build_idempotency_key(
+                repository_id=repository_id,
+                run_id=run_id,
+                batch_seq=batch_seq,
+            ),
         }
 
         emit_task = asyncio.create_task(self._emit_inventory_batch(payload))
@@ -306,6 +312,10 @@ class DiscoveryStep(PipelineStep):
             "mtime_ns": file_meta.mtime_ns,
             "kind": file_meta.kind,
         }
+
+    @staticmethod
+    def _build_idempotency_key(repository_id: int, run_id: str, batch_seq: int) -> str:
+        return f"{repository_id}:{run_id}:{batch_seq}"
 
     @staticmethod
     def _collect_parse_fanout(

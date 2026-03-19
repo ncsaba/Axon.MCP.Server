@@ -20,6 +20,22 @@ def format_search_results(results: List[Dict], query: str) -> str:
         grouped_results[repo][file_path].append(result)
 
     formatted = [f"Found {len(results)} results for '{query}':\n"]
+    query_scope_group = next((result.get("query_scope_group") for result in results if result.get("query_scope_group")), None)
+    query_scope_repositories = next(
+        (result.get("query_scope_repositories") for result in results if result.get("query_scope_repositories")),
+        None,
+    )
+    if query_scope_group and query_scope_repositories:
+        formatted.append(
+            f"Query scope expanded via {query_scope_group}: {', '.join(query_scope_repositories)}\n"
+        )
+    if len(grouped_results) > 1:
+        repo_names = ", ".join(sorted(grouped_results.keys()))
+        formatted.append(f"Repositories represented: {repo_names}\n")
+        formatted.append(
+            "Cross-repo follow-up: use `find_repository_connections(repo_a, repo_b)` or "
+            "`explain_repository_dependency(repo_a, repo_b)` if you are comparing systems.\n"
+        )
 
     for repo, files in grouped_results.items():
         formatted.append(f"\n📁 **Repository: {repo}**\n")

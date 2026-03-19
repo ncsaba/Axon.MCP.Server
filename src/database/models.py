@@ -82,6 +82,7 @@ class Repository(Base):
     module_summaries = relationship("ModuleSummary", back_populates="repository", cascade="all, delete-orphan")
     services = relationship("Service", back_populates="repository", cascade="all, delete-orphan")
     index_runs = relationship("RepositoryIndexRun", back_populates="repository", cascade="all, delete-orphan")
+    group_memberships = relationship("RepositoryGroupMember", back_populates="repository", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_repo_status_updated", "status", "updated_at"),
@@ -117,6 +118,50 @@ class Service(Base):
     # Relationships
     repository = relationship("Repository", back_populates="services")
     symbols = relationship("Symbol", back_populates="service")
+
+
+class RepositoryGroup(Base):
+    """Persisted inferred repository stack or manually curated group."""
+
+    __tablename__ = "repository_groups"
+
+    id = Column(Integer, primary_key=True)
+    slug = Column(String(255), nullable=False, unique=True, index=True)
+    display_name = Column(String(255), nullable=False)
+    group_type = Column(String(50), nullable=False, index=True, default="inferred_stack")
+    inference_version = Column(String(50), nullable=False, default="v1")
+    group_metadata = Column(JSONB)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    memberships = relationship("RepositoryGroupMember", back_populates="group", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("idx_repository_group_type_slug", "group_type", "slug"),
+    )
+
+
+class RepositoryGroupMember(Base):
+    """Membership of a repository in a persisted repository group."""
+
+    __tablename__ = "repository_group_members"
+
+    id = Column(Integer, primary_key=True)
+    group_id = Column(Integer, ForeignKey("repository_groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
+    membership_role = Column(String(50), nullable=False, default="member")
+    confidence = Column(Integer, nullable=False, default=0)
+    membership_metadata = Column(JSONB)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    group = relationship("RepositoryGroup", back_populates="memberships")
+    repository = relationship("Repository", back_populates="group_memberships")
+
+    __table_args__ = (
+        UniqueConstraint("group_id", "repository_id", name="uq_repository_group_members_group_repo"),
+        Index("idx_repository_group_members_repo_group", "repository_id", "group_id"),
+    )
 
 
 class Commit(Base):

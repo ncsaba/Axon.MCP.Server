@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict
 
+import anyio
+from anyio.abc import TaskStatus
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+from mcp.server.streamable_http import StreamableHTTPServerTransport
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from starlette.requests import Request
 from starlette.types import Receive, Scope, Send
@@ -21,6 +25,11 @@ settings = get_settings()
 router = APIRouter()
 
 _mcp_http_session_manager: StreamableHTTPSessionManager | None = None
+_RECOVERY_PROTOCOL_VERSION = "2025-06-18"
+_RECOVERY_CLIENT_INFO = {
+    "name": "axon-mcp-http-session-recovery",
+    "version": "1.0.0",
+}
 
 
 def create_mcp_http_session_manager() -> StreamableHTTPSessionManager:
@@ -109,7 +118,190 @@ class _MCPStreamableHTTPApp:
             await response(scope, receive, send)
             return
 
+        if scope.get("type") == "http" and scope.get("method") == "POST":
+            body = await request.body()
+            if await _maybe_recover_stale_session(manager, scope, body, send):
+                return
+            await manager.handle_request(scope, _make_receive(body), send)
+            return
+
         await manager.handle_request(scope, receive, send)
+
+
+def _make_receive(body: bytes) -> Receive:
+    """Create a replayable ASGI receive callable for a buffered request body."""
+    sent = False
+
+    async def _receive() -> dict[str, Any]:
+        nonlocal sent
+        if not sent:
+            sent = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        return {"type": "http.disconnect"}
+
+    return _receive
+
+
+def _clone_scope(scope: Scope, *, headers: list[tuple[bytes, bytes]] | None = None) -> Scope:
+    """Clone an HTTP scope with optional header replacement."""
+    cloned = dict(scope)
+    if headers is not None:
+        cloned["headers"] = headers
+    return cloned
+
+
+def _append_recovery_header(send: Send) -> Send:
+    """Wrap ASGI send to annotate recovered responses for tests and debugging."""
+
+    async def _send(message: dict[str, Any]) -> None:
+        if message.get("type") == "http.response.start":
+            headers = list(message.get("headers", []))
+            headers.append((b"x-axon-mcp-session-recovered", b"true"))
+            message = dict(message)
+            message["headers"] = headers
+        await send(message)
+
+    return _send
+
+
+def _parse_jsonrpc_method(body: bytes) -> str | None:
+    """Return the JSON-RPC method name for a buffered request body."""
+    try:
+        payload = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if isinstance(payload, dict) and isinstance(payload.get("method"), str):
+        return payload["method"]
+    return None
+
+
+async def _maybe_recover_stale_session(
+    manager: StreamableHTTPSessionManager,
+    scope: Scope,
+    body: bytes,
+    send: Send,
+) -> bool:
+    """Recover a stale session by recreating the transport behind the same session id."""
+    if manager.stateless:
+        return False
+
+    request = Request(scope, _make_receive(body))
+    session_id = request.headers.get("mcp-session-id")
+    if not session_id:
+        return False
+    if session_id in manager._server_instances:
+        return False
+
+    method = _parse_jsonrpc_method(body)
+    if method is None:
+        return False
+
+    logger.warning(
+        "mcp_http_stale_session_recovery_started",
+        session_id=session_id,
+        method=method,
+        path=scope.get("path"),
+    )
+
+    try:
+        transport = await _ensure_recovered_transport(manager, session_id)
+        if method != "initialize":
+            await _bootstrap_transport_initialize(transport, scope, session_id)
+    except Exception as exc:
+        logger.warning(
+            "mcp_http_stale_session_recovery_failed",
+            session_id=session_id,
+            method=method,
+            error=str(exc),
+        )
+        return False
+
+    await transport.handle_request(scope, _make_receive(body), _append_recovery_header(send))
+    logger.info(
+        "mcp_http_stale_session_recovered",
+        session_id=session_id,
+        method=method,
+    )
+    return True
+
+
+async def _ensure_recovered_transport(
+    manager: StreamableHTTPSessionManager,
+    session_id: str,
+) -> StreamableHTTPServerTransport:
+    """Create a replacement transport using the stale session id."""
+    async with manager._session_creation_lock:
+        existing = manager._server_instances.get(session_id)
+        if existing is not None:
+            return existing
+
+        http_transport = StreamableHTTPServerTransport(
+            mcp_session_id=session_id,
+            is_json_response_enabled=manager.json_response,
+            event_store=manager.event_store,
+            security_settings=manager.security_settings,
+            retry_interval=manager.retry_interval,
+        )
+        manager._server_instances[session_id] = http_transport
+
+        async def run_server(*, task_status: TaskStatus[None] = anyio.TASK_STATUS_IGNORED) -> None:
+            async with http_transport.connect() as streams:
+                read_stream, write_stream = streams
+                task_status.started()
+                try:
+                    await manager.app.run(
+                        read_stream,
+                        write_stream,
+                        manager.app.create_initialization_options(),
+                        stateless=False,
+                    )
+                except Exception as exc:  # pragma: no cover
+                    logger.error(
+                        "mcp_http_recovered_session_crashed",
+                        session_id=session_id,
+                        error=str(exc),
+                        exc_info=True,
+                    )
+                finally:
+                    if (
+                        http_transport.mcp_session_id
+                        and http_transport.mcp_session_id in manager._server_instances
+                        and not http_transport.is_terminated
+                    ):
+                        del manager._server_instances[http_transport.mcp_session_id]
+
+        if manager._task_group is None:
+            raise RuntimeError("Task group is not initialized. Make sure to use run().")
+        await manager._task_group.start(run_server)
+        return http_transport
+
+
+async def _bootstrap_transport_initialize(
+    transport: StreamableHTTPServerTransport,
+    scope: Scope,
+    session_id: str,
+) -> None:
+    """Initialize a recovered transport so the next request can proceed normally."""
+    init_payload = {
+        "jsonrpc": "2.0",
+        "id": "axon-session-recovery-init",
+        "method": "initialize",
+        "params": {
+            "protocolVersion": _RECOVERY_PROTOCOL_VERSION,
+            "capabilities": {},
+            "clientInfo": _RECOVERY_CLIENT_INFO,
+        },
+    }
+    init_body = json.dumps(init_payload).encode("utf-8")
+
+    async def _discard_send(_message: dict[str, Any]) -> None:
+        return None
+
+    await transport.handle_request(
+        _clone_scope(scope),
+        _make_receive(init_body),
+        _discard_send,
+    )
 
 
 def mount_mcp_http_app(app: FastAPI, *, prefix: str = "") -> None:
