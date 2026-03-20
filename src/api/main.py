@@ -1,5 +1,7 @@
 """FastAPI application entry point."""
 
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 import time
 
@@ -22,6 +24,7 @@ from src.api.routes.workers import router as workers_router
 from src.api.routes.statistics import router as statistics_router
 from src.api.routes.analysis import router as analysis_router
 from src.api.routes.enrichment import router as enrichment_router
+from src.api.services.repository_log_bridge import mirror_repository_log_events
 from src.config.settings import get_settings
 from src.database.models import Base
 from src.database.session import engine
@@ -78,6 +81,7 @@ async def _ensure_source_control_provider_enum_values(conn) -> None:
 async def _lifespan(_: FastAPI):
     logger.info("application_startup", environment=settings.environment)
     mcp_http_manager_cm = None
+    repository_log_mirror_task: asyncio.Task | None = None
 
     if "*" in settings.api_cors_origins:
         logger.warning(
@@ -188,8 +192,19 @@ async def _lifespan(_: FastAPI):
             await mcp_http_manager_cm.__aenter__()
             logger.info("mcp_http_session_manager_started", json_response=True)
 
+        repository_log_mirror_task = asyncio.create_task(
+            mirror_repository_log_events(),
+            name="repository-log-mirror",
+        )
+        logger.info("repository_log_mirror_started")
+
         yield
     finally:
+        if repository_log_mirror_task is not None:
+            repository_log_mirror_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await repository_log_mirror_task
+
         if mcp_http_manager_cm is not None:
             from src.api.routes.mcp_http import set_mcp_http_session_manager
 

@@ -23,6 +23,7 @@ Related docs:
 | Area | Status | Notes |
 | --- | --- | --- |
 | REST endpoint to register one repository | `✅` | `POST /api/v1/repositories` creates the DB row and enqueues the first sync |
+| REST endpoint to register one repository from URL only | `🚧` | Next increment: accept a GitHub/generic HTTP URL and derive provider/name/path/clone metadata server-side |
 | REST endpoint to bulk-register repositories | `✅` | `POST /api/v1/repositories/bulk-add` exists |
 | Immediate initial indexing after registration | `✅` | Registration triggers background sync automatically |
 | Runtime git source abstraction | `✅` | Runtime resolves between generic git and local-directory sources |
@@ -73,6 +74,7 @@ This increment implements the minimum production contract for repository onboard
    - full sync for first index or unsafe states
    - incremental commit-diff sync after the repository has a known `last_commit_sha`
 5. add a Celery Beat poller that enqueues refresh for tracked repositories on a fixed interval
+6. add a URL-derived registration endpoint so callers do not need to pre-fill `name`, `path_with_namespace`, and `clone_url` for GitHub/generic HTTPS remotes
 
 Non-goals for this increment:
 
@@ -172,6 +174,7 @@ Update existing docs, but do not overload them:
 | Wire commit-diff incremental worker into poll flow | `✅` | Main sync task now attempts incremental refresh first |
 | Add MCP registration/manual sync tools | `🧭` | Product UX enhancement after REST contract stabilizes |
 | Add webhook-triggered refresh later | `🚧` | Useful later, but polling is the simpler first contract |
+| Add URL-derived single-repo registration | `🚧` | REST should accept a plain GitHub/generic HTTPS repo URL and infer provider metadata |
 
 ## Acceptance Criteria
 
@@ -180,6 +183,7 @@ Update existing docs, but do not overload them:
 | Criterion | Gate |
 | --- | --- |
 | A repository can be registered through a stable public API contract | `✅` |
+| A GitHub or generic HTTPS repository can be registered with just its URL | `🚧` |
 | New registrations trigger initial indexing automatically | `✅` |
 | Registered repositories can be refreshed on a schedule without manual intervention | `✅` |
 | Incremental commit-diff sync is used after the initial full index when safe | `✅` |

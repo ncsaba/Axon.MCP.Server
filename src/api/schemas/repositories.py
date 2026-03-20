@@ -2,8 +2,9 @@
 
 from datetime import datetime
 from typing import Generic, Optional, TypeVar
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from src.config.enums import RepositoryStatusEnum, SourceControlProviderEnum
 
@@ -45,6 +46,28 @@ class RepositoryCreate(BaseModel):
     
     # Provider-specific fields (optional)
     gitlab_project_id: Optional[int] = None
+
+
+class RepositoryRegisterFromUrl(BaseModel):
+    """Request body for URL-derived repository registration."""
+
+    repository_url: str
+    default_branch: Optional[str] = None
+    provider: Optional[SourceControlProviderEnum] = None
+
+    @field_validator("repository_url")
+    @classmethod
+    def validate_repository_url(cls, value: str) -> str:
+        parsed = urlparse(value.strip())
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("repository_url must be an absolute http(s) repository URL")
+        return value.strip()
+
+
+class RepositoryDeleteFromUrl(RepositoryRegisterFromUrl):
+    """Request body for URL-derived repository deletion."""
+
+    cleanup_cache: bool = False
 
 
 class RepositoryResponse(BaseModel):
@@ -175,4 +198,3 @@ class BulkRepositorySyncResponse(BaseModel):
     job_ids: list[str]
     failed_count: int
     errors: list[str]
-

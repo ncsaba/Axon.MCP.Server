@@ -98,6 +98,8 @@ Activate the workspace virtualenv first:
 source /home/vscode/.venv-dev/bin/activate
 ```
 
+`make api-dev` now loads `scripts/dev_env.sh` automatically before starting uvicorn, so local DB/auth defaults do not depend on your current shell environment.
+
 ### Codex app connects but tools do not appear
 
 Check these first:

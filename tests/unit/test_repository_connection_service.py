@@ -221,3 +221,108 @@ def test_match_dependency_to_repository_maps_maven_artifact_to_repo_name():
     assert matched_repo is not None
     assert matched_repo.name == "dasc-prediction-domain"
     assert confidence >= 0.84
+
+
+def test_infer_artifact_reference_edges_promotes_manifest_dependency_text():
+    service = RepositoryConnectionService(AsyncMock())
+    repositories = [
+        RepositoryIdentity(
+            id=4,
+            name="dasc-prediction-domain",
+            path_with_namespace="team/dasc-prediction-domain",
+        ),
+        RepositoryIdentity(
+            id=5,
+            name="dasc-prediction-management",
+            path_with_namespace="team/dasc-prediction-management",
+        ),
+    ]
+
+    edges = service._infer_artifact_reference_edges(
+        source_repository_id=5,
+        source_repository_name="dasc-prediction-management",
+        file_path="pom.xml",
+        content="""
+        <dependency>
+            <groupId>de.webtrekk.prediction</groupId>
+            <artifactId>prediction-domain</artifactId>
+        </dependency>
+        """,
+        repositories=repositories,
+    )
+
+    assert len(edges) == 1
+    edge = edges[0]
+    assert edge.connection_type == "manifest_dependency"
+    assert edge.target_repository_name == "dasc-prediction-domain"
+    assert edge.status == "direct"
+    assert "prediction-domain" in edge.evidence_samples[0]
+    assert edge.confidence >= 0.84
+
+
+def test_infer_artifact_reference_edges_promotes_runtime_config_to_predictive_service():
+    service = RepositoryConnectionService(AsyncMock())
+    repositories = [
+        RepositoryIdentity(
+            id=3,
+            name="dasc-predictive",
+            path_with_namespace="team/dasc-predictive",
+        ),
+        RepositoryIdentity(
+            id=5,
+            name="dasc-prediction-management",
+            path_with_namespace="team/dasc-prediction-management",
+        ),
+    ]
+
+    edges = service._infer_artifact_reference_edges(
+        source_repository_id=5,
+        source_repository_name="dasc-prediction-management",
+        file_path="src/main/resources/application-dev.yml",
+        content="""
+        predictive:
+          host: http://predictive-dev-01.nbg.webtrekk.com:8080
+        service.predictive.model.find-latest-by-account: http://predictive-dev-01.nbg.webtrekk.com:6000/urm/api/v0.2/model?track_id={accoundId}&latest={latest}
+        """,
+        repositories=repositories,
+    )
+
+    assert len(edges) == 1
+    edge = edges[0]
+    assert edge.connection_type == "runtime_config_reference"
+    assert edge.target_repository_name == "dasc-predictive"
+    assert "predictive-dev-01.nbg.webtrekk.com" in edge.evidence_samples[0]
+    assert edge.confidence >= 0.79
+
+
+def test_infer_artifact_reference_edges_promotes_runtime_config_to_ds_recommender():
+    service = RepositoryConnectionService(AsyncMock())
+    repositories = [
+        RepositoryIdentity(
+            id=1,
+            name="dasc-ds-recommender",
+            path_with_namespace="team/dasc-ds-recommender",
+        ),
+        RepositoryIdentity(
+            id=6,
+            name="analytics-mainserver",
+            path_with_namespace="team/analytics-mainserver",
+        ),
+    ]
+
+    edges = service._infer_artifact_reference_edges(
+        source_repository_id=6,
+        source_repository_name="analytics-mainserver",
+        file_path="plugins/feedExportPlugin/server/src/main/resources/feedExportPlugin.property",
+        content="""
+        ds.recommender.url=http://ds-recommender-dev-01.nbg.webtrekk.com/api/jobqueue
+        ds.recommender.mongo.host=db-common-dev-01-01.nbg.webtrekk.com
+        """,
+        repositories=repositories,
+    )
+
+    assert len(edges) == 1
+    edge = edges[0]
+    assert edge.connection_type == "runtime_config_reference"
+    assert edge.target_repository_name == "dasc-ds-recommender"
+    assert "ds.recommender.url" in edge.evidence_samples[0]

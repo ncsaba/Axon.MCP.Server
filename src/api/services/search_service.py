@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -462,27 +463,39 @@ class SearchService:
         query_scope: Optional[RepositoryQueryScope] = None,
     ) -> List[SearchResult]:
         """Combine keyword and semantic search using reciprocal rank fusion."""
-        # Get keyword results
-        keyword_results = await self._keyword_search(
-            query,
-            limit * 2,
-            repository_id,
-            language,
-            symbol_kind,
-            repository_scope_ids=repository_scope_ids,
-            query_scope=query_scope,
+        keyword_task = asyncio.create_task(
+            self._keyword_search(
+                query,
+                limit * 2,
+                repository_id,
+                language,
+                symbol_kind,
+                repository_scope_ids=repository_scope_ids,
+                query_scope=query_scope,
+                include_snippets=False,
+            )
         )
-        
-        # Get semantic results
-        semantic_results = await self._semantic_search(
-            query,
-            limit * 2,
-            repository_id,
-            language,
-            symbol_kind,
-            repository_scope_ids=repository_scope_ids,
-            query_scope=query_scope,
-        )
+
+        query_vector = await self.embedding_generator.generate_single_embedding(query)
+        semantic_results: List[SearchResult] = []
+
+        if query_vector:
+            semantic_task = asyncio.create_task(
+                self._semantic_search(
+                    query,
+                    limit * 2,
+                    repository_id,
+                    language,
+                    symbol_kind,
+                    repository_scope_ids=repository_scope_ids,
+                    query_scope=query_scope,
+                    query_vector=query_vector,
+                    include_snippets=False,
+                )
+            )
+            keyword_results, semantic_results = await asyncio.gather(keyword_task, semantic_task)
+        else:
+            keyword_results = await keyword_task
 
         query_tokens = self._tokenize_query(query)
         query_intents = self._infer_query_intents(query.lower(), query_tokens)
@@ -492,7 +505,13 @@ class SearchService:
         fused_results = self._reciprocal_rank_fusion(
             keyword_results, semantic_results, limit, keyword_weight=keyword_weight, semantic_weight=semantic_weight
         )
-        
+        await self._hydrate_search_results_with_snippets(
+            fused_results,
+            query,
+            query_vector=query_vector if query_vector else None,
+            embedding_model_name=self.embedding_generator.model_name if query_vector else None,
+            embedding_model_version=self.embedding_generator.model_version if query_vector else None,
+        )
         return fused_results
     
     async def _keyword_search(
@@ -504,6 +523,7 @@ class SearchService:
         symbol_kind: Optional[SymbolKindEnum],
         repository_scope_ids: Optional[List[int]] = None,
         query_scope: Optional[RepositoryQueryScope] = None,
+        include_snippets: bool = True,
     ) -> List[SearchResult]:
         """
         Perform keyword-based search with multi-word tokenization.
@@ -573,13 +593,18 @@ class SearchService:
         rows = result.all()
 
         # Get symbol IDs to fetch code snippets
-        symbol_ids = list({symbol.id for symbol, _, _, _ in rows})
-        code_snippets = await self._get_code_snippets(symbol_ids, query=query)
+        normalized_rows = [self._unpack_keyword_candidate_row(row) for row in rows]
+        symbol_ids = list({symbol.id for symbol, _, _, _ in normalized_rows})
+        code_snippets = (
+            await self._get_code_snippets(symbol_ids, query=query)
+            if include_snippets
+            else {}
+        )
 
         # Convert to SearchResult and calculate multi-word scores.
         # When chunk joins create multiple candidate rows per symbol, keep the best.
         best_results: Dict[int, SearchResult] = {}
-        for symbol, file, repo, chunk_content in rows:
+        for symbol, file, repo, chunk_content in normalized_rows:
             snippet_selection = code_snippets.get(symbol.id)
             # Enhanced scoring with multi-word matching
             score = self._calculate_keyword_score_multiword(
@@ -650,10 +675,12 @@ class SearchService:
         symbol_kind: Optional[SymbolKindEnum],
         repository_scope_ids: Optional[List[int]] = None,
         query_scope: Optional[RepositoryQueryScope] = None,
+        query_vector: Optional[List[float]] = None,
+        include_snippets: bool = True,
     ) -> List[SearchResult]:
         """Perform semantic search using embeddings."""
-        # Generate query embedding
-        query_vector = await self.embedding_generator.generate_single_embedding(query)
+        if query_vector is None:
+            query_vector = await self.embedding_generator.generate_single_embedding(query)
         
         if not query_vector:
             logger.warning("query_embedding_failed")
@@ -699,12 +726,16 @@ class SearchService:
         
         # Get code snippets for symbols
         symbol_ids = [symbol.id for symbol, _, _, _ in similar_symbols]
-        code_snippets = await self._get_code_snippets(
-            symbol_ids,
-            query=query,
-            query_vector=query_vector,
-            embedding_model_name=self.embedding_generator.model_name,
-            embedding_model_version=self.embedding_generator.model_version,
+        code_snippets = (
+            await self._get_code_snippets(
+                symbol_ids,
+                query=query,
+                query_vector=query_vector,
+                embedding_model_name=self.embedding_generator.model_name,
+                embedding_model_version=self.embedding_generator.model_version,
+            )
+            if include_snippets
+            else {}
         )
         
         # Convert to SearchResult
@@ -835,6 +866,52 @@ class SearchService:
         except Exception as e:
             logger.warning("failed_to_fetch_code_snippets", error=str(e))
             return {}
+
+    async def _hydrate_search_results_with_snippets(
+        self,
+        results: List[SearchResult],
+        query: str,
+        *,
+        query_vector: Optional[List[float]] = None,
+        embedding_model_name: Optional[str] = None,
+        embedding_model_version: Optional[str] = None,
+    ) -> None:
+        """Populate snippets once for the final ranked result set."""
+        if not results:
+            return
+
+        snippets = await self._get_code_snippets(
+            [result.symbol_id for result in results],
+            query=query,
+            query_vector=query_vector,
+            embedding_model_name=embedding_model_name,
+            embedding_model_version=embedding_model_version,
+        )
+        for result in results:
+            snippet_selection = snippets.get(result.symbol_id)
+            if snippet_selection is None:
+                continue
+            result.code_snippet = snippet_selection.content
+            result.snippet_match_type = snippet_selection.match_type
+            result.match_reason = self._build_match_reason(
+                sources=self._extract_match_reason_sources(result),
+                snippet_selection=snippet_selection,
+            )
+
+    def _extract_match_reason_sources(self, result: SearchResult) -> List[str]:
+        """Recover the source labels for match-reason rebuilding after snippet hydration."""
+        if result.match_type == "hybrid":
+            if result.match_reason:
+                source_label = result.match_reason.split(" via ", 1)[0]
+                sources = [source for source in source_label.split("+") if source]
+                if sources:
+                    return sources
+            return ["keyword", "semantic"]
+
+        if result.match_type:
+            return [result.match_type]
+
+        return ["keyword"]
 
     async def _get_semantic_code_snippets(
         self,
@@ -1271,6 +1348,18 @@ class SearchService:
             score += 0.2
         
         return score
+
+    def _unpack_keyword_candidate_row(
+        self,
+        row: tuple,
+    ) -> tuple[Symbol, File, Repository, Optional[str]]:
+        """Normalize keyword candidate rows from either legacy or chunk-aware queries."""
+        if len(row) == 4:
+            return row
+        if len(row) == 3:
+            symbol, file, repo = row
+            return symbol, file, repo, None
+        raise ValueError(f"Unexpected keyword search row shape: {len(row)} columns")
     
     def _calculate_keyword_score_multiword(
         self,

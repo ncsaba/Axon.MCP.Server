@@ -123,16 +123,29 @@ class RepositoryManager:
         """Clone a new repository using secure authentication."""
         authenticated_url, env, canonical_remote_url = self._build_git_transport(repo_url, provider)
 
-        clone_kwargs = {
-            "branch": branch,
-            "env": env,
-        }
-
+        clone_kwargs = {"env": env}
+        if branch:
+            clone_kwargs["branch"] = branch
         if depth:
             clone_kwargs["depth"] = depth
 
         try:
-            repo = Repo.clone_from(authenticated_url, str(repo_path), **clone_kwargs)
+            try:
+                repo = Repo.clone_from(authenticated_url, str(repo_path), **clone_kwargs)
+            except GitCommandError:
+                if not branch:
+                    raise
+                logger.warning(
+                    "repository_clone_branch_fallback",
+                    repo_url=canonical_remote_url,
+                    requested_branch=branch,
+                )
+                if repo_path.exists():
+                    shutil.rmtree(repo_path)
+                fallback_kwargs = {"env": env}
+                if depth:
+                    fallback_kwargs["depth"] = depth
+                repo = Repo.clone_from(authenticated_url, str(repo_path), **fallback_kwargs)
             if authenticated_url != canonical_remote_url:
                 repo.remotes.origin.set_url(canonical_remote_url)
             logger.info("repository_cloned", repo_path=str(repo_path), method="secure_credentials")

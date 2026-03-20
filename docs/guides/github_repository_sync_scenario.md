@@ -101,6 +101,35 @@ curl -X POST http://localhost:8080/api/v1/repositories \
   }'
 ```
 
+URL-only variant:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/repositories/register-url \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $ADMIN_API_KEY" \
+  -d '{
+    "repository_url": "https://github.com/octocat/example-repo"
+  }'
+```
+
+URL-only delete variant:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/repositories/delete-url \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $ADMIN_API_KEY" \
+  -d '{
+    "repository_url": "https://github.com/octocat/example-repo",
+    "cleanup_cache": true
+  }'
+```
+
+Notes:
+- `cleanup_cache` is optional and defaults to `false`.
+- When `true`, Axon also removes the cached remote checkout under its local repo cache.
+- It does not delete anything on GitHub.
+- It does not delete local directory source repos tracked via `file://` or absolute paths.
+
 Expected result:
 
 - HTTP `201`

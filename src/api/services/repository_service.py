@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import List, Optional, Tuple
+from urllib.parse import urlparse
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.exc import IntegrityError
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api.schemas.repositories import (
     RepositoryCreate,
+    RepositoryRegisterFromUrl,
     RepositoryResponse,
     RepositorySyncResponse,
     GitLabProjectDiscovery,
@@ -24,6 +26,8 @@ from src.config.enums import RepositoryStatusEnum, SourceControlProviderEnum
 from src.database.models import Repository, FileInstance as File, Commit
 from src.database.query_helpers import active_file_filter
 from src.gitlab.client import GitLabClient
+from src.gitlab.repository_manager import RepositoryManager
+from src.repository_sources import is_local_directory_reference
 from src.utils.logging_config import get_logger
 from src.workers.tasks import sync_repository
 
@@ -36,6 +40,51 @@ class RepositoryService:
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    def build_create_payload_from_url(
+        self,
+        payload: RepositoryRegisterFromUrl,
+    ) -> RepositoryCreate:
+        """Derive repository metadata from a GitHub/generic HTTP repository URL."""
+        parsed = urlparse(payload.repository_url.strip())
+        path = parsed.path.strip().rstrip("/")
+        if path.endswith(".git"):
+            path = path[:-4]
+        path = path.lstrip("/")
+
+        path_parts = [part for part in path.split("/") if part]
+        if len(path_parts) < 2:
+            raise ValueError("Repository URL must include an owner/group and repository name")
+
+        path_with_namespace = "/".join(path_parts)
+        name = path_parts[-1]
+        provider = payload.provider or self._infer_provider_from_netloc(parsed.netloc)
+
+        normalized_base_url = parsed._replace(params="", query="", fragment="").geturl().rstrip("/")
+        if normalized_base_url.endswith(".git"):
+            clone_url = normalized_base_url
+            url = normalized_base_url[:-4]
+        else:
+            url = normalized_base_url
+            clone_url = f"{normalized_base_url}.git"
+
+        return RepositoryCreate(
+            provider=provider,
+            name=name,
+            path_with_namespace=path_with_namespace,
+            url=url,
+            clone_url=clone_url,
+            default_branch=payload.default_branch or "main",
+        )
+
+    def _infer_provider_from_netloc(self, netloc: str) -> SourceControlProviderEnum:
+        """Infer source-control provider from the remote host."""
+        lowered = netloc.lower()
+        if "github.com" in lowered:
+            return SourceControlProviderEnum.GITHUB
+        if "gitlab" in lowered:
+            return SourceControlProviderEnum.GITLAB
+        return SourceControlProviderEnum.GIT
 
     async def _find_existing_repository(self, payload: RepositoryCreate) -> Optional[Repository]:
         """Find an existing repository using provider-specific identity rules."""
@@ -54,6 +103,34 @@ class RepositoryService:
             )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def find_existing_repository_by_url(
+        self,
+        payload: RepositoryRegisterFromUrl,
+    ) -> Optional[Repository]:
+        """Find an existing repository from a URL-derived registration payload."""
+        create_payload = self.build_create_payload_from_url(payload)
+        return await self._find_existing_repository(create_payload)
+
+    def _cleanup_repository_cache(self, repository: Repository) -> bool:
+        """Remove the cached git checkout for a repository when applicable."""
+        clone_reference = (repository.clone_url or repository.url or "").strip()
+        if is_local_directory_reference(clone_reference):
+            logger.info(
+                "repository_cache_cleanup_skipped_local_source",
+                repository_id=repository.id,
+                clone_reference=clone_reference,
+            )
+            return False
+
+        manager = RepositoryManager()
+        manager.cleanup_repository(repository.path_with_namespace)
+        logger.info(
+            "repository_cache_cleanup_completed",
+            repository_id=repository.id,
+            cache_key=repository.path_with_namespace,
+        )
+        return True
 
     async def list(self, *, offset: int, limit: int) -> Tuple[List[RepositoryResponse], int]:
         """List repositories with total count."""
@@ -380,7 +457,10 @@ class RepositoryService:
         )
 
     async def bulk_remove_repositories(
-        self, repository_ids: List[int]
+        self,
+        repository_ids: List[int],
+        *,
+        cleanup_cache: bool = False,
     ) -> BulkRepositoryRemoveResponse:
         """
         Remove multiple repositories in bulk.
@@ -402,6 +482,9 @@ class RepositoryService:
                     failed_count += 1
                     errors.append(f"Failed to remove repository: Repository with ID {repo_id} not found")
                     continue
+
+                if cleanup_cache:
+                    self._cleanup_repository_cache(repository)
 
                 await self._session.delete(repository)
                 removed_count += 1

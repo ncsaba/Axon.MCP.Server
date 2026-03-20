@@ -25,6 +25,8 @@ make db-reset
 make api-dev
 ```
 
+`make api-dev` and `make api-start` load local defaults from `scripts/dev_env.sh`, including the local database URLs and dev auth keys.
+
 For dockerized runtime:
 
 ```bash
@@ -46,7 +48,7 @@ For integration or DB-backed tests, set database credentials explicitly before r
 source /home/vscode/.venv-dev/bin/activate
 ```
 
-In the devcontainer, `DATABASE_URL` and `TEST_DATABASE_URL` are already exported by default:
+For local helper commands, `make api-dev`, `make api-start`, `make api-test`, and `make retrieval-smoke` source `scripts/dev_env.sh`, which exports:
 - `DATABASE_URL=postgresql+asyncpg://indexer:indexer@localhost:5432/indexer`
 - `TEST_DATABASE_URL=postgresql+asyncpg://indexer:indexer@localhost:5432/indexer_test`
 

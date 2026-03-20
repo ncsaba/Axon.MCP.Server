@@ -189,6 +189,53 @@ async def test_get_repository_connection_subgraph_summarizes_multiple_repositori
 
 
 @pytest.mark.asyncio
+async def test_explain_repository_dependency_surfaces_runtime_config_evidence():
+    analysis = RepositoryConnectionAnalysis(
+        repo_a=RepositoryIdentity(
+            id=5,
+            name="dasc-prediction-management",
+            path_with_namespace="team/dasc-prediction-management",
+        ),
+        repo_b=RepositoryIdentity(
+            id=3,
+            name="dasc-predictive",
+            path_with_namespace="team/dasc-predictive",
+        ),
+        connected=True,
+        direct_connections=[
+            RepositoryConnectionEdge(
+                source_repository_id=5,
+                source_repository_name="dasc-prediction-management",
+                target_repository_id=3,
+                target_repository_name="dasc-predictive",
+                connection_type="runtime_config_reference",
+                direction="outbound",
+                confidence=0.82,
+                evidence_count=2,
+                evidence_samples=[
+                    "src/main/resources/application-dev.yml: service.predictive.model.find-latest-by-account: http://predictive-dev-01.nbg.webtrekk.com:6000/urm/api/v0.2/model"
+                ],
+                status="heuristic",
+                notes="Runtime/config artifact references this repository or service",
+            )
+        ],
+        indirect_paths=[],
+    )
+    session = AsyncMock()
+
+    with patch("src.mcp_server.tools.repository_connections.get_async_session", return_value=_mock_session_cm(session)), patch(
+        "src.mcp_server.tools.repository_connections.RepositoryConnectionService"
+    ) as service_cls:
+        service_cls.return_value.find_repository_connections = AsyncMock(return_value=analysis)
+        result = await explain_repository_dependency("dasc-prediction-management", "dasc-predictive")
+
+    text = result[0].text
+    assert "dasc-prediction-management depends on dasc-predictive" in text
+    assert "runtime_config_reference" in text
+    assert "service.predictive.model.find-latest-by-account" in text
+
+
+@pytest.mark.asyncio
 async def test_analyze_architecture_includes_external_repository_connections():
     session = AsyncMock()
 

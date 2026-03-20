@@ -90,15 +90,15 @@ flowchart LR
 | R1A. Retrieval surface audit and doc alignment | `🧭` | Prevents planning against stale or incomplete assumptions. |
 | R1B. Curated query set and expected outcomes | `🧭` | Creates the first real quality gate. |
 | R2A. Search query normalization and tokenization review | `🧭` | Cheap improvement path with immediate retrieval impact. |
-| R2B. Fusion, boosts, and snippet selection tuning | `🚧` | Top-result usefulness is already improved by hybrid weighting, intent boosts, and snippet selection; remaining work is demo-friendly result packaging and follow-up affordances. |
+| R2B. Fusion, boosts, snippet selection, and latency cleanup | `🚧` | Top-result usefulness is already improved by hybrid weighting, intent boosts, and snippet selection; parallel hybrid candidate generation plus single-pass snippet hydration are now in place, and remaining work is demo-friendly result packaging plus broader hot-path cleanup. |
 | R2C. Semantic-search subplan execution | `🧭` | Semantic search now has a dedicated plan for chunk quality, benchmark-driven tuning, and ranking cleanup. See `docs/architecture/semantic_search_improvement_plan.md`. |
 | R2D. MCP HTTP stale-session recovery | `✅` | Stateful HTTP transport now recreates stale sessions in place and bootstraps server-side initialization so long-lived clients can continue using the same `mcp-session-id` after server-side session loss. |
 | R3A. Search-to-symbol-context contract | `🧭` | Makes existing search results more actionable. |
 | R4A. Architecture tool validation on representative repos | `🚧` | Architecture output now includes explicit external repository connection evidence; remaining work is broader live validation on real repos. |
-| R4B. Cross-repo connection graph baseline | `🚧` | Shared `RepositoryConnectionService` and typed evidence graph are in place for API/event/service/dependency signals. |
+| R4B. Cross-repo connection graph baseline | `🚧` | Shared `RepositoryConnectionService` and typed evidence graph are in place for API/event/service/dependency signals; the next grounded increment is artifact-text evidence from manifests and runtime config files so repo edges do not depend only on pre-linked API/event rows. |
 | R4C. Pairwise repository dependency tools | `🚧` | `find_repository_connections(repo_a, repo_b)` and `explain_repository_dependency(repo_a, repo_b)` are live in the MCP surface. |
 | R4D. N-repo connection subgraph and summarization | `🚧` | `get_repository_connection_subgraph(...)` is live as an initial multi-repository summarization view. |
-| R4E. Repository stack inference and persisted grouping | `🚧` | Inferred repository stacks are now persisted and repo-scoped search expands to saved group members with a primary-repo bias; remaining work is live validation and broader group evidence tuning. |
+| R4E. Repository stack inference and persisted grouping | `🚧` | Inferred repository stacks are persisted and refreshed after sync/linking, and repo-scoped search expands to saved group members with a primary-repo bias; remaining work is live validation and broader group evidence tuning. |
 | R5A. Retrieval benchmark harness/reporting | `🧭` | Keeps future tuning changes evidence-based. |
 
 ## First Slice Contract: R1 Retrieval Baseline And Truth Alignment
@@ -234,6 +234,7 @@ Initial `connection_type` vocabulary:
 - `gateway_route`
 - `service_mapping`
 - `shared_runtime`
+- `runtime_config_reference`
 - `shared_config_reference`
 
 ### Evidence Source Order
@@ -342,6 +343,7 @@ Use the repository connection graph as the canonical input, but expand the graph
 | 2 | Cross-repo symbol relations (`IMPORTS`, `INHERITS`, `IMPLEMENTS`, `USES`, `REFERENCES`) | Captures shared-library and code-contract coupling that pairwise tools currently miss |
 | 3 | Relaxed Maven/package matching (`groupId:artifactId` -> indexed repo) | Needed for cases like `prediction-domain` |
 | 4 | Infrastructure/config/runtime references from support repositories | Needed to pull deployment/support repos such as `infrastructure-automation` into the same stack when they reference the application repos |
+| 5 | Manifest and runtime-config text references from indexed files/chunks | Needed when the relationship is obvious in `pom.xml`, `.properties`, or `.yml` content but has not yet been promoted into explicit API/event links |
 
 #### Query Expansion Rules
 
@@ -369,7 +371,8 @@ Guardrails:
 #### Current Progress
 
 - `✅` persisted repository group schema exists for inferred stacks and memberships
-- `✅` repository graph inference now includes symbol-relation evidence, relaxed Maven artifact matching, and support/config file references
+- `✅` repository graph inference now includes symbol-relation evidence, relaxed Maven artifact matching, support/config file references, and refresh-after-sync persistence
+- `🚧` manifest/runtime artifact text still needs to become first-class repo-edge evidence for cases like `prediction-management -> prediction-domain` and `prediction-management -> predictive`
 - `✅` repo-scoped `search_code` expansion now widens to saved group members and keeps the seed repository favored
 - `🚧` live stack validation still needs broader coverage beyond the predictive/demo repositories
 

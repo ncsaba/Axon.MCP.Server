@@ -44,6 +44,7 @@ class RepositoryGroupingService:
         "api_call",
         "event_flow",
         "manifest_dependency",
+        "runtime_config_reference",
         "service_mapping",
         "symbol_import",
         "symbol_inheritance",

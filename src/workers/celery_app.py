@@ -8,6 +8,11 @@ including repository synchronization, parsing, extraction, and embedding generat
 from celery import Celery, signals
 from datetime import timedelta
 from src.config.settings import get_settings
+from src.utils.logging_config import configure_logging, get_logger
+
+
+configure_logging()
+logger = get_logger(__name__)
 
 # Initialize Celery app
 celery_app = Celery(
@@ -108,4 +113,33 @@ def setup_worker_credentials(**kwargs):
     This ensures credentials are configured in each worker process
     before any git operations are performed.
     """
+    logger.info("celery_worker_process_initialized")
     return None
+
+
+@signals.worker_ready.connect
+def log_worker_ready(sender=None, **kwargs):
+    """Log a clear worker-ready event on startup."""
+    logger.info(
+        "celery_worker_ready",
+        hostname=str(getattr(sender, "hostname", "unknown")),
+        queues=sorted(celery_app.conf.task_routes.keys()),
+    )
+
+
+@signals.task_prerun.connect
+def log_task_start(task=None, task_id=None, args=None, kwargs=None, **extras):
+    """Log clear task start markers for the main indexing pipeline."""
+    task_name = str(getattr(task, "name", ""))
+    if task_name not in {
+        "src.workers.tasks.sync_repository",
+        "src.workers.tasks.generate_embeddings_task",
+    }:
+        return
+
+    logger.info(
+        "celery_task_started",
+        task_name=task_name,
+        task_id=task_id,
+        args=list(args or []),
+    )

@@ -6,6 +6,31 @@ import redis.asyncio as redis
 from src.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
+REPOSITORY_LOG_EVENTS_CHANNEL = "repository_log_events"
+
+
+def _emit_local_repository_log(payload: dict[str, Any]) -> None:
+    """Mirror repository progress messages to the local process logger."""
+    level = str(payload.get("level") or "INFO").upper()
+    repository_id = payload.get("repository_id")
+    message = str(payload.get("message") or "")
+    details = payload.get("details") or {}
+
+    console_line = f"[repo {repository_id}][{level}] {message}"
+    if details:
+        console_line += f" | details={json.dumps(details, sort_keys=True)}"
+    print(console_line, flush=True)
+
+    log_method = getattr(logger, level.lower(), logger.info)
+    log_method(
+        "repository_progress_log",
+        extra={
+            "repository_id": repository_id,
+            "repository_progress_message": message,
+            "repository_progress_details": details,
+            "repository_log_level": level,
+        },
+    )
 
 class RedisLogPublisher:
     def __init__(self):
@@ -29,11 +54,14 @@ class RedisLogPublisher:
         stream_key = f"repository_logs_stream:{repository_id}"
         
         payload = {
+            "repository_id": repository_id,
             "timestamp": datetime.utcnow().isoformat(),
             "level": level,
             "message": message,
             "details": details or {}
         }
+
+        _emit_local_repository_log(payload)
         
         try:
             # Use Redis Streams (XADD) instead of PubSub to support history
@@ -46,6 +74,10 @@ class RedisLogPublisher:
             )
             # Set expiration on the stream key (e.g., 24 hours) to clean up old streams
             await self._redis.expire(stream_key, 86400)
+            await self._redis.publish(
+                REPOSITORY_LOG_EVENTS_CHANNEL,
+                json.dumps(payload),
+            )
         except Exception as e:
             logger.error(f"Failed to publish log to Redis: {e}")
 

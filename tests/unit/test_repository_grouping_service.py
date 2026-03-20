@@ -120,3 +120,65 @@ async def test_get_query_scope_returns_primary_repo_first_and_support_repo_last(
     ]
     assert scope.group_display_name == "Inferred predictive stack"
     assert scope.support_repository_ids == [7]
+
+
+@pytest.mark.asyncio
+async def test_refresh_inferred_groups_uses_runtime_config_edges_for_stack_membership():
+    session = AsyncMock()
+    added_objects = []
+
+    def add_object(obj):
+        if isinstance(obj, RepositoryGroup) and obj.id is None:
+            obj.id = 11
+        added_objects.append(obj)
+
+    session.add = MagicMock(side_effect=add_object)
+    service = RepositoryGroupingService(session)
+
+    repositories = {
+        3: RepositoryIdentity(3, "dasc-predictive", "team/dasc-predictive"),
+        4: RepositoryIdentity(4, "dasc-prediction-domain", "team/dasc-prediction-domain"),
+        5: RepositoryIdentity(5, "dasc-prediction-management", "team/dasc-prediction-management"),
+        6: RepositoryIdentity(6, "analytics-mainserver", "team/analytics-mainserver"),
+    }
+    edges = [
+        RepositoryConnectionEdge(
+            5,
+            "dasc-prediction-management",
+            4,
+            "dasc-prediction-domain",
+            "manifest_dependency",
+            "outbound",
+            0.86,
+        ),
+        RepositoryConnectionEdge(
+            5,
+            "dasc-prediction-management",
+            3,
+            "dasc-predictive",
+            "runtime_config_reference",
+            "outbound",
+            0.82,
+        ),
+        RepositoryConnectionEdge(
+            6,
+            "analytics-mainserver",
+            3,
+            "dasc-predictive",
+            "runtime_config_reference",
+            "outbound",
+            0.82,
+        ),
+    ]
+
+    with patch.object(
+        service.connection_service,
+        "load_repository_graph",
+        AsyncMock(return_value=(repositories, edges)),
+    ):
+        groups = await service.refresh_inferred_groups()
+
+    membership_objects = [obj for obj in added_objects if isinstance(obj, RepositoryGroupMember)]
+
+    assert len(groups) == 1
+    assert set(member.repository_id for member in membership_objects) == {3, 4, 5, 6}

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
 
 from src.api.services.repository_grouping_service import RepositoryQueryScope
@@ -709,11 +709,16 @@ async def test_calculate_keyword_score():
 @pytest.mark.asyncio
 async def test_hybrid_search_with_filters(search_service, mock_session):
     """Test hybrid search with filters."""
+    search_service.embedding_generator.generate_single_embedding.return_value = [0.1] * FIXED_EMBEDDING_DIMENSION
+    search_service.embedding_generator.model_name = "mxbai-embed-large"
+    search_service.embedding_generator.model_version = "1.0"
+
     # Mock keyword results
     search_service._keyword_search = AsyncMock(return_value=[])
     
     # Mock semantic results
     search_service._semantic_search = AsyncMock(return_value=[])
+    search_service._hydrate_search_results_with_snippets = AsyncMock()
     
     results = await search_service._hybrid_search(
         query="test",
@@ -733,6 +738,7 @@ async def test_hybrid_search_with_filters(search_service, mock_session):
         SymbolKindEnum.FUNCTION,
         repository_scope_ids=None,
         query_scope=None,
+        include_snippets=False,
     )
     search_service._semantic_search.assert_called_once_with(
         "test",
@@ -742,9 +748,88 @@ async def test_hybrid_search_with_filters(search_service, mock_session):
         SymbolKindEnum.FUNCTION,
         repository_scope_ids=None,
         query_scope=None,
+        query_vector=ANY,
+        include_snippets=False,
     )
+    search_service._hydrate_search_results_with_snippets.assert_awaited_once()
     
     assert isinstance(results, list)
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_hydrates_snippets_once_after_fusion(search_service, mock_session):
+    query_vector = [0.1] * FIXED_EMBEDDING_DIMENSION
+    search_service.embedding_generator.generate_single_embedding.return_value = query_vector
+    search_service.embedding_generator.model_name = "mxbai-embed-large"
+    search_service.embedding_generator.model_version = "1.0"
+
+    keyword_result = SearchResult(
+        symbol_id=1,
+        file_id=1,
+        repository_id=1,
+        name="PredictiveConfigService",
+        kind=SymbolKindEnum.CLASS,
+        language=LanguageEnum.JAVA,
+        signature="class PredictiveConfigService",
+        file_path="PredictiveConfigService.java",
+        repository_name="repo",
+        fully_qualified_name="demo.PredictiveConfigService",
+        start_line=1,
+        end_line=20,
+        documentation="doc",
+        score=5.0,
+        match_type="keyword",
+        match_reason="keyword",
+        updated_at=datetime.now(timezone.utc),
+    )
+    semantic_result = SearchResult(
+        symbol_id=1,
+        file_id=1,
+        repository_id=1,
+        name="PredictiveConfigService",
+        kind=SymbolKindEnum.CLASS,
+        language=LanguageEnum.JAVA,
+        signature="class PredictiveConfigService",
+        file_path="PredictiveConfigService.java",
+        repository_name="repo",
+        fully_qualified_name="demo.PredictiveConfigService",
+        start_line=1,
+        end_line=20,
+        documentation="doc",
+        score=0.9,
+        match_type="semantic",
+        match_reason="semantic",
+        updated_at=datetime.now(timezone.utc),
+    )
+
+    search_service._keyword_search = AsyncMock(return_value=[keyword_result])
+    search_service._semantic_search = AsyncMock(return_value=[semantic_result])
+
+    snippet = MagicMock()
+    snippet.content = "class PredictiveConfigService { ... }"
+    snippet.match_type = "semantic_chunk"
+    search_service._get_code_snippets = AsyncMock(return_value={1: snippet})
+
+    results = await search_service._hybrid_search(
+        query="predictive config",
+        limit=5,
+        repository_id=None,
+        language=None,
+        symbol_kind=None,
+    )
+
+    search_service._get_code_snippets.assert_awaited_once_with(
+        [1],
+        query="predictive config",
+        query_vector=query_vector,
+        embedding_model_name="mxbai-embed-large",
+        embedding_model_version="1.0",
+    )
+    assert len(results) == 1
+    assert results[0].match_type == "hybrid"
+    assert results[0].code_snippet == "class PredictiveConfigService { ... }"
+    assert results[0].snippet_match_type == "semantic_chunk"
+    assert results[0].match_reason == "keyword+semantic via semantic_chunk"
 
 
 @pytest.mark.asyncio

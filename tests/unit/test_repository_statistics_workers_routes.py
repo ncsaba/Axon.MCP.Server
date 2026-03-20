@@ -153,6 +153,215 @@ def test_trigger_repository_sync_returns_404_when_repository_is_missing(monkeypa
     assert "failed to sync repository" in response.json()["detail"].lower()
 
 
+def test_register_repository_from_url_returns_created_repository(monkeypatch):
+    app = _build_app((repositories_router, "/api/v1"))
+
+    import src.api.routes.repositories as repositories_module
+
+    async def _fake_build_create_payload_from_url(self, payload):
+        raise AssertionError("build_create_payload_from_url should not be awaited")
+
+    async def _fake_create(self, payload):
+        assert payload.provider == "GITHUB" or payload.provider.value == "GITHUB"
+        return type("CreatedRepo", (), {"id": 41})()
+
+    async def _fake_trigger_sync(self, repository_id: int):
+        assert repository_id == 41
+        return None
+
+    async def _fake_get(self, repository_id: int):
+        assert repository_id == 41
+        repo = _repository_payload(repository_id)
+        repo["provider"] = "GITHUB"
+        repo["name"] = "example-repo"
+        repo["path_with_namespace"] = "octo/example-repo"
+        repo["url"] = "https://github.com/octo/example-repo"
+        repo["clone_url"] = "https://github.com/octo/example-repo.git"
+        repo["gitlab_project_id"] = None
+        return repo
+
+    monkeypatch.setattr(
+        repositories_module.RepositoryService,
+        "build_create_payload_from_url",
+        lambda self, payload: repositories_module.RepositoryCreate(
+            provider="GITHUB",
+            name="example-repo",
+            path_with_namespace="octo/example-repo",
+            url="https://github.com/octo/example-repo",
+            clone_url="https://github.com/octo/example-repo.git",
+            default_branch="main",
+        ),
+    )
+    monkeypatch.setattr(repositories_module.RepositoryService, "create", _fake_create)
+    monkeypatch.setattr(repositories_module.RepositoryService, "trigger_sync", _fake_trigger_sync)
+    monkeypatch.setattr(repositories_module.RepositoryService, "get", _fake_get)
+
+    response = _request(
+        app,
+        "POST",
+        "/api/v1/repositories/register-url",
+        json={"repository_url": "https://github.com/octo/example-repo"},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["provider"] == "GITHUB"
+    assert payload["path_with_namespace"] == "octo/example-repo"
+
+
+def test_register_repository_from_url_returns_400_on_invalid_url(monkeypatch):
+    app = _build_app((repositories_router, "/api/v1"))
+
+    import src.api.routes.repositories as repositories_module
+
+    monkeypatch.setattr(
+        repositories_module.RepositoryService,
+        "build_create_payload_from_url",
+        lambda self, payload: (_ for _ in ()).throw(ValueError("Repository URL must include an owner/group and repository name")),
+    )
+
+    response = _request(
+        app,
+        "POST",
+        "/api/v1/repositories/register-url",
+        json={"repository_url": "https://github.com/octo"},
+    )
+
+    assert response.status_code == 400
+    assert "failed to register repository from url" in response.json()["detail"].lower()
+
+
+def test_delete_repository_from_url_returns_204(monkeypatch):
+    app = _build_app((repositories_router, "/api/v1"))
+
+    import src.api.routes.repositories as repositories_module
+
+    repo = type("Repo", (), {"id": 41})()
+
+    async def _fake_find_existing_repository_by_url(self, payload):
+        return repo
+
+    async def _fake_bulk_remove(self, repository_ids, *, cleanup_cache=False):
+        assert repository_ids == [41]
+        assert cleanup_cache is False
+        return type("BulkDeleteResponse", (), {"failed_count": 0, "errors": []})()
+
+    monkeypatch.setattr(
+        repositories_module.RepositoryService,
+        "find_existing_repository_by_url",
+        _fake_find_existing_repository_by_url,
+    )
+    monkeypatch.setattr(
+        repositories_module.RepositoryService,
+        "bulk_remove_repositories",
+        _fake_bulk_remove,
+    )
+
+    response = _request(
+        app,
+        "POST",
+        "/api/v1/repositories/delete-url",
+        json={"repository_url": "https://github.com/octo/example-repo"},
+    )
+
+    assert response.status_code == 204
+
+
+def test_delete_repository_from_url_can_request_cache_cleanup(monkeypatch):
+    app = _build_app((repositories_router, "/api/v1"))
+
+    import src.api.routes.repositories as repositories_module
+
+    repo = type("Repo", (), {"id": 41})()
+
+    async def _fake_find_existing_repository_by_url(self, payload):
+        assert payload.cleanup_cache is True
+        return repo
+
+    async def _fake_bulk_remove(self, repository_ids, *, cleanup_cache=False):
+        assert repository_ids == [41]
+        assert cleanup_cache is True
+        return type("BulkDeleteResponse", (), {"failed_count": 0, "errors": []})()
+
+    monkeypatch.setattr(
+        repositories_module.RepositoryService,
+        "find_existing_repository_by_url",
+        _fake_find_existing_repository_by_url,
+    )
+    monkeypatch.setattr(
+        repositories_module.RepositoryService,
+        "bulk_remove_repositories",
+        _fake_bulk_remove,
+    )
+
+    response = _request(
+        app,
+        "POST",
+        "/api/v1/repositories/delete-url",
+        json={
+            "repository_url": "https://github.com/octo/example-repo",
+            "cleanup_cache": True,
+        },
+    )
+
+    assert response.status_code == 204
+
+
+def test_delete_repository_from_url_returns_404_when_not_found(monkeypatch):
+    app = _build_app((repositories_router, "/api/v1"))
+
+    import src.api.routes.repositories as repositories_module
+
+    async def _fake_find_existing_repository_by_url(self, payload):
+        return None
+
+    monkeypatch.setattr(
+        repositories_module.RepositoryService,
+        "find_existing_repository_by_url",
+        _fake_find_existing_repository_by_url,
+    )
+
+    response = _request(
+        app,
+        "POST",
+        "/api/v1/repositories/delete-url",
+        json={"repository_url": "https://github.com/octo/missing-repo"},
+    )
+
+    assert response.status_code == 404
+    assert "failed to delete repository from url" in response.json()["detail"].lower()
+
+
+def test_delete_repository_by_id_can_request_cache_cleanup(monkeypatch):
+    app = _build_app((repositories_router, "/api/v1"))
+
+    import src.api.routes.repositories as repositories_module
+
+    async def _fake_get(self, repository_id: int):
+        assert repository_id == 41
+        return _repository_payload(repository_id)
+
+    async def _fake_bulk_remove(self, repository_ids, *, cleanup_cache=False):
+        assert repository_ids == [41]
+        assert cleanup_cache is True
+        return type("BulkDeleteResponse", (), {"failed_count": 0, "errors": []})()
+
+    monkeypatch.setattr(repositories_module.RepositoryService, "get", _fake_get)
+    monkeypatch.setattr(
+        repositories_module.RepositoryService,
+        "bulk_remove_repositories",
+        _fake_bulk_remove,
+    )
+
+    response = _request(
+        app,
+        "DELETE",
+        "/api/v1/repositories/41?cleanup_cache=true",
+    )
+
+    assert response.status_code == 204
+
+
 def test_get_overview_statistics_returns_service_payload(monkeypatch):
     app = _build_app((statistics_router, "/api/v1"))
 

@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.dependencies import get_db_session
 from src.api.schemas.repositories import (
     RepositoryCreate,
+    RepositoryDeleteFromUrl,
+    RepositoryRegisterFromUrl,
     RepositoryResponse,
     RepositorySyncResponse,
     GitLabDiscoveryResponse,
@@ -67,6 +69,67 @@ async def create_repository(
     refreshed = await service.get(repository.id)
     assert refreshed is not None
     return refreshed
+
+
+@router.post("/repositories/register-url", response_model=RepositoryResponse, status_code=status.HTTP_201_CREATED)
+async def register_repository_from_url(
+    payload: RepositoryRegisterFromUrl,
+    session: AsyncSession = Depends(get_db_session),
+) -> RepositoryResponse:
+    """Create a repository from a GitHub/generic HTTP URL and enqueue its first sync."""
+
+    service = RepositoryService(session)
+    try:
+        create_payload = service.build_create_payload_from_url(payload)
+        repository = await service.create(create_payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to register repository from URL: {str(exc)}",
+        ) from exc
+    except IntegrityError as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Failed to register repository from URL: Repository already exists",
+        ) from exc
+
+    await service.trigger_sync(repository.id)
+    refreshed = await service.get(repository.id)
+    assert refreshed is not None
+    return refreshed
+
+
+@router.post("/repositories/delete-url", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_repository_from_url(
+    payload: RepositoryDeleteFromUrl,
+    session: AsyncSession = Depends(get_db_session),
+) -> None:
+    """Delete a tracked repository by its GitHub/generic HTTP URL."""
+
+    service = RepositoryService(session)
+    try:
+        repository = await service.find_existing_repository_by_url(payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to delete repository from URL: {str(exc)}",
+        ) from exc
+
+    if repository is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Failed to delete repository from URL: Repository not found",
+        )
+
+    response = await service.bulk_remove_repositories(
+        [repository.id],
+        cleanup_cache=payload.cleanup_cache,
+    )
+    if response.failed_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=response.errors[0],
+        )
 
 
 @router.get("/repositories/{repository_id}", response_model=RepositoryResponse)
@@ -173,6 +236,7 @@ async def trigger_repository_sync(
 @router.delete("/repositories/{repository_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_repository(
     repository_id: int,
+    cleanup_cache: bool = Query(False),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     """Delete a single repository and all associated data."""
@@ -186,7 +250,10 @@ async def delete_repository(
         )
     
     # Use the bulk remove method with a single ID
-    response = await service.bulk_remove_repositories([repository_id])
+    response = await service.bulk_remove_repositories(
+        [repository_id],
+        cleanup_cache=cleanup_cache,
+    )
     
     if response.failed_count > 0:
         raise HTTPException(

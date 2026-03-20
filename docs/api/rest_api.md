@@ -79,6 +79,42 @@ Notes:
 - `gitlab_project_id` remains optional and is only used for `GITLAB`.
 - A successful create request also enqueues the first background sync automatically.
 
+#### `POST /repositories/register-url`
+Register a GitHub or generic HTTPS git repository from just its URL and enqueue its first sync.
+
+Request shape:
+
+```json
+{
+  "repository_url": "https://github.com/octocat/example-repo",
+  "default_branch": "main"
+}
+```
+
+Notes:
+- `provider` is optional; Axon infers `GITHUB` from `github.com`, `GITLAB` from GitLab hosts, otherwise `GIT`.
+- `name`, `path_with_namespace`, and `clone_url` are derived server-side from the URL.
+- If the requested branch is wrong on the first clone, clone bootstrap retries against the remote default branch instead of failing immediately.
+
+#### `POST /repositories/delete-url`
+Delete a tracked repository from just its URL.
+
+Request shape:
+
+```json
+{
+  "repository_url": "https://github.com/octocat/example-repo",
+  "cleanup_cache": false
+}
+```
+
+Notes:
+- This is the URL-based counterpart to `POST /repositories/register-url`.
+- The server derives provider and path metadata from the URL, finds the tracked repository row, and deletes it.
+- `cleanup_cache=true` also removes Axon's cached git checkout for remote repositories.
+- Local directory sources are never deleted by cache cleanup.
+- Returns `204` on success and `404` if the repository is not currently tracked.
+
 #### `GET /repositories/discover/{group_id}`
 Discover GitLab repositories for a group and identify tracked/untracked entries.
 
@@ -91,6 +127,14 @@ Notes:
 
 #### `POST /repositories/{id}/sync`
 Manually trigger a full synchronization (pull, parse, analyze) for a repository.
+
+#### `DELETE /repositories/{id}`
+Delete one tracked repository and its indexed data by repository ID.
+
+Notes:
+- Optional query param: `cleanup_cache=true`
+- When set, Axon also removes the cached git checkout for remote repositories.
+- Local directory sources are never deleted by cache cleanup.
 
 #### `GET /repositories/{id}`
 Get repository details, including status, totals, and last commit metadata when available.

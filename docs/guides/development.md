@@ -71,8 +71,12 @@ Use a dedicated test database when running DB-backed tests:
 source /home/vscode/.venv-dev/bin/activate
 ```
 
-In the devcontainer, `DATABASE_URL` and `TEST_DATABASE_URL` are already exported as `indexer` and `indexer_test`, and both databases are created during the Postgres bootstrap.
+For local helper commands, `make api-dev`, `make api-start`, `make api-test`, and `make retrieval-smoke` source `scripts/dev_env.sh`, which exports `DATABASE_URL=indexer` and `TEST_DATABASE_URL=indexer_test`.
+Both databases are created during the Postgres bootstrap.
 The test harness creates and drops schema in `TEST_DATABASE_URL`; it should never match `DATABASE_URL`.
+
+When the API is running against the same Redis instance as the workers, it now mirrors repository sync progress events from the worker log stream into the API logs, including clone/parsing/extraction/embedding milestones and sync completion or failure.
+The Celery worker also emits explicit startup and task-start log lines so local runs are visibly alive before repository-specific progress appears, and repository progress messages published to Redis are mirrored into the worker terminal as normal log lines.
 
 ### Test Coverage
 

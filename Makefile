@@ -85,16 +85,16 @@ db-reset-test:
 
 # API commands
 api-start:
-	uvicorn src.api.main:app --host 0.0.0.0 --port 8080 --workers 4
+	. ./scripts/dev_env.sh && uvicorn src.api.main:app --host 0.0.0.0 --port 8080 --workers 4
 
 api-dev:
-	uvicorn src.api.main:app --host 0.0.0.0 --port 8080 --reload
+	. ./scripts/dev_env.sh && uvicorn src.api.main:app --host 0.0.0.0 --port 8080 --reload
 
 api-test:
-	python scripts/test_api.py
+	. ./scripts/dev_env.sh && python scripts/test_api.py
 
 retrieval-smoke:
-	python scripts/test_retrieval_smoke.py
+	. ./scripts/dev_env.sh && python scripts/test_retrieval_smoke.py
 
 # MCP commands
 mcp-start:

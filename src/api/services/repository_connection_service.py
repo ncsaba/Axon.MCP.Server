@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from itertools import combinations
@@ -14,6 +15,7 @@ from sqlalchemy.orm import aliased
 from src.config.enums import FileLifecycleStateEnum, RelationTypeEnum
 from src.database.models import (
     ApiEndpointLink,
+    Chunk,
     Dependency,
     DockerService,
     EventLink,
@@ -307,6 +309,7 @@ class RepositoryConnectionService:
         edges.extend(await self._load_service_mapping_edges())
         edges.extend(await self._load_manifest_dependency_edges(list(repositories_by_id.values())))
         edges.extend(await self._load_relation_edges())
+        edges.extend(await self._load_artifact_reference_edges(list(repositories_by_id.values())))
         edges.extend(await self._load_support_reference_edges(list(repositories_by_id.values())))
 
         return repositories_by_id, self._aggregate_edges(edges)
@@ -633,6 +636,123 @@ class RepositoryConnectionService:
 
         return edges
 
+    async def _load_artifact_reference_edges(
+        self,
+        repositories: Sequence[RepositoryIdentity],
+    ) -> List[RepositoryConnectionEdge]:
+        """Load repo-to-repo evidence from indexed manifest and runtime-config text."""
+        source_repo = aliased(Repository)
+        stmt = (
+            select(
+                File.repository_id,
+                source_repo.name,
+                File.path,
+                Chunk.content,
+            )
+            .join(source_repo, File.repository_id == source_repo.id)
+            .join(Chunk, Chunk.file_content_id == File.current_content_id)
+            .where(
+                File.lifecycle_state == FileLifecycleStateEnum.ACTIVE,
+                File.current_content_id.is_not(None),
+            )
+        )
+        result = await self.session.execute(stmt)
+
+        edges: List[RepositoryConnectionEdge] = []
+        for source_repository_id, source_repository_name, file_path, content in result.all():
+            edges.extend(
+                self._infer_artifact_reference_edges(
+                    source_repository_id=source_repository_id,
+                    source_repository_name=source_repository_name,
+                    file_path=file_path,
+                    content=content,
+                    repositories=repositories,
+                )
+            )
+
+        return edges
+
+    def _infer_artifact_reference_edges(
+        self,
+        *,
+        source_repository_id: int,
+        source_repository_name: str,
+        file_path: Optional[str],
+        content: Optional[str],
+        repositories: Sequence[RepositoryIdentity],
+    ) -> List[RepositoryConnectionEdge]:
+        """Infer repo connections from manifest/runtime artifact content."""
+        artifact_kind = self._artifact_reference_kind(file_path)
+        if artifact_kind is None:
+            return []
+
+        reference_terms = self._artifact_reference_terms(file_path=file_path, content=content)
+        if not reference_terms:
+            return []
+
+        is_support_repo = self._is_support_repository_name(source_repository_name)
+        edges: List[RepositoryConnectionEdge] = []
+        for target_repo in repositories:
+            if target_repo.id == source_repository_id:
+                continue
+
+            matched_term, confidence = self._match_reference_terms_to_repository(
+                reference_terms=reference_terms,
+                repo=target_repo,
+                artifact_kind=artifact_kind,
+                support_context=is_support_repo,
+            )
+            if matched_term is None:
+                continue
+
+            evidence = self._build_artifact_reference_evidence(
+                file_path=file_path,
+                matched_term=matched_term,
+                content=content,
+            )
+
+            if artifact_kind == "manifest":
+                connection_type = "manifest_dependency"
+                note = "Manifest or build artifact text references this indexed repository"
+            elif is_support_repo:
+                connection_type = "shared_config_reference"
+                note = "Deployment/support artifact references this repository stack member"
+            else:
+                connection_type = "runtime_config_reference"
+                note = "Runtime/config artifact references this repository or service"
+
+            edge = RepositoryConnectionEdge(
+                source_repository_id=source_repository_id,
+                source_repository_name=source_repository_name,
+                target_repository_id=target_repo.id,
+                target_repository_name=target_repo.name,
+                connection_type=connection_type,
+                direction="bidirectional" if is_support_repo else "outbound",
+                confidence=confidence,
+                evidence_samples=[evidence],
+                status="heuristic" if artifact_kind != "manifest" else "direct",
+                notes=note,
+            )
+            edges.append(edge)
+
+            if is_support_repo:
+                edges.append(
+                    RepositoryConnectionEdge(
+                        source_repository_id=target_repo.id,
+                        source_repository_name=target_repo.name,
+                        target_repository_id=source_repository_id,
+                        target_repository_name=source_repository_name,
+                        connection_type=connection_type,
+                        direction="bidirectional",
+                        confidence=confidence,
+                        evidence_samples=[evidence],
+                        status="heuristic",
+                        notes=note,
+                    )
+                )
+
+        return edges
+
     def _aggregate_edges(
         self,
         edges: Iterable[RepositoryConnectionEdge],
@@ -766,6 +886,128 @@ class RepositoryConnectionService:
                 return repo, 0.84
         return None, 0.0
 
+    def _artifact_reference_kind(self, file_path: Optional[str]) -> Optional[str]:
+        """Classify indexed file artifacts used for repo-level reference inference."""
+        if not file_path:
+            return None
+
+        lowered = file_path.lower()
+        basename = lowered.split("/")[-1]
+        manifest_names = {
+            "pom.xml",
+            "package.json",
+            "package-lock.json",
+            "requirements.txt",
+            "pyproject.toml",
+            "poetry.lock",
+            "build.gradle",
+            "build.gradle.kts",
+            "settings.gradle",
+            "settings.gradle.kts",
+            "cargo.toml",
+        }
+        if basename in manifest_names:
+            return "manifest"
+
+        runtime_markers = (
+            "application",
+            "appsettings",
+            "group_vars/",
+            "host_vars/",
+            "plays/",
+            "templates/",
+            "helm-values",
+            "docker-compose",
+            ".yml",
+            ".yaml",
+            ".ini",
+            ".property",
+            ".properties",
+            ".conf",
+            ".env",
+            ".j2",
+        )
+        if any(marker in lowered for marker in runtime_markers):
+            return "runtime"
+        return None
+
+    def _artifact_reference_terms(
+        self,
+        *,
+        file_path: Optional[str],
+        content: Optional[str],
+    ) -> Dict[str, str]:
+        """Extract normalized reference terms with readable raw samples."""
+        terms: Dict[str, str] = {}
+        for value in filter(None, [file_path, content]):
+            for fragment in re.findall(r"[A-Za-z0-9._:/@-]{4,}", value):
+                normalized_fragment = self._normalize_token(fragment)
+                if len(normalized_fragment) >= 6 and normalized_fragment not in terms:
+                    terms[normalized_fragment] = fragment
+                for part in re.split(r"[^a-z0-9]+", fragment.lower()):
+                    normalized_part = self._normalize_token(part)
+                    if len(normalized_part) >= 6 and normalized_part not in terms:
+                        terms[normalized_part] = part
+        return terms
+
+    def _match_reference_terms_to_repository(
+        self,
+        *,
+        reference_terms: Dict[str, str],
+        repo: RepositoryIdentity,
+        artifact_kind: str,
+        support_context: bool,
+    ) -> tuple[Optional[str], float]:
+        """Match manifest/runtime text terms to repository aliases."""
+        heuristic_stop_tokens = {
+            "domain",
+            "server",
+            "service",
+            "config",
+            "client",
+            "plugin",
+            "application",
+        }
+        base_confidence = 0.84 if artifact_kind == "manifest" else 0.79
+        if support_context and artifact_kind != "manifest":
+            base_confidence = 0.71
+
+        for candidate in sorted(self._repository_match_tokens(repo), key=len, reverse=True):
+            if candidate in heuristic_stop_tokens:
+                continue
+            if candidate not in reference_terms:
+                continue
+            confidence = base_confidence + (0.03 if len(candidate) >= 10 else 0.0)
+            return reference_terms[candidate], min(confidence, 0.95)
+        return None, 0.0
+
+    def _build_artifact_reference_evidence(
+        self,
+        *,
+        file_path: Optional[str],
+        matched_term: str,
+        content: Optional[str],
+    ) -> str:
+        """Create a short evidence sample for manifest/runtime reference edges."""
+        if content:
+            normalized_match = self._normalize_token(matched_term)
+            matching_lines: List[str] = []
+            for raw_line in content.splitlines():
+                line = raw_line.strip()
+                if line and normalized_match and normalized_match in self._normalize_token(line):
+                    matching_lines.append(line)
+            if matching_lines:
+                matching_lines.sort(
+                    key=lambda line: (
+                        "http" not in line.lower(),
+                        ":" not in line,
+                        -len(line),
+                    )
+                )
+                compact_line = matching_lines[0][:160]
+                return f"{file_path or 'artifact'}: {compact_line}"
+        return f"{file_path or 'artifact'} references '{matched_term}'"
+
     def _repository_match_tokens(self, repo: RepositoryIdentity) -> set[str]:
         """Generate normalized repo identity tokens."""
         path_leaf = repo.path_with_namespace.split("/")[-1]
@@ -887,6 +1129,11 @@ class RepositoryConnectionService:
         if not value:
             return ""
         return "".join(ch for ch in value.lower() if ch.isalnum())
+
+    def _is_support_repository_name(self, repository_name: Optional[str]) -> bool:
+        """Return whether a repository should be treated as support/deployment context."""
+        lowered = (repository_name or "").lower()
+        return "infrastructure" in lowered or "automation" in lowered
 
     def _to_identity(self, repo: Repository) -> RepositoryIdentity:
         """Convert ORM repository row to identity dataclass."""
