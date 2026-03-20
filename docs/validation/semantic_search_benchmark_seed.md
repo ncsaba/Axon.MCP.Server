@@ -34,12 +34,15 @@ It exists to stop search tuning from being heuristic-only.
 | `AX-05` | `axon-src` | Docs-backed | `how to configure redis` | Setup docs, config docs, or runtime config symbols | Top-5 useful |
 | `AX-06` | `axon-src` | Ambiguous multi-result | `search code snippets` | Search service, MCP formatters, or snippet-selection code | Top-5 useful with low noise |
 | `AX-07` | `axon-src` | Search-to-context | `find request flow entrypoint` | Search result that chains into architecture/context tooling | Top-3 useful and follow-up success |
+| `AX-08` | `axon-src` | Python framework usage | `where do we define FastAPI routes` | FastAPI router declarations, endpoint symbols, or route modules | Top-5 useful |
+| `AX-09` | `axon-src` | Python semantic chunking | `where is APIRouter used` | Python route modules or router declarations with decorator context | Top-5 useful |
 | `DS-01` | `dasc-ds-recommender` | Exact identifier | `similar items` | Item-item similarity implementation or symbol | Top-3 useful |
 | `DS-02` | `dasc-ds-recommender` | Natural-language intent | `find recommendation scoring logic` | Core ranking/recommendation implementation | Top-3 useful |
 | `DS-03` | `dasc-ds-recommender` | Framework usage | `where are API routes defined` | API/router/controller symbols | Top-5 useful |
 | `DS-04` | `dasc-ds-recommender` | Import/dependency context | `uses mongo` | Mongo repositories, Mongo config, or DB architecture docs | Top-5 useful |
 | `DS-05` | `dasc-ds-recommender` | Docs-backed | `how do we configure recommender settings` | Config files, env docs, or setup symbols | Top-5 useful |
 | `DS-06` | `dasc-ds-recommender` | Search-to-context | `find the entrypoint for recommendation requests` | Service or API entrypoint that chains into context tools | Top-3 useful and follow-up success |
+| `DS-07` | `dasc-ds-recommender` | Python service flow | `where does the recommender call scoring logic` | Python service/module entrypoint that chains into `CALLS` context | Top-5 useful and follow-up success |
 | `JV-01` | `jverein` | Exact identifier | `SEPA` | SEPA-related class, module, or package | Top-3 useful |
 | `JV-02` | `jverein` | Framework wiring | `where is database service wired into jameica` | DB service interface/implementation or Jameica wiring surface | Top-5 useful |
 | `JV-03` | `jverein` | GUI surface | `find Jameica GUI views` | Jameica GUI view classes under the plugin UI layer | Top-5 useful |
@@ -61,6 +64,7 @@ Rules:
    - 5 Java queries
    - 5 natural-language or intent queries
    - 3 search-to-context chaining queries
+   - 3 Python-focused queries that exercise route/framework/service intent
 
 ## Current Environment Constraint
 

@@ -1,5 +1,6 @@
 """API endpoint extractor for Web APIs."""
 
+import ast
 import re
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
@@ -61,6 +62,16 @@ class JavaAnnotationEndpointStrategy:
         return await self.extractor._extract_java_annotation_endpoints(repository_id)
 
 
+class PythonFrameworkEndpointStrategy:
+    """Endpoint strategy using Python framework decorators."""
+
+    def __init__(self, extractor: "ApiEndpointExtractor"):
+        self.extractor = extractor
+
+    async def extract_endpoints(self, repository_id: int) -> List[ApiEndpoint]:
+        return await self.extractor._extract_python_framework_endpoints(repository_id)
+
+
 class ApiEndpointExtractor:
     """Extracts API endpoints from parsed code."""
     
@@ -69,6 +80,7 @@ class ApiEndpointExtractor:
         self.endpoint_strategies: List[EndpointExtractionStrategy] = [
             SymbolBasedEndpointStrategy(self),
             JavaAnnotationEndpointStrategy(self),
+            PythonFrameworkEndpointStrategy(self),
         ]
     
     async def extract_endpoints(
@@ -627,3 +639,226 @@ class ApiEndpointExtractor:
         if positional_match:
             return positional_match.group(1)
         return ""
+
+    async def _extract_python_framework_endpoints(self, repository_id: int) -> List[ApiEndpoint]:
+        """Extract Python endpoints from FastAPI/Flask decorators."""
+        result = await self.session.execute(
+            select(Repository).where(Repository.id == repository_id)
+        )
+        repo = result.scalar_one_or_none()
+        if not repo:
+            return []
+
+        repo_path = self._resolve_repository_path(repo)
+        if not repo_path:
+            return []
+
+        files_result = await self.session.execute(
+            select(File).where(
+                File.repository_id == repository_id,
+                File.language == LanguageEnum.PYTHON,
+                active_file_filter(),
+            )
+        )
+        python_files = files_result.scalars().all()
+
+        endpoints: List[ApiEndpoint] = []
+        for file in python_files:
+            file_path = repo_path / file.path
+            if not file_path.exists():
+                continue
+            try:
+                code = file_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+
+            try:
+                tree = ast.parse(code)
+            except SyntaxError:
+                continue
+
+            endpoints.extend(self._extract_python_endpoints_from_ast(tree, file))
+
+        return endpoints
+
+    def _extract_python_endpoints_from_ast(self, tree: ast.AST, file: File) -> List[ApiEndpoint]:
+        endpoints: List[ApiEndpoint] = []
+        prefixes = self._collect_python_route_prefixes(tree)
+        class_stack: List[str] = []
+
+        def visit(node: ast.AST):
+            if isinstance(node, ast.ClassDef):
+                class_stack.append(node.name)
+                for child in node.body:
+                    visit(child)
+                class_stack.pop()
+                return
+
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                controller = class_stack[-1] if class_stack else Path(file.path).stem
+                endpoints.extend(
+                    self._extract_python_endpoints_from_function(
+                        node=node,
+                        file=file,
+                        controller=controller,
+                        route_prefixes=prefixes,
+                    )
+                )
+
+            for child in ast.iter_child_nodes(node):
+                if isinstance(node, ast.ClassDef) and child in node.body:
+                    continue
+                visit(child)
+
+        visit(tree)
+        return endpoints
+
+    def _collect_python_route_prefixes(self, tree: ast.AST) -> Dict[str, str]:
+        prefixes: Dict[str, str] = {}
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign):
+                continue
+            if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+                continue
+            if not isinstance(node.value, ast.Call):
+                continue
+
+            target_name = node.targets[0].id
+            callee = self._python_dotted_name(node.value.func)
+            if callee not in {"APIRouter", "fastapi.APIRouter", "Blueprint", "flask.Blueprint"}:
+                continue
+
+            prefix = self._python_keyword_string(node.value, "prefix")
+            if prefix is None:
+                prefix = self._python_keyword_string(node.value, "url_prefix")
+            prefixes[target_name] = prefix or ""
+
+        return prefixes
+
+    def _extract_python_endpoints_from_function(
+        self,
+        node: ast.AST,
+        file: File,
+        controller: str,
+        route_prefixes: Dict[str, str],
+    ) -> List[ApiEndpoint]:
+        endpoints: List[ApiEndpoint] = []
+        decorator_list = getattr(node, "decorator_list", [])
+        function_name = getattr(node, "name", "unknown")
+        line_number = getattr(node, "lineno", 1)
+
+        for decorator in decorator_list:
+            if not isinstance(decorator, ast.Call):
+                continue
+
+            func = decorator.func
+            if not isinstance(func, ast.Attribute):
+                continue
+
+            receiver = self._python_dotted_name(func.value)
+            action = func.attr
+            route = self._python_first_arg_string(decorator) or "/"
+
+            if action in {"get", "post", "put", "delete", "patch"}:
+                method = action.upper()
+                full_route = self._combine_routes(route_prefixes.get(receiver or "", ""), route)
+                endpoints.append(
+                    ApiEndpoint(
+                        http_method=method,
+                        route=full_route,
+                        controller=controller,
+                        action=function_name,
+                        file_path=file.path,
+                        file_instance_id=file.id,
+                        language=file.language,
+                        line_number=line_number,
+                        requires_auth=False,
+                        parameters=self._python_function_parameters(node),
+                    )
+                )
+                continue
+
+            if action != "route":
+                continue
+
+            methods = self._python_route_methods(decorator)
+            if not methods:
+                methods = ["GET"]
+
+            full_route = self._combine_routes(route_prefixes.get(receiver or "", ""), route)
+            for method in methods:
+                endpoints.append(
+                    ApiEndpoint(
+                        http_method=method,
+                        route=full_route,
+                        controller=controller,
+                        action=function_name,
+                        file_path=file.path,
+                        file_instance_id=file.id,
+                        language=file.language,
+                        line_number=line_number,
+                        requires_auth=False,
+                        parameters=self._python_function_parameters(node),
+                    )
+                )
+
+        return endpoints
+
+    def _python_function_parameters(self, node: ast.AST) -> List[Dict[str, Any]]:
+        args = getattr(node, "args", None)
+        if args is None:
+            return []
+
+        params: List[Dict[str, Any]] = []
+        for arg in list(args.posonlyargs) + list(args.args) + list(args.kwonlyargs):
+            if arg.arg == "self":
+                continue
+            params.append(
+                {
+                    "name": arg.arg,
+                    "type": self._python_safe_unparse(arg.annotation) if arg.annotation else None,
+                }
+            )
+        return params
+
+    def _python_route_methods(self, decorator: ast.Call) -> List[str]:
+        for keyword in decorator.keywords:
+            if keyword.arg != "methods" or not isinstance(keyword.value, (ast.List, ast.Tuple, ast.Set)):
+                continue
+            methods: List[str] = []
+            for elt in keyword.value.elts:
+                if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                    methods.append(elt.value.upper())
+            return methods
+        return []
+
+    def _python_first_arg_string(self, node: ast.Call) -> Optional[str]:
+        if not node.args:
+            return None
+        first = node.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            return first.value
+        return None
+
+    def _python_keyword_string(self, node: ast.Call, keyword_name: str) -> Optional[str]:
+        for keyword in node.keywords:
+            if keyword.arg == keyword_name and isinstance(keyword.value, ast.Constant) and isinstance(keyword.value.value, str):
+                return keyword.value.value
+        return None
+
+    def _python_dotted_name(self, node: ast.AST) -> Optional[str]:
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            parent = self._python_dotted_name(node.value)
+            if parent:
+                return f"{parent}.{node.attr}"
+            return node.attr
+        return None
+
+    def _python_safe_unparse(self, node: ast.AST) -> Optional[str]:
+        try:
+            return ast.unparse(node)
+        except Exception:
+            return None

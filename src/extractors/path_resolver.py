@@ -3,10 +3,13 @@
 from pathlib import Path
 from typing import Optional, Dict, List
 import json
+import re
 
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+_PYTHON_SOURCE_ROOT_CANDIDATES = ("src", "lib", "app", "python")
 
 
 class PathResolver:
@@ -84,6 +87,9 @@ class PathResolver:
         Returns:
             Resolved file path or None if not resolvable
         """
+        if language.lower() == "python":
+            return self._resolve_python_import_path(import_path, importing_file)
+
         # Handle relative imports
         if import_path.startswith('.'):
             return self._resolve_relative_path(import_path, importing_file, language)
@@ -94,6 +100,36 @@ class PathResolver:
         
         # Handle absolute/package imports
         return self._resolve_package_path(import_path, language)
+
+    def _resolve_python_import_path(
+        self,
+        import_path: str,
+        importing_file: Path,
+    ) -> Optional[Path]:
+        """Resolve Python absolute and relative module imports."""
+        try:
+            importing_rel = importing_file.relative_to(self.repository_root)
+        except ValueError:
+            return None
+
+        source_root = self._infer_python_source_root(importing_rel)
+        package_parts = self._python_package_parts(importing_rel, source_root)
+
+        if import_path.startswith("."):
+            full_parts = self._resolve_python_relative_parts(import_path, package_parts)
+            root_candidates = [source_root] if source_root else [Path()]
+        else:
+            cleaned = import_path.strip(".")
+            if not cleaned:
+                return None
+            full_parts = [part for part in cleaned.split(".") if part]
+            root_candidates = self._python_absolute_root_candidates(source_root)
+
+        if not full_parts:
+            return None
+
+        module_path = Path(*full_parts)
+        return self._resolve_python_module_candidates(root_candidates, module_path)
     
     def _resolve_relative_path(
         self,
@@ -198,7 +234,75 @@ class PathResolver:
                 candidate = resolved.with_suffix(ext)
                 if candidate.exists():
                     return candidate.relative_to(self.repository_root)
-        
+
+        return None
+
+    def _infer_python_source_root(self, importing_rel: Path) -> Optional[Path]:
+        if importing_rel.parts and importing_rel.parts[0] in _PYTHON_SOURCE_ROOT_CANDIDATES:
+            return Path(importing_rel.parts[0])
+        return None
+
+    def _python_package_parts(
+        self,
+        importing_rel: Path,
+        source_root: Optional[Path],
+    ) -> List[str]:
+        relative_to_root = importing_rel
+        if source_root is not None:
+            relative_to_root = importing_rel.relative_to(source_root)
+
+        module_parts = list(relative_to_root.with_suffix("").parts)
+        if module_parts and module_parts[-1] == "__init__":
+            return module_parts[:-1]
+        return module_parts[:-1]
+
+    def _resolve_python_relative_parts(
+        self,
+        import_path: str,
+        package_parts: List[str],
+    ) -> List[str]:
+        match = re.match(r"^(\.+)(.*)$", import_path)
+        if not match:
+            return []
+
+        level = len(match.group(1))
+        remainder = match.group(2).strip(".")
+        ascend = max(level - 1, 0)
+
+        if ascend > len(package_parts):
+            return []
+
+        base_parts = package_parts[:len(package_parts) - ascend] if ascend else list(package_parts)
+        remainder_parts = [part for part in remainder.split(".") if part] if remainder else []
+        return base_parts + remainder_parts
+
+    def _python_absolute_root_candidates(self, source_root: Optional[Path]) -> List[Path]:
+        candidates: List[Path] = []
+        if source_root is not None:
+            candidates.append(source_root)
+        candidates.append(Path())
+        for root_name in _PYTHON_SOURCE_ROOT_CANDIDATES:
+            root = Path(root_name)
+            if root not in candidates:
+                candidates.append(root)
+        return candidates
+
+    def _resolve_python_module_candidates(
+        self,
+        root_candidates: List[Path],
+        module_path: Path,
+    ) -> Optional[Path]:
+        for root in root_candidates:
+            base = self.repository_root / root / module_path
+
+            file_candidate = base.with_suffix(".py")
+            if file_candidate.exists() and file_candidate.is_relative_to(self.repository_root):
+                return file_candidate.relative_to(self.repository_root)
+
+            package_candidate = base / "__init__.py"
+            if package_candidate.exists() and package_candidate.is_relative_to(self.repository_root):
+                return package_candidate.relative_to(self.repository_root)
+
         return None
 
     def _resolve_java_package_path(self, import_path: str) -> Optional[Path]:

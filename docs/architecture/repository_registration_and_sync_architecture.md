@@ -61,7 +61,11 @@ flowchart TD
 
 1. GitLab discovery is still the only provider-specific discovery workflow.
 2. Credentials are still configured globally by provider/runtime settings rather than per repository.
-3. MCP does not yet expose repository registration or sync initiation.
+3. Polling cadence and enablement are global runtime settings rather than per repository.
+4. Webhook-triggered refresh is not implemented yet.
+5. There is no dedicated REST surface for poll status, refresh policy, or refresh mode visibility.
+6. Provider enum alignment for existing PostgreSQL databases is currently handled pragmatically at startup rather than through a dedicated schema migration.
+7. MCP does not yet expose repository registration or sync initiation.
 
 ## Current Implementation Slice
 
@@ -172,9 +176,27 @@ Update existing docs, but do not overload them:
 | Decouple clone auth from GitLab-only token injection | `✅` | Provider-aware HTTPS auth is landed |
 | Add scheduled poller for registered repositories | `✅` | Celery Beat now enqueues repository refresh |
 | Wire commit-diff incremental worker into poll flow | `✅` | Main sync task now attempts incremental refresh first |
-| Add MCP registration/manual sync tools | `🧭` | Product UX enhancement after REST contract stabilizes |
+| Add GitHub/provider-neutral discovery workflows | `🧭` | Registration works today, but discovery remains GitLab-only |
+| Add per-repository credential storage/policy | `🧭` | Current credentials are global runtime settings only |
+| Add per-repository polling policy | `🧭` | Current cadence and enablement are global |
+| Add poll-status / sync-mode visibility surfaces | `🧭` | Refresh behavior is internal today |
+| Replace startup enum alignment with explicit migration hygiene | `🧭` | Current runtime alignment is pragmatic but not ideal long-term |
 | Add webhook-triggered refresh later | `🚧` | Useful later, but polling is the simpler first contract |
+| Add MCP registration/manual sync tools | `🧭` | Intentionally lower priority than the REST/runtime path |
+
+## Outstanding Follow-Up Priority
+
+`🧭` next action, `⚪` lower priority.
+
+| Priority | Item | Why it matters |
+| --- | --- | --- |
+| `🧭` | GitHub/provider-neutral discovery support | Removes the remaining GitLab-only onboarding asymmetry |
 | Add URL-derived single-repo registration | `🚧` | REST should accept a plain GitHub/generic HTTPS repo URL and infer provider metadata |
+| `🧭` | Per-repository credential model | Needed for multi-tenant or mixed-provider deployments |
+| `🧭` | Per-repository polling controls | Needed when repositories need different refresh cadences |
+| `🧭` | Webhook-triggered refresh | Reduces polling latency and unnecessary refresh work |
+| `🧭` | Explicit migration for provider enum changes | Better operational hygiene than startup mutation |
+| `⚪` | MCP registration/sync tools | Postponed because REST already provides the needed onboarding path |
 
 ## Acceptance Criteria
 

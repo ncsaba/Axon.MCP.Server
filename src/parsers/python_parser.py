@@ -84,6 +84,7 @@ class _PythonAstVisitor(ast.NodeVisitor):
         fully_qualified_name = '.'.join(self.class_stack + [class_name]) if self.class_stack else class_name
 
         bases = [self._safe_unparse(base) for base in node.bases]
+        decorators = self._extract_decorators(node)
         signature = f"class {class_name}"
         if bases:
             signature += f"({', '.join(bases)})"
@@ -98,6 +99,11 @@ class _PythonAstVisitor(ast.NodeVisitor):
                 end_column=self._end_column(node),
                 signature=signature,
                 documentation=ast.get_docstring(node),
+                structured_docs={
+                    "bases": [base for base in bases if base],
+                    "decorators": decorators,
+                    "chunk_start_line": self._chunk_start_line(node),
+                },
                 access_modifier=self._access_modifier_for_name(class_name),
                 parent_name=parent_name,
                 fully_qualified_name=fully_qualified_name,
@@ -159,6 +165,7 @@ class _PythonAstVisitor(ast.NodeVisitor):
 
         args = self._extract_parameters(node)
         return_type = self._safe_unparse(getattr(node, 'returns', None))
+        decorators = self._extract_decorators(node)
 
         prefix = 'async def' if is_async else 'def'
         signature = f"{prefix} {func_name}({', '.join(p['name'] for p in args)})"
@@ -175,6 +182,11 @@ class _PythonAstVisitor(ast.NodeVisitor):
                 end_column=self._end_column(node),
                 signature=signature,
                 documentation=ast.get_docstring(node),
+                structured_docs={
+                    "decorators": decorators,
+                    "chunk_start_line": self._chunk_start_line(node),
+                    "is_async": is_async,
+                },
                 parameters=args,
                 return_type=return_type,
                 access_modifier=self._access_modifier_for_name(func_name),
@@ -255,3 +267,18 @@ class _PythonAstVisitor(ast.NodeVisitor):
         # Module-level symbols are represented by top-level body nodes.
         # Class stack is enough for our use case because we only track class nesting.
         return not self.class_stack and self.function_depth == 0
+
+    def _extract_decorators(self, node: ast.AST) -> List[str]:
+        decorators: List[str] = []
+        for decorator in getattr(node, "decorator_list", []):
+            value = self._safe_unparse(decorator)
+            if value:
+                decorators.append(value)
+        return decorators
+
+    def _chunk_start_line(self, node: ast.AST) -> int:
+        decorator_list = getattr(node, "decorator_list", [])
+        if decorator_list:
+            decorator_lines = [getattr(decorator, "lineno", getattr(node, "lineno", 1)) for decorator in decorator_list]
+            return min(decorator_lines)
+        return getattr(node, "lineno", 1)

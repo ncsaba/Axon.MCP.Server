@@ -11,6 +11,17 @@
 - ✅ **CORS protection** with origin whitelisting
 - ✅ **Input validation** and sanitization
 
+## Current Auth Path
+
+The current recommended authentication model is:
+
+- Keycloak for browser and REST authentication
+- Axon-issued personal tokens for MCP access
+
+See the user-focused guide:
+
+- `docs/guides/authentication_keycloak_and_mcp_tokens.md`
+
 ## Best Practices
 
 1. **Never commit secrets**: Use environment variables or secret managers

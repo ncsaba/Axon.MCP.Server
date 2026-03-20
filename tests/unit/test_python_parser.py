@@ -85,6 +85,33 @@ _runtime_flag: bool = False
     assert names["_runtime_flag"].kind == SymbolKindEnum.VARIABLE
 
 
+def test_python_parser_preserves_decorator_context_for_chunking():
+    parser = PythonParser()
+    code = '''
+from fastapi import APIRouter
+
+router = APIRouter(prefix="/api/users")
+
+@router.get("/{user_id}")
+async def get_user(user_id: str) -> dict:
+    return {"user_id": user_id}
+'''
+
+    result = parser.parse(code, "routes.py")
+
+    assert result.success
+
+    names = {s.name: s for s in result.symbols}
+    get_user = names["get_user"]
+    assert get_user.kind == SymbolKindEnum.FUNCTION
+    assert get_user.structured_docs is not None
+    assert len(get_user.structured_docs["decorators"]) == 1
+    assert "router.get(" in get_user.structured_docs["decorators"][0]
+    assert "/{user_id}" in get_user.structured_docs["decorators"][0]
+    assert get_user.structured_docs["chunk_start_line"] == 6
+    assert get_user.structured_docs["is_async"] is True
+
+
 def test_python_parser_handles_syntax_error_without_crashing():
     parser = PythonParser()
     result = parser.parse("def broken(:\n    pass\n", "broken.py")

@@ -152,6 +152,8 @@ Status note:
 - Repository registration is API-driven, not config-only.
 - Periodic polling for new commits is handled internally by Celery Beat; there is no separate repository polling REST endpoint.
 - The normal sync path now performs a full initial index, then prefers incremental commit-diff refresh when the repository already has a known `last_commit_sha`.
+- GitLab discovery is still the only discovery-oriented REST flow today.
+- Refresh policy, poll status, and sync-mode visibility are not exposed as dedicated REST resources yet.
 
 ### 🔐 Authentication
 

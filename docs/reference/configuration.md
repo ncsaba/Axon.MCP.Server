@@ -111,6 +111,12 @@ Current status:
 - the scheduled poller re-enqueues tracked repositories automatically
 - the main sync path prefers incremental commit-diff refresh after the initial full index when `last_commit_sha` is known
 
+Current limitations:
+- provider credentials are global runtime settings, not per-repository secrets
+- polling controls are global runtime settings, not per-repository policy
+- GitLab remains the only provider with a discovery workflow
+- the current provider-enum expansion for existing databases is aligned at startup; a dedicated migration path is still a follow-up item
+
 See:
 - `docs/architecture/repository_registration_and_sync_architecture.md`
 

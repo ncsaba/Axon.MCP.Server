@@ -1,6 +1,7 @@
 """Build call graph relationships in database."""
 
 import asyncio
+import ast
 from pathlib import Path
 from typing import List, Optional, Dict, Tuple
 from collections import defaultdict
@@ -11,7 +12,7 @@ from src.database.models import Symbol, FileInstance as File, Relation, Reposito
 from src.database.query_helpers import active_file_filter
 from src.database.session import AsyncSessionLocal
 from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum
-from src.extractors.call_analyzer import JavaScriptCallAnalyzer, JavaCallAnalyzer, Call
+from src.extractors.call_analyzer import JavaScriptCallAnalyzer, JavaCallAnalyzer, PythonCallAnalyzer, Call
 from src.extractors.call_resolver import CallResolver
 from src.extractors.strategy_interfaces import CallExtractionStrategy, NullCallStrategy, language_strategy
 from src.repository_sources import get_repository_source_registry
@@ -35,6 +36,7 @@ class CallGraphBuilder:
             LanguageEnum.JAVASCRIPT: JavaScriptCallAnalyzer(),
             LanguageEnum.TYPESCRIPT: JavaScriptCallAnalyzer(),
             LanguageEnum.JAVA: JavaCallAnalyzer(),
+            LanguageEnum.PYTHON: PythonCallAnalyzer(),
         }
         self._null_call_strategy = NullCallStrategy()
         self.resolver = CallResolver(session)
@@ -239,24 +241,34 @@ class CallGraphBuilder:
                 # Parse the file to get AST
                 from src.parsers import ParserFactory
                 parser = ParserFactory.get_parser(file.language)
-                
+
+                imports = []
                 tree = None
-                if hasattr(parser, 'parser'):
+                python_tree: Optional[ast.AST] = None
+
+                if file.language == LanguageEnum.PYTHON:
+                    try:
+                        python_tree = ast.parse(code)
+                    except SyntaxError as e:
+                        logger.warning("python_ast_parse_failed", file_path=file.path, error=str(e))
+                        return []
+
+                    parse_result = parser.parse(code, file.path)
+                    imports = parse_result.imports if parse_result.imports else []
+                elif hasattr(parser, 'parser'):
                     tree = parser.parser.parse(bytes(code, "utf8"))
+                    if hasattr(parser, 'extract_imports') and tree is not None:
+                        imports = parser.extract_imports(tree.root_node, code)
                 else:
                     logger.warning(
                         "parser_no_tree_sitter",
                         file_path=file.path,
                         parser_type=type(parser).__name__,
-                        parser_attrs=dir(parser)[:10]  # Show first 10 attributes for debugging
+                        parser_attrs=dir(parser)[:10]
                     )
                     return []
-                
-                if tree:
-                    # Extract imports if parser supports it
-                    imports = []
-                    if hasattr(parser, 'extract_imports'):
-                        imports = parser.extract_imports(tree.root_node, code)
+
+                if tree or python_tree is not None:
                     
                     # Fetch field/property symbols for this file to build field_types map
                     field_types = {}
@@ -285,7 +297,10 @@ class CallGraphBuilder:
                         symbols_processed += 1
                         
                         # Find the symbol's node in the tree
-                        symbol_node = self._find_symbol_node(tree.root_node, symbol, code)
+                        if file.language == LanguageEnum.PYTHON and python_tree is not None:
+                            symbol_node = self._find_python_symbol_node(python_tree, symbol)
+                        else:
+                            symbol_node = self._find_symbol_node(tree.root_node, symbol, code) if tree is not None else None
                         
                         if symbol_node:
                             symbols_with_nodes += 1
@@ -448,7 +463,7 @@ class CallGraphBuilder:
     
     async def _extract_calls_for_symbol(
         self,
-        symbol_node: "tree_sitter.Node",
+        symbol_node: "Any",
         code: str,
         language: LanguageEnum
     ) -> List[Call]:
@@ -458,11 +473,45 @@ class CallGraphBuilder:
 
     async def _extract_usages_for_symbol(
         self,
-        symbol_node: "tree_sitter.Node",
+        symbol_node: "Any",
         code: str,
         language: LanguageEnum
     ) -> List[Call]:
         """Extract usages from symbol based on language."""
         strategy = language_strategy(self.call_strategies, language, self._null_call_strategy)
         return strategy.extract_usages(symbol_node, code)
+
+    def _find_python_symbol_node(
+        self,
+        root_node: ast.AST,
+        symbol: Symbol,
+    ) -> Optional[ast.AST]:
+        """Find the Python AST node corresponding to a persisted symbol."""
+        target_line = symbol.start_line
+        target_name = symbol.name
+
+        class_name: Optional[str] = None
+        if symbol.parent_name:
+            class_name = symbol.parent_name.rsplit(".", 1)[-1]
+
+        for node in ast.walk(root_node):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name != target_name or getattr(node, "lineno", None) != target_line:
+                    continue
+                if class_name:
+                    if self._find_python_enclosing_class(root_node, node) == class_name:
+                        return node
+                    continue
+                return node
+
+        return None
+
+    def _find_python_enclosing_class(self, root_node: ast.AST, target_node: ast.AST) -> Optional[str]:
+        for node in ast.walk(root_node):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            for child in node.body:
+                if child is target_node:
+                    return node.name
+        return None
     

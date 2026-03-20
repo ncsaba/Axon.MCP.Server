@@ -101,16 +101,21 @@ class SymbolChunker:
             parts.append(f"// In class: {parent['name']}")
             parts.append(f"// {parent['signature']}")
             parts.append("")
-        
+
+        decorators = self._decorator_list(symbol)
+        if decorators:
+            parts.append(f"Decorators: {', '.join(decorators)}")
+
         # Symbol signature
         if symbol.signature:
             parts.append(symbol.signature)
-        
+
         # Symbol body (if available from file content)
         if file_content and symbol.start_line and symbol.end_line:
+            chunk_start_line = self._chunk_start_line(symbol)
             body_lines = self._extract_symbol_body(
                 file_content,
-                symbol.start_line,
+                chunk_start_line,
                 symbol.end_line
             )
             if body_lines:
@@ -121,6 +126,9 @@ class SymbolChunker:
             if context.calls:
                 calls_str = ', '.join(context.calls[:5])
                 parts.append(f"\n// Calls: {calls_str}")
+            if context.called_by:
+                callers_str = ', '.join(context.called_by[:5])
+                parts.append(f"// Called by: {callers_str}")
             if context.implements:
                 impl_str = ', '.join(context.implements)
                 parts.append(f"// Implements: {impl_str}")
@@ -135,7 +143,9 @@ class SymbolChunker:
             'namespace': context.namespace,
             'imports': context.imports[:10],  # Store top 10 imports
             'parent_class': context.parent_class.get('name') if context.parent_class else None,
+            'decorators': decorators,
             'calls': context.calls[:10],
+            'called_by': context.called_by[:10],
             'implements': context.implements,
             'inherits_from': context.inherits_from,
             'is_test': context.is_test,
@@ -148,7 +158,7 @@ class SymbolChunker:
             'content_type': 'code',
             'chunk_subtype': 'implementation',
             'context_metadata': metadata,
-            'start_line': symbol.start_line,
+            'start_line': self._chunk_start_line(symbol),
             'end_line': symbol.end_line
         }
     
@@ -238,3 +248,23 @@ class SymbolChunker:
         body_lines = lines[start_idx:end_idx]
         return '\n'.join(body_lines)
 
+    def _chunk_start_line(self, symbol: Symbol) -> int:
+        if symbol.structured_docs:
+            start_line = symbol.structured_docs.get("chunk_start_line")
+            if isinstance(start_line, int) and start_line > 0:
+                return start_line
+        return symbol.start_line
+
+    def _decorator_list(self, symbol: Symbol) -> List[str]:
+        if not symbol.structured_docs:
+            return []
+
+        decorators = symbol.structured_docs.get("decorators")
+        if not isinstance(decorators, list):
+            return []
+
+        values: List[str] = []
+        for decorator in decorators:
+            if isinstance(decorator, str) and decorator.strip():
+                values.append(decorator)
+        return values
