@@ -2,19 +2,19 @@
 
 ## Snapshot
 
-- Date: 2026-03-18
-- Status: `✅` runtime slice landed; remaining work is doc/test-environment closure
+- Date: 2026-03-20
+- Status: `✅` COMPLETE - Merged into `master`
 - Depends on: `docs/architecture/file_instance_content_dedup_proposal.md`
 
 ## Current Branch Priority
 
-`🧭` current execution order on `file-instance-content-separation`.
+`✅` All work from `file-instance-content-separation` has been merged into `master`.
 
 | Priority | Status | Scope |
 | --- | --- | --- |
-| 1. Branch doc closure | `🚧` | Canonical docs and handover text should describe lifecycle/query correctness, shared-chunk association, and reset-schema validation as landed. |
-| 2. Dedicated test DB default alignment | `🚧` | Docs, setup helpers, and test harness defaults should consistently keep `TEST_DATABASE_URL` separate from `DATABASE_URL`. |
-| 3. Broader language-platform work | `🧭` | With the branch runtime slice landed, the next engineering work can move back to Java strategy and parser-platform tracks. |
+| 1. Branch doc closure | `✅` | Canonical docs and handover text now describe lifecycle/query correctness, shared-chunk association, and reset-schema validation as landed. |
+| 2. Dedicated test DB default alignment | `✅` | Docs, setup helpers, and test harness defaults consistently keep `TEST_DATABASE_URL` separate from `DATABASE_URL`. |
+| 3. Broader language-platform work | `🧭` | With Phase 1 complete, engineering work has moved to Python semantic parity and Java validation tracks. |
 
 ## Objective
 

@@ -57,8 +57,25 @@ async def _ensure_semantic_search_vector_index() -> None:
 
 
 async def _ensure_source_control_provider_enum_values(conn) -> None:
-    """Ensure new provider enum values exist in PostgreSQL before ORM usage."""
+    """Ensure new provider enum values exist in PostgreSQL before ORM usage.
+    
+    This handles both cases:
+    1. The enum type exists but is missing values (adds them)
+    2. The enum type doesn't exist yet (does nothing - SQLAlchemy will create it)
+    """
     try:
+        # First check if the enum type exists
+        result = await conn.execute(
+            sa.text(
+                "SELECT 1 FROM pg_type WHERE typname = 'sourcecontrolproviderenum'"
+            )
+        )
+        if result.scalar() is None:
+            # Enum type doesn't exist yet - SQLAlchemy will create it with all values
+            logger.info("source_control_provider_enum_not_found_will_be_created")
+            return
+        
+        # Enum exists - add any missing values
         for provider in ("GITHUB", "GIT"):
             await conn.execute(
                 sa.text(

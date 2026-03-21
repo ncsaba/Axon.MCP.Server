@@ -1,0 +1,97 @@
+{
+  "timestamp": "2026-03-21T20:22:36Z",
+  "repository_id": 3,
+  "namespace": "validation/axon-src",
+  "summary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0
+  },
+  "checks": [
+    {
+      "name": "Import Relations",
+      "passed": true,
+      "details": "Found 45 symbols with expected import patterns, 45 have context",
+      "expected": null,
+      "actual": null,
+      "related_symbols": [
+        "ApiEndpointExtractor",
+        "CallGraphBuilder",
+        "ImportRelationshipBuilder"
+      ]
+    },
+    {
+      "name": "Call Relations",
+      "passed": true,
+      "details": "Found 268 function/method symbols that could have call relations, 5/5 sampled have context",
+      "expected": null,
+      "actual": null,
+      "related_symbols": [
+        "_build_exclusion_rules",
+        "build_parser",
+        "build_call_graph_for_repository",
+        "build_call_graph_for_all",
+        "_cmd_sync",
+        "build_parser",
+        "_ensure_asyncpg_url",
+        "_build_parser",
+        "_latest_sync_job",
+        "_wait_for_new_sync_job"
+      ]
+    },
+    {
+      "name": "Endpoint Extraction",
+      "passed": true,
+      "details": "53 ENDPOINT symbols found, 302 potential route handlers found",
+      "expected": null,
+      "actual": null,
+      "related_symbols": [
+        "GET /repositories/{repository_id}/analysis/services",
+        "GET /repositories/{repository_id}/analysis/integrations",
+        "GET /repositories/{repository_id}/analysis/config-findings",
+        "GET /repositories/{repository_id}/analysis/quality-metrics",
+        "GET /auth/methods",
+        "get_column_info",
+        "get_indexes",
+        "migrate_add_endpoint_to_symbolkind",
+        "output_file",
+        "test_health_endpoints"
+      ]
+    },
+    {
+      "name": "Chunk Coherence",
+      "passed": true,
+      "details": "Found results for 4/4 queries, 0 chunks show code structure",
+      "expected": null,
+      "actual": "Sample chunks: []",
+      "related_symbols": []
+    },
+    {
+      "name": "Call-Neighbor Context",
+      "passed": true,
+      "details": "Found 10 helper/utility functions, 3 have context available",
+      "expected": null,
+      "actual": null,
+      "related_symbols": [
+        "_load_dev_env",
+        "_load_dev_env",
+        "_load_dev_env",
+        "_load_dev_env",
+        "_print_step",
+        "_load_dev_env",
+        "_print_step",
+        "utcnow",
+        "get_logger",
+        "utcnow"
+      ]
+    },
+    {
+      "name": "Python Symbol Coverage",
+      "passed": true,
+      "details": "Found 2754 Python symbols: {'VARIABLE': 256, 'FUNCTION': 913, 'CONSTANT': 63, 'CLASS': 323, 'METHOD': 1131, 'MODULE': 15, 'ENDPOINT': 53}",
+      "expected": "At least 2 of ['CLASS', 'FUNCTION', 'METHOD']",
+      "actual": "Found: ['CLASS', 'FUNCTION', 'METHOD']",
+      "related_symbols": []
+    }
+  ]
+}

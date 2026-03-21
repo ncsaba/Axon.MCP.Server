@@ -780,7 +780,7 @@ class KnowledgeExtractor:
                 
                 dependencies.append(Dependency(
                     repository_id=repository_id,
-                    file_id=file_id,
+                    file_instance_id=file_id,
                     package_name=package_name,
                     package_version=package_version,
                     version_constraint=version_constraint,
