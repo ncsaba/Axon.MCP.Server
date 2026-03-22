@@ -1,8 +1,67 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import List, Dict, Optional, Any
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional, Any, Union
 from pathlib import Path
 from src.config.enums import LanguageEnum, SymbolKindEnum, AccessModifierEnum
+
+
+@dataclass
+class ImportedSymbol:
+    """Represents a single symbol imported from a module.
+    
+    Examples:
+        from os import path -> ImportedSymbol(name="path", alias=None)
+        from os import path as p -> ImportedSymbol(name="path", alias="p")
+    """
+    name: str
+    alias: Optional[str] = None
+
+
+@dataclass
+class ImportRecord:
+    """Structured record of an import statement.
+    
+    Supports all Python import patterns:
+        import os -> ImportRecord(module="os")
+        import numpy as np -> ImportRecord(module="numpy", alias="np")
+        from os import path -> ImportRecord(module="os", symbols=[ImportedSymbol("path")])
+        from os import path as p -> ImportRecord(module="os", symbols=[ImportedSymbol("path", "p")])
+        from os import * -> ImportRecord(module="os", is_wildcard=True)
+        from . import module -> ImportRecord(module="", level=1)
+        from ..pkg import X -> ImportRecord(module="pkg", level=2)
+    """
+    module: str
+    level: int = 0  # Relative import level (0 = absolute)
+    symbols: List[ImportedSymbol] = field(default_factory=list)
+    alias: Optional[str] = None  # Module alias (import X as Y)
+    is_wildcard: bool = False
+    line_number: int = 0
+    is_conditional: bool = False  # Inside try/except ImportError
+    is_dynamic: bool = False  # importlib.import_module or __import__
+
+    def to_legacy_string(self) -> str:
+        """Convert to legacy string format for backward compatibility.
+        
+        Examples:
+            ImportRecord(module="os") -> "os"
+            ImportRecord(module="os", symbols=[ImportedSymbol("path")]) -> "os.path"
+            ImportRecord(module="os", level=1) -> ".os"
+        """
+        if self.level > 0:
+            prefix = "." * self.level
+            if self.module:
+                return f"{prefix}{self.module}"
+            return prefix
+        
+        if self.symbols:
+            # For from-imports, return module.symbol format
+            first_symbol = self.symbols[0].name
+            if self.module:
+                return f"{self.module}.{first_symbol}"
+            return first_symbol
+        
+        return self.module
+
 
 @dataclass
 class ParsedSymbol:
@@ -43,12 +102,13 @@ class ParseResult:
     language: LanguageEnum
     file_path: str
     symbols: List[ParsedSymbol]
-    imports: List[str]
+    imports: List[str]  # Legacy: flat strings for backward compatibility
     exports: List[str]
     parse_errors: List[str]
     parse_duration_ms: float
     api_calls: List[Dict[str, Any]] = None  # Phase 2: HTTP API calls detected
     events: List[Dict[str, Any]] = None  # Phase 2: Event publishing/subscription detected
+    import_records: List[ImportRecord] = None  # Structured import records
     
     def __post_init__(self):
         """Initialize mutable defaults."""
@@ -64,11 +124,20 @@ class ParseResult:
             self.api_calls = []
         if self.events is None:
             self.events = []
+        if self.import_records is None:
+            self.import_records = []
             
     @property
     def success(self) -> bool:
         """Return True if parsing was successful (no errors)."""
         return len(self.parse_errors) == 0
+    
+    def get_imports_structured(self) -> List[ImportRecord]:
+        """Get structured import records, converting from legacy if needed."""
+        if self.import_records:
+            return self.import_records
+        # Convert legacy strings to basic ImportRecords
+        return [ImportRecord(module=imp) for imp in self.imports if imp]
 
 class BaseParser(ABC):
     """Base parser interface for all language parsers."""

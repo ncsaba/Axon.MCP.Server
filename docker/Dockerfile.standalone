@@ -1,0 +1,122 @@
+# Dockerfile.standalone - All-in-one single container deployment
+# Includes: PostgreSQL + pgvector, Redis, API, MCP Server, Celery workers
+# Use for: Demo, quick start, simple deployments
+#
+# Build: docker build -f docker/Dockerfile.standalone -t axon-standalone:latest .
+# Run:   docker run -d -p 8080:8080 -p 8001:8001 axon-standalone:latest
+#
+# Build context: axon-src directory (parent of docker/)
+
+# ============================================
+# Stage 1: Build Python dependencies
+# ============================================
+FROM python:3.11-slim-bookworm AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    libcurl4-gnutls-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy requirements and install dependencies
+WORKDIR /app
+COPY requirements.txt ./
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# ============================================
+# Stage 2: Runtime image with all services
+# ============================================
+FROM python:3.11-slim-bookworm
+
+# Install runtime dependencies including PostgreSQL 17 and Redis
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Build tools (needed for some Python packages)
+    build-essential \
+    git \
+    curl \
+    wget \
+    libcurl4 \
+    libcurl4-gnutls-dev \
+    ca-certificates \
+    gnupg2 \
+    lsb-release \
+    # Supervisor for process management
+    supervisor \
+    # PostgreSQL 17 with pgvector
+    postgresql-17 \
+    postgresql-client-17 \
+    postgresql-17-pgvector \
+    # Redis
+    redis-server \
+    # Cleanup
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Create application directory
+WORKDIR /app
+
+# Copy application code
+COPY . .
+
+# Create cache directory
+RUN mkdir -p /app/cache/repos && chmod 755 /app/cache
+
+# Copy supervisor configuration
+COPY docker/supervisord.standalone.conf /etc/supervisor/conf.d/axon.conf
+
+# Copy and set up entrypoint script
+COPY docker/standalone-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Copy test database creation script (optional, for development/testing)
+COPY docker/create-test-db.sh /docker/create-test-db.sh
+RUN chmod +x /docker/create-test-db.sh
+
+# Create axon user (non-root for application processes)
+RUN useradd -m -u 1000 axon && \
+    chown -R axon:axon /app
+
+# Initialize PostgreSQL data directory and configure
+RUN mkdir -p /var/run/postgresql && \
+    chown -R postgres:postgres /var/run/postgresql && \
+    chmod 755 /var/run/postgresql
+
+# Create Redis runtime directory
+RUN mkdir -p /var/run/redis && \
+    chown -R redis:redis /var/run/redis
+
+# Create log directories
+RUN mkdir -p /var/log/supervisor /var/log/axon && \
+    chmod 755 /var/log/supervisor /var/log/axon
+
+# Expose ports
+# 8080: REST API
+# 8001: MCP HTTP transport
+# 5432: PostgreSQL (internal, optional external access)
+# 6379: Redis (internal, optional external access)
+EXPOSE 8080 8001 5432 6379
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
+    CMD curl -f http://localhost:8080/api/v1/health || exit 1
+
+# Set environment variables for standalone mode
+ENV DATABASE_URL=postgresql+asyncpg://axon:axon@localhost:5432/axon_mcp \
+    REDIS_URL=redis://localhost:6379/0 \
+    CELERY_BROKER_URL=redis://localhost:6379/0 \
+    CELERY_RESULT_BACKEND=redis://localhost:6379/0 \
+    PYTHONPATH=/app
+
+# Entry point
+ENTRYPOINT ["/entrypoint.sh"]

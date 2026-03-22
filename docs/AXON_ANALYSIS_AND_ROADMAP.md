@@ -17,9 +17,9 @@ This fork prioritizes:
 | C# runtime path removal | `✅` | Removed from this fork runtime. |
 | Python parser routing + symbol baseline | `✅` | Active in parser factory with builtin-AST-backed symbol extraction. |
 | Java parser routing | `✅` | Active and functioning in parser factory. |
-| Schema baseline reset | `✅` | Clean baseline established for current development track. |
+| Schema baseline | `✅` | Clean baseline established with Alembic migrations for production upgrades. |
 | Local infra alignment | `✅` | PostgreSQL 17 + pgvector, Redis, manual Celery worker. |
-| File instance/content lifecycle foundation | `✅` | Lifecycle/query correctness, content-ID-based refresh, chunk-link association, ORM compatibility-alias removal, baseline-schema alignment, and reset-schema full-suite validation are landed. For the current WIP cycle, fresh-schema reset/recreate is the preferred schema workflow, while Alembic remains available when explicitly needed. |
+| File instance/content lifecycle foundation | `✅` | Lifecycle/query correctness, content-ID-based refresh, chunk-link association, ORM compatibility-alias removal, and baseline-schema alignment are landed. Alembic migrations are the default for production upgrades; fresh-schema reset remains available for dev/test environments. |
 | Python semantic relation depth | `🚧` | Import graph edges, call relations, and FastAPI/Flask baseline endpoint extraction are landed; remaining work is richer import parse fidelity plus broader retrieval/chunk-quality validation. |
 | Java semantic relation depth | `🚧` | Not yet at target for imports/calls/endpoints/dependencies. |
 
@@ -60,7 +60,7 @@ Implementation plan for the current session direction:
 
 | Phase | Status | Focus | Risk |
 | --- | --- | --- | --- |
-| Phase 1: File instance/content separation | `✅` | Runtime slice is landed: lifecycle/query correctness, shared-chunk association, incremental git parity, and reset-schema full-suite validation are complete. Remaining follow-up is doc/test-environment alignment, not a runtime blocker. | `🔥` stale branch-status docs could make Phase 1 look less complete than the shipped runtime actually is. |
+| Phase 1: File instance/content separation | `✅` | Runtime slice is landed: lifecycle/query correctness, shared-chunk association, incremental git parity, and schema validation are complete. Remaining follow-up is doc/test-environment alignment, not a runtime blocker. | `🔥` stale branch-status docs could make Phase 1 look less complete than the shipped runtime actually is. |
 | Phase 2: Python semantic parity | `🧭` | Reach practical Python parity for imports, calls, and framework endpoints using the language strategy seams already in the extractor layer. | `🔥` Python uses builtin AST today, so parity work must avoid hard-coding tree-sitter assumptions into shared extractor paths. |
 | Phase 3: Parser platform consolidation | `🧭` | Capability matrix integration, strategy interfaces, fallback policy. | `🔥` temporary extractor regressions during refactor. |
 | Phase 4: Java benchmark validation and precision closure | `🧭` | Confirm current Java breadth on shared repos and close any exposed edge cases. | `🔥` feature surface validation may expose parser/query gaps that were not covered by synthetic tests. |

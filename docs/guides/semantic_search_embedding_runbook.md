@@ -23,12 +23,12 @@ Use it when:
 
 ## Change Matrix
 
-| Change type | Schema change | Re-embedding required | Full DB reset recommended | Notes |
+| Change type | Schema change | Re-embedding required | Production path | Notes |
 | --- | --- | --- | --- | --- |
-| No model/dimension change, routine validation only | `No` | `No` | `No` | Verify index + corpus shape only. |
-| Model version/provider changes but dimension stays `1024` | `No` | `Yes` | `Usually yes` | Existing vectors are semantically incompatible even if dimensions match. |
-| Dimension change | `Yes` | `Yes` | `Yes` | Update schema contract, regenerate all vectors, rerun planner validation. |
-| HNSW parameter tuning only | `Index only` | `No` | `No` | Recreate the ANN index and rerun planner/latency validation. |
+| No model/dimension change, routine validation only | `No` | `No` | N/A | Verify index + corpus shape only. |
+| Model version/provider changes but dimension stays `1024` | `No` | `Yes` | Truncate embeddings, re-index | Existing vectors are semantically incompatible even if dimensions match. |
+| Dimension change | `Yes` | `Yes` | Alembic migration + re-index | Update schema contract, regenerate all vectors, rerun planner validation. |
+| HNSW parameter tuning only | `Index only` | `No` | Recreate index | Recreate the ANN index and rerun planner/latency validation. |
 
 ## Pre-Flight
 
@@ -85,14 +85,24 @@ Expected critical entry:
 
 Use this when the semantic-search corpus must be rebuilt from scratch.
 
-### A. If the model/dimension contract changed
+### A. If the model/dimension contract changed (Production)
 
 1. Update the code-level contract first:
    - `src/config/embedding_contract.py`
    - relevant runtime settings in `src/config/settings.py`
-   - any migration needed for `embeddings.vector`
+   - create an Alembic migration for any `embeddings.vector` schema change
 2. Ensure the new model can actually generate vectors at the intended dimension.
-3. Reset the database schema deliberately:
+3. Apply the migration:
+
+```bash
+alembic upgrade head
+```
+
+4. Truncate the embeddings table and re-index to regenerate vectors with the new contract.
+
+### B. If the model/dimension contract changed (Dev/Test only)
+
+For development or test environments where data preservation is not required:
 
 ```bash
 python scripts/reset_db.py --yes
@@ -100,7 +110,7 @@ python scripts/reset_db.py --yes
 
 Use `--use-test-db` if the rebuild is meant for the test database only.
 
-### B. Rebuild the indexed corpus
+### C. Rebuild the indexed corpus
 
 1. Start the normal Axon runtime for indexing.
 2. Re-index the target repositories through the standard repository-sync path.

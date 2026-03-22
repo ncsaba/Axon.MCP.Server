@@ -121,7 +121,7 @@ services:
       dockerfile: docker/Dockerfile.fast
     container_name: axon-worker
     # Core tasks (CPU bound): keeping concurrency low (1)
-    command: /opt/venv/bin/celery -A src.workers.celery_app:celery_app worker --loglevel=info --concurrency=1 --queues=repository_sync,file_parsing,embeddings,default
+    command: /opt/venv/bin/celery -A src.workers.celery_app:celery_app worker --loglevel=info --concurrency=1 --queues=repository_sync,file_parsing,embeddings,inventory,default
     env_file:
       - ../.env
     environment:
@@ -238,7 +238,7 @@ services:
       context: ../ui
       dockerfile: Dockerfile
       args:
-        - VITE_API_BASE_URL=http://10.30.81.101/
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:8080/}
     container_name: axon-ui
     ports:
       - "80:80"

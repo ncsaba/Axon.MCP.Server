@@ -55,7 +55,7 @@ The next correctness boundary is no longer queueing. It is data ownership:
 | `✅` | Keep symbols and graph relations instance-scoped; do not design for future full symbol sharing. |
 | `✅` | Land the smallest vertical slice first: chunks + embeddings reuse before symbol/relation dedup. |
 | `✅` | Make deleted/missing state explicit in the schema instead of inferring it from missing paths. |
-| `✅` | Prefer the simplest clean schema for the target model; database reset is acceptable for this WIP fork. |
+| `✅` | Use Alembic migrations for all schema changes to maintain backwards compatibility for production deployments. |
 | `⛔` | Do not attempt full cross-file relation sharing in the first implementation wave. |
 
 ## Conceptual Model
@@ -133,11 +133,11 @@ measured. Final symbol persistence remains instance-scoped.
 
 ## Proposed Schema Direction
 
-The exact migration shape can vary, but compatibility constraints are intentionally light:
+The exact migration shape can vary. All schema changes must use Alembic migrations to maintain backwards compatibility:
 
-- this fork is still WIP
-- the database can be reset during rollout
-- no backward-compatible dual-write requirement is assumed unless implementation friction proves otherwise
+- production deployments require clean upgrade paths without data loss
+- Alembic migrations are the default mechanism for schema evolution
+- fresh-schema reset (`scripts/reset_db.py`) remains available for development/test environments only
 
 The design target is:
 
@@ -327,6 +327,6 @@ Implementation planning is now tracked in:
 
 Execution should proceed from that plan, starting with:
 
-1. concrete schema changes and reset-based migration sequence
+1. concrete schema changes with Alembic migrations for backwards compatibility
 2. deleted-file lifecycle policy, run-id stamping, and retention defaults
 3. migration/cutover sequence for chunks and embeddings

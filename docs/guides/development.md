@@ -32,9 +32,9 @@ make lint               # Run linters (flake8, mypy, pylint)
 make test               # Run tests with coverage
 
 # Database
-make db-reset           # Reset and recreate the schema (current WIP default)
+make migrate            # Alembic migration path (production default)
+make db-reset           # Reset and recreate the schema (dev/test only)
 make db-reset-test      # Reset the dedicated test database schema
-make migrate            # Alembic migration path when you explicitly want it
 make seed               # Seed test data
 
 # Docker
@@ -45,7 +45,7 @@ make docker-down        # Stop all services
 make clean              # Clean cache and build files
 ```
 
-These two workflows are not mutually exclusive. Alembic remains supported; the current branch simply prefers fresh-schema resets during rapid iteration.
+**Production deployments must use `make migrate` (Alembic) for backwards-compatible schema upgrades.** The `db-reset` commands are for development and test environments only.
 
 ## Testing
 

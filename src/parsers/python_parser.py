@@ -4,7 +4,13 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from src.config.enums import LanguageEnum, SymbolKindEnum, AccessModifierEnum
-from src.parsers.base_parser import BaseParser, ParseResult, ParsedSymbol
+from src.parsers.base_parser import (
+    BaseParser,
+    ParseResult,
+    ParsedSymbol,
+    ImportRecord,
+    ImportedSymbol,
+)
 
 
 class PythonParser(BaseParser):
@@ -26,6 +32,7 @@ class PythonParser(BaseParser):
         imports: List[str] = []
         exports: List[str] = []
         errors: List[str] = []
+        import_records: List[ImportRecord] = []
 
         try:
             tree = ast.parse(code)
@@ -34,6 +41,7 @@ class PythonParser(BaseParser):
             symbols = visitor.symbols
             imports = visitor.imports
             exports = visitor.exports
+            import_records = visitor.import_records
         except SyntaxError as e:
             errors.append(f"Python syntax error: {str(e)}")
         except Exception as e:
@@ -49,6 +57,7 @@ class PythonParser(BaseParser):
             exports=exports,
             parse_errors=errors,
             parse_duration_ms=duration_ms,
+            import_records=import_records,
         )
 
 
@@ -57,25 +66,147 @@ class _PythonAstVisitor(ast.NodeVisitor):
         self.code = code
         self.lines = code.splitlines()
         self.symbols: List[ParsedSymbol] = []
-        self.imports: List[str] = []
+        self.imports: List[str] = []  # Legacy flat strings
+        self.import_records: List[ImportRecord] = []  # Structured records
         self.exports: List[str] = []
         self.class_stack: List[str] = []
         self.function_depth = 0
+        self._in_try_import = False  # Track try/except ImportError context
+
+    def visit_Try(self, node: ast.Try):
+        """Track try/except ImportError blocks for conditional import marking."""
+        # Check if any handler catches ImportError
+        import_error_handlers = []
+        for handler in node.handlers:
+            if handler.type is None:
+                # Bare except - could catch anything
+                import_error_handlers.append(handler)
+            elif isinstance(handler.type, ast.Name) and handler.type.id == 'ImportError':
+                import_error_handlers.append(handler)
+            elif isinstance(handler.type, ast.Tuple):
+                # except (ImportError, ...)
+                for elt in handler.type.elts:
+                    if isinstance(elt, ast.Name) and elt.id == 'ImportError':
+                        import_error_handlers.append(handler)
+                        break
+
+        if import_error_handlers:
+            # Mark imports in try block as conditional
+            old_in_try = self._in_try_import
+            self._in_try_import = True
+            for stmt in node.body:
+                self.visit(stmt)
+            self._in_try_import = old_in_try
+            # Visit handlers and else/finally normally
+            for handler in node.handlers:
+                for stmt in handler.body:
+                    self.visit(stmt)
+            for stmt in node.orelse:
+                self.visit(stmt)
+            for stmt in node.finalbody:
+                self.visit(stmt)
+        else:
+            # No ImportError handling, visit normally
+            self.generic_visit(node)
 
     def visit_Import(self, node: ast.Import):
         for alias in node.names:
+            # Legacy format
             self.imports.append(alias.name)
+            
+            # Structured record
+            record = ImportRecord(
+                module=alias.name,
+                alias=alias.asname,
+                line_number=node.lineno,
+                is_conditional=self._in_try_import,
+            )
+            self.import_records.append(record)
         self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom):
-        module = ('.' * node.level) + (node.module or '')
-        if module:
-            self.imports.append(module)
-        for alias in node.names:
-            if module:
-                self.imports.append(f"{module}.{alias.name}")
-            else:
-                self.imports.append(alias.name)
+        module = node.module or ''
+        level = node.level
+        
+        # Legacy format
+        legacy_module = ('.' * level) + module
+        if legacy_module:
+            self.imports.append(legacy_module)
+        
+        # Check for wildcard import
+        is_wildcard = any(alias.name == '*' for alias in node.names)
+        
+        if is_wildcard:
+            # Wildcard import
+            record = ImportRecord(
+                module=module,
+                level=level,
+                is_wildcard=True,
+                line_number=node.lineno,
+                is_conditional=self._in_try_import,
+            )
+            self.import_records.append(record)
+            
+            # Legacy: add module.*
+            if legacy_module:
+                self.imports.append(f"{legacy_module}.*")
+        else:
+            # Named symbol imports
+            imported_symbols = []
+            for alias in node.names:
+                # Legacy format
+                if module:
+                    self.imports.append(f"{legacy_module}.{alias.name}")
+                else:
+                    self.imports.append(alias.name)
+                
+                # Structured symbol
+                imported_symbols.append(ImportedSymbol(
+                    name=alias.name,
+                    alias=alias.asname,
+                ))
+            
+            # Create single ImportRecord for all symbols in this from-import
+            record = ImportRecord(
+                module=module,
+                level=level,
+                symbols=imported_symbols,
+                line_number=node.lineno,
+                is_conditional=self._in_try_import,
+            )
+            self.import_records.append(record)
+        
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call):
+        """Detect dynamic imports via importlib.import_module() or __import__()."""
+        dynamic_module = None
+        
+        # Check for importlib.import_module("module")
+        if isinstance(node.func, ast.Attribute):
+            if node.func.attr == 'import_module':
+                # Could be importlib.import_module or some_var.import_module
+                if isinstance(node.func.value, ast.Name) and node.func.value.id == 'importlib':
+                    if node.args and isinstance(node.args[0], ast.Constant):
+                        dynamic_module = node.args[0].value
+        
+        # Check for __import__("module")
+        elif isinstance(node.func, ast.Name) and node.func.id == '__import__':
+            if node.args and isinstance(node.args[0], ast.Constant):
+                dynamic_module = node.args[0].value
+        
+        if dynamic_module and isinstance(dynamic_module, str):
+            # Create dynamic import record
+            record = ImportRecord(
+                module=dynamic_module,
+                is_dynamic=True,
+                line_number=node.lineno,
+                is_conditional=self._in_try_import,
+            )
+            self.import_records.append(record)
+            # Also add to legacy for backward compatibility
+            self.imports.append(f"dynamic:{dynamic_module}")
+        
         self.generic_visit(node)
 
     def visit_ClassDef(self, node: ast.ClassDef):

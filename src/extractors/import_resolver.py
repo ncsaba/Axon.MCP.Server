@@ -347,7 +347,7 @@ class JavaImportExtractionStrategy:
 
 
 class PythonImportExtractionStrategy:
-    """Python import extraction + resolution strategy."""
+    """Python import extraction + resolution strategy using structured ImportRecords."""
 
     def __init__(self, resolver: ImportResolver):
         self.resolver = resolver
@@ -358,6 +358,18 @@ class PythonImportExtractionStrategy:
         file: File,
         file_path: Path,
     ) -> List[Dict[str, Any]]:
+        """Extract imports from Python code using AST parsing.
+        
+        This method parses the code and resolves imports to file IDs and symbol IDs.
+        It handles:
+        - Simple imports: import os
+        - Aliased imports: import numpy as np
+        - From imports: from os import path
+        - Aliased from imports: from os import path as p
+        - Wildcard imports: from os import *
+        - Relative imports: from . import module, from ..pkg import X
+        - Dynamic imports: importlib.import_module("X")
+        """
         try:
             tree = ast.parse(code)
         except SyntaxError:
@@ -382,6 +394,9 @@ class PythonImportExtractionStrategy:
                             "import_path": module_path,
                             "file_id": target_file_id,
                             "symbols": symbol_ids,
+                            "alias": alias.asname,  # Include alias in metadata
+                            "is_dynamic": False,
+                            "is_conditional": self._is_in_try_import(node, tree),
                         }
                     )
 
@@ -399,6 +414,9 @@ class PythonImportExtractionStrategy:
                                 "import_path": base_import,
                                 "file_id": target_file_id,
                                 "symbols": await self._resolve_module_symbols(target_file_id),
+                                "is_wildcard": True,
+                                "is_dynamic": False,
+                                "is_conditional": self._is_in_try_import(node, tree),
                             }
                         )
                         continue
@@ -411,6 +429,9 @@ class PythonImportExtractionStrategy:
                                 "import_path": submodule_import,
                                 "file_id": target_file_id,
                                 "symbols": await self._resolve_module_symbols(target_file_id),
+                                "alias": alias.asname,  # Include symbol alias
+                                "is_dynamic": False,
+                                "is_conditional": self._is_in_try_import(node, tree),
                             }
                         )
                         continue
@@ -431,10 +452,75 @@ class PythonImportExtractionStrategy:
                                 "import_path": self._join_python_import(base_import, alias.name),
                                 "file_id": target_file_id,
                                 "symbols": [symbol_id],
+                                "alias": alias.asname,  # Include symbol alias
+                                "is_dynamic": False,
+                                "is_conditional": self._is_in_try_import(node, tree),
                             }
                         )
 
+            elif isinstance(node, ast.Call):
+                # Handle dynamic imports
+                dynamic_module = self._extract_dynamic_import(node)
+                if dynamic_module:
+                    target_file_id = await self.resolver.resolve_import(dynamic_module, file, file_path)
+                    imports.append(
+                        {
+                            "import_path": dynamic_module,
+                            "file_id": target_file_id,
+                            "symbols": await self._resolve_module_symbols(target_file_id) if target_file_id else [],
+                            "is_dynamic": True,
+                            "is_conditional": self._is_in_try_import(node, tree),
+                        }
+                    )
+
         return imports
+
+    def _extract_dynamic_import(self, node: ast.Call) -> Optional[str]:
+        """Extract module name from dynamic import calls."""
+        # Check for importlib.import_module("module")
+        if isinstance(node.func, ast.Attribute):
+            if node.func.attr == 'import_module':
+                if isinstance(node.func.value, ast.Name) and node.func.value.id == 'importlib':
+                    if node.args and isinstance(node.args[0], ast.Constant):
+                        return node.args[0].value
+        
+        # Check for __import__("module")
+        elif isinstance(node.func, ast.Name) and node.func.id == '__import__':
+            if node.args and isinstance(node.args[0], ast.Constant):
+                return node.args[0].value
+        
+        return None
+
+    def _is_in_try_import(self, node: ast.AST, tree: ast.Module) -> bool:
+        """Check if a node is inside a try/except ImportError block."""
+        # Walk the tree to find if node is inside a try with ImportError handler
+        for parent in ast.walk(tree):
+            if isinstance(parent, ast.Try):
+                # Check if any handler catches ImportError
+                for handler in parent.handlers:
+                    if handler.type is None:
+                        # Bare except
+                        if self._node_contains(parent.body, node):
+                            return True
+                    elif isinstance(handler.type, ast.Name) and handler.type.id == 'ImportError':
+                        if self._node_contains(parent.body, node):
+                            return True
+                    elif isinstance(handler.type, ast.Tuple):
+                        for elt in handler.type.elts:
+                            if isinstance(elt, ast.Name) and elt.id == 'ImportError':
+                                if self._node_contains(parent.body, node):
+                                    return True
+        return False
+
+    def _node_contains(self, body: List[ast.stmt], target: ast.AST) -> bool:
+        """Check if target node is contained within body statements."""
+        for stmt in body:
+            if stmt is target:
+                return True
+            for child in ast.walk(stmt):
+                if child is target:
+                    return True
+        return False
 
     async def _resolve_module_symbols(self, target_file_id: int) -> List[int]:
         result = await self.resolver.session.execute(

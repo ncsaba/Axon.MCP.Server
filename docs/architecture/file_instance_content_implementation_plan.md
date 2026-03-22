@@ -12,7 +12,7 @@
 
 | Priority | Status | Scope |
 | --- | --- | --- |
-| 1. Branch doc closure | `✅` | Canonical docs and handover text now describe lifecycle/query correctness, shared-chunk association, and reset-schema validation as landed. |
+| 1. Branch doc closure | `✅` | Canonical docs and handover text now describe lifecycle/query correctness, shared-chunk association, and schema validation as landed. |
 | 2. Dedicated test DB default alignment | `✅` | Docs, setup helpers, and test harness defaults consistently keep `TEST_DATABASE_URL` separate from `DATABASE_URL`. |
 | 3. Broader language-platform work | `🧭` | With Phase 1 complete, engineering work has moved to Python semantic parity and Java validation tracks. |
 
@@ -32,8 +32,8 @@ Implement the content/instance split with the smallest validated vertical slices
 
 | Decision | Status | Notes |
 | --- | --- | --- |
-| Fresh-schema reset is preferred in the current WIP cycle | `✅` | Drop/recreate is the fastest path for this branch while the schema is still unstable |
-| Alembic remains a valid alternative | `✅` | Migration tooling stays available; it is simply not the default workflow for this implementation wave |
+| Alembic migrations are the default for production upgrades | `✅` | Backwards-compatible schema migrations preserve existing data |
+| Fresh-schema reset is available for development/test environments | `✅` | `scripts/reset_db.py` remains useful for clean dev/test environments but is not the production path |
 | Final symbols remain instance-scoped | `✅` | Path and repository context are fundamental |
 | Shared content artifacts start with chunks + embeddings | `✅` | First reusable layer |
 | Missing detection uses successful increasing run IDs | `✅` | No full in-memory file-list reconciliation |
@@ -233,7 +233,7 @@ Recommendation:
 ### Execution Notes
 
 - This validation wave is complete.
-- The reset-schema full suite now passes, so the remaining work is doc closure rather than another schema blocker.
+- The schema validation suite now passes, so the remaining work is doc closure rather than another schema blocker.
 
 ## Current Execution Batch (2026-03-18)
 
@@ -330,7 +330,7 @@ The earlier blocker has now been removed in the ORM/runtime baseline:
 2. `Embedding` no longer stores `symbol_id`.
 3. Search/snippet/traversal paths fetch source previews through `ChunkSymbolLink`.
 
-Remaining work is no longer schema decoupling. The reset-schema baseline and the full unit + integration suite now pass on the current worktree; what remains is doc closure and branch-status cleanup.
+Remaining work is no longer schema decoupling. The schema baseline and the full unit + integration suite now pass on the current worktree; what remains is doc closure and branch-status cleanup.
 
 ### Required target shape
 
@@ -353,7 +353,7 @@ Remaining work is no longer schema decoupling. The reset-schema baseline and the
 | Cut snippet/source retrieval over to link joins | `✅` | `search_service.py`, `mcp_server/tools/symbols.py`, and `utils/call_graph_traversal.py` now read snippet/source chunks through chunk links. |
 | Cut vector retrieval over to link-backed symbol resolution | `✅` | `pgvector_store.py` now groups vector matches by `ChunkSymbolLink.symbol_id` instead of `Embedding.symbol_id`. |
 | Remove transitional chunk/embed ownership columns from ORM/runtime | `✅` | `Chunk.symbol_id`, `Chunk.file_instance_id`, and `Embedding.symbol_id` are removed from the ORM baseline and runtime writes. |
-| Validate reset-schema runtime end-to-end | `✅` | The current worktree passed a clean DB reset followed by `pytest tests/ -v -rs` with the local Postgres env configured. |
+| Validate schema runtime end-to-end | `✅` | The current worktree passed schema validation followed by `pytest tests/ -v -rs` with the local Postgres env configured. |
 
 ### Verification
 
@@ -382,7 +382,7 @@ Remaining work is no longer schema decoupling. The reset-schema baseline and the
 - `✅` `python -m compileall -q src`
 - `✅` `python -m compileall -q tests`
 - `✅` `python -m py_compile src/database/migrations/versions/cd4ad910d3fe_baseline_schema.py`
-- `✅` `python scripts/reset_db.py --yes`
+- `✅` `alembic upgrade head` (or `python scripts/reset_db.py --yes` for dev/test environments)
 - `✅` `pytest tests/ -v -rs`
 
 ### Execution order
@@ -591,9 +591,11 @@ The broad lifecycle/query cleanup is done enough that further progress on conten
 
 ## Immediate Next Task
 
-Start Slice 1 with a reset-friendly schema rewrite and explicit ORM target model for:
+Start Slice 1 with an Alembic-compatible schema migration and explicit ORM target model for:
 
 1. `repository_index_runs`
 2. `file_instances`
 3. `file_contents`
 4. re-keyed `symbols` and `chunks`
+
+Note: All future schema changes must use Alembic migrations to maintain backwards compatibility for production deployments.
