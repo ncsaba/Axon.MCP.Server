@@ -13,6 +13,7 @@ from src.database.query_helpers import active_file_filter
 from src.config.enums import SymbolKindEnum, RelationTypeEnum, LanguageEnum
 from src.extractors.path_resolver import PathResolver
 from src.extractors.strategy_interfaces import ImportExtractionStrategy, language_strategy
+from src.extractors.reexport_resolver import ReexportResolver
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -20,18 +21,18 @@ logger = get_logger(__name__)
 
 class ImportResolver:
     """Resolves import statements to actual symbols."""
-    
+
     def __init__(self, session: AsyncSession, repository_root: Path):
         """
         Initialize import resolver.
-        
+
         Args:
             session: Database session
             repository_root: Root directory of repository
         """
         self.session = session
         self.path_resolver = PathResolver(repository_root)
-    
+
     async def resolve_import(
         self,
         import_path: str,
@@ -40,12 +41,12 @@ class ImportResolver:
     ) -> Optional[int]:
         """
         Resolve an import statement to a file ID.
-        
+
         Args:
             import_path: Import string
             importing_file: File record making the import
             importing_file_path: Full path to importing file
-            
+
         Returns:
             File ID of imported file, or None if not found
         """
@@ -55,10 +56,10 @@ class ImportResolver:
             importing_file_path,
             importing_file.language.value
         )
-        
+
         if not resolved_path:
             return None
-        
+
         # Find file in database
         result = await self.session.execute(
             select(File).where(
@@ -67,10 +68,10 @@ class ImportResolver:
                 active_file_filter(),
             )
         )
-        
+
         target_file = result.scalar_one_or_none()
         return target_file.id if target_file else None
-    
+
     async def resolve_symbol_import(
         self,
         import_path: str,
@@ -80,26 +81,26 @@ class ImportResolver:
     ) -> Optional[int]:
         """
         Resolve a named import to a specific symbol.
-        
+
         For imports like:
         - import { User } from './models/User'
         - using MyNamespace.MyClass
-        
+
         Args:
             import_path: Import path/namespace
             symbol_name: Name of imported symbol
             importing_file: File making the import
             importing_file_path: Full path to importing file
-            
+
         Returns:
             Symbol ID of imported symbol, or None if not found
         """
         # First resolve the file
         file_id = await self.resolve_import(import_path, importing_file, importing_file_path)
-        
+
         if not file_id:
             return None
-        
+
         # Find exported symbol with matching name in that file
         result = await self.session.execute(
             select(Symbol).where(
@@ -107,7 +108,7 @@ class ImportResolver:
                 Symbol.name == symbol_name
             ).limit(1)
         )
-        
+
         symbol = result.scalar_one_or_none()
         return symbol.id if symbol else None
 
@@ -349,8 +350,9 @@ class JavaImportExtractionStrategy:
 class PythonImportExtractionStrategy:
     """Python import extraction + resolution strategy using structured ImportRecords."""
 
-    def __init__(self, resolver: ImportResolver):
+    def __init__(self, resolver: ImportResolver, reexport_resolver: Optional[ReexportResolver] = None):
         self.resolver = resolver
+        self.reexport_resolver = reexport_resolver
 
     async def extract_imports(
         self,
@@ -359,7 +361,7 @@ class PythonImportExtractionStrategy:
         file_path: Path,
     ) -> List[Dict[str, Any]]:
         """Extract imports from Python code using AST parsing.
-        
+
         This method parses the code and resolves imports to file IDs and symbol IDs.
         It handles:
         - Simple imports: import os
@@ -369,6 +371,7 @@ class PythonImportExtractionStrategy:
         - Wildcard imports: from os import *
         - Relative imports: from . import module, from ..pkg import X
         - Dynamic imports: importlib.import_module("X")
+        - Re-exports via __init__.py
         """
         try:
             tree = ast.parse(code)
@@ -421,6 +424,7 @@ class PythonImportExtractionStrategy:
                         )
                         continue
 
+                    # First try: check if it's a submodule
                     submodule_import = self._join_python_import(base_import, alias.name)
                     target_file_id = await self.resolver.resolve_import(submodule_import, file, file_path)
                     if target_file_id:
@@ -436,27 +440,34 @@ class PythonImportExtractionStrategy:
                         )
                         continue
 
+                    # Second try: check if it's a direct symbol in the module
                     target_file_id = await self.resolver.resolve_import(base_import, file, file_path)
-                    if not target_file_id:
-                        continue
-
-                    symbol_id = await self.resolver.resolve_symbol_import(
-                        base_import,
-                        alias.name,
-                        file,
-                        file_path,
-                    )
-                    if symbol_id:
-                        imports.append(
-                            {
-                                "import_path": self._join_python_import(base_import, alias.name),
-                                "file_id": target_file_id,
-                                "symbols": [symbol_id],
-                                "alias": alias.asname,  # Include symbol alias
-                                "is_dynamic": False,
-                                "is_conditional": self._is_in_try_import(node, tree),
-                            }
+                    if target_file_id:
+                        symbol_id = await self.resolver.resolve_symbol_import(
+                            base_import,
+                            alias.name,
+                            file,
+                            file_path,
                         )
+
+                        # Third try: check for re-export from __init__.py
+                        if not symbol_id and self.reexport_resolver:
+                            symbol_id = await self._resolve_via_reexport(
+                                base_import, alias.name, file, file_path
+                            )
+
+                        if symbol_id:
+                            imports.append(
+                                {
+                                    "import_path": self._join_python_import(base_import, alias.name),
+                                    "file_id": target_file_id,
+                                    "symbols": [symbol_id],
+                                    "alias": alias.asname,  # Include symbol alias
+                                    "is_dynamic": False,
+                                    "is_conditional": self._is_in_try_import(node, tree),
+                                    "is_reexport": True,  # Mark as re-exported symbol
+                                }
+                            )
 
             elif isinstance(node, ast.Call):
                 # Handle dynamic imports
@@ -475,6 +486,88 @@ class PythonImportExtractionStrategy:
 
         return imports
 
+    async def _resolve_via_reexport(
+        self,
+        package_import: str,
+        symbol_name: str,
+        importing_file: File,
+        importing_file_path: Path,
+    ) -> Optional[int]:
+        """Resolve a symbol via __init__.py re-export semantics.
+
+        When importing `from package import Symbol`, the Symbol might be
+        re-exported from the package's __init__.py file. This method
+        traces the re-export to find the actual source symbol.
+
+        Args:
+            package_import: The package path (e.g., "mypackage", ".subpackage")
+            symbol_name: The symbol name being imported
+            importing_file: The file making the import
+            importing_file_path: Path to the importing file
+
+        Returns:
+            Symbol ID if found via re-export, None otherwise
+        """
+        if not self.reexport_resolver:
+            return None
+
+        # Resolve the package path to get the package directory
+        resolved_package_path = self.resolver.path_resolver.resolve_import_path(
+            package_import,
+            importing_file_path,
+            "python"
+        )
+
+        if not resolved_package_path:
+            return None
+
+        # The package path should point to __init__.py
+        # Get the package directory
+        package_dir = str(resolved_package_path.parent)
+
+        # Try to resolve via re-export map
+        source_info = self.reexport_resolver.resolve_to_file_path(
+            package_dir,
+            symbol_name,
+            source_root=None  # Let resolver use its default
+        )
+
+        if not source_info:
+            return None
+
+        source_file_path, original_symbol_name = source_info
+
+        # Find the source file in the database
+        try:
+            relative_source = source_file_path.relative_to(
+                self.resolver.path_resolver.repository_root
+            )
+        except ValueError:
+            return None
+
+        result = await self.resolver.session.execute(
+            select(File).where(
+                File.repository_id == importing_file.repository_id,
+                File.path == str(relative_source),
+                active_file_filter(),
+            )
+        )
+        source_file = result.scalar_one_or_none()
+
+        if not source_file:
+            return None
+
+        # Find the symbol in the source file
+        symbol_result = await self.resolver.session.execute(
+            select(Symbol).where(
+                Symbol.file_instance_id == source_file.id,
+                Symbol.name == original_symbol_name,
+            ).limit(1)
+        )
+        symbol = symbol_result.scalar_one_or_none()
+
+        return symbol.id if symbol else None
+
     def _extract_dynamic_import(self, node: ast.Call) -> Optional[str]:
         """Extract module name from dynamic import calls."""
         # Check for importlib.import_module("module")
@@ -483,12 +576,12 @@ class PythonImportExtractionStrategy:
                 if isinstance(node.func.value, ast.Name) and node.func.value.id == 'importlib':
                     if node.args and isinstance(node.args[0], ast.Constant):
                         return node.args[0].value
-        
+
         # Check for __import__("module")
         elif isinstance(node.func, ast.Name) and node.func.id == '__import__':
             if node.args and isinstance(node.args[0], ast.Constant):
                 return node.args[0].value
-        
+
         return None
 
     def _is_in_try_import(self, node: ast.AST, tree: ast.Module) -> bool:
@@ -550,68 +643,69 @@ class PythonImportExtractionStrategy:
 
 class ImportRelationshipBuilder:
     """Builds IMPORTS relationships between files."""
-    
+
     def __init__(self, session: AsyncSession, repository_root: Path):
         """
         Initialize import relationship builder.
-        
+
         Args:
             session: Database session
             repository_root: Root directory of repository
         """
         self.session = session
         self.resolver = ImportResolver(session, repository_root)
+        self.reexport_resolver = ReexportResolver(repository_root)
         self.import_strategies: Dict[LanguageEnum, ImportExtractionStrategy] = {
             LanguageEnum.JAVASCRIPT: JSImportExtractionStrategy(self.resolver),
             LanguageEnum.TYPESCRIPT: JSImportExtractionStrategy(self.resolver),
             LanguageEnum.JAVA: JavaImportExtractionStrategy(self.resolver),
-            LanguageEnum.PYTHON: PythonImportExtractionStrategy(self.resolver),
+            LanguageEnum.PYTHON: PythonImportExtractionStrategy(self.resolver, self.reexport_resolver),
         }
-    
+
     async def build_import_relationships(
         self,
         repository_id: int
     ):
         """
         Build import relationships for entire repository.
-        
+
         Args:
             repository_id: Repository ID
         """
         logger.info("building_import_relationships", repository_id=repository_id)
-        
+
         # Get all files in repository
         result = await self.session.execute(
             select(File).where(File.repository_id == repository_id, active_file_filter())
         )
         files = result.scalars().all()
-        
+
         relationships_created = 0
-        
+
         for file in files:
             try:
                 # Get file content to parse imports
                 file_path = self.resolver.path_resolver.repository_root / file.path
-                
+
                 if not file_path.exists():
                     continue
-                
+
                 # Read file content
                 code = await asyncio.to_thread(file_path.read_text, encoding='utf-8', errors='ignore')
-                
+
                 # Parse imports based on language
                 imports = await self._extract_imports_from_code(
                     code,
                     file,
                     file_path
                 )
-                
+
                 # Get all symbols in the importing file to create import relationships
                 source_symbols_result = await self.session.execute(
                     select(Symbol).where(Symbol.file_instance_id == file.id).limit(1)
                 )
                 source_symbol = source_symbols_result.scalar_one_or_none()
-                
+
                 # Create import relationships
                 for import_info in imports:
                     target_file_id = import_info.get('file_id')
@@ -634,11 +728,11 @@ class ImportRelationshipBuilder:
                                 )
                                 self.session.add(relation)
                                 relationships_created += 1
-                
+
                 # Commit in batches
                 if relationships_created % 100 == 0:
                     await self.session.commit()
-                
+
             except Exception as e:
                 logger.error(
                     "import_resolution_failed",
@@ -647,18 +741,18 @@ class ImportRelationshipBuilder:
                     error=str(e)
                 )
                 continue
-        
+
         # Final commit
         await self.session.commit()
-        
+
         logger.info(
             "import_relationships_built",
             repository_id=repository_id,
             relationships_created=relationships_created
         )
-        
+
         return relationships_created
-    
+
     async def _extract_imports_from_code(
         self,
         code: str,
@@ -720,7 +814,7 @@ class ImportRelationshipBuilder:
             })
 
         return imports
-    
+
     async def _extract_js_imports(
         self,
         code: str,
@@ -730,27 +824,27 @@ class ImportRelationshipBuilder:
         """Extract JavaScript/TypeScript imports."""
         import re
         imports = []
-        
+
         # Match: import { Symbol1, Symbol2 } from 'path'
         named_imports = re.finditer(
             r'import\s+\{([^}]+)\}\s+from\s+["\']([^"\']+)["\']',
             code
         )
-        
+
         for match in named_imports:
             symbols_str = match.group(1)
             import_path = match.group(2)
-            
+
             # Parse symbol names
             symbol_names = [s.strip() for s in symbols_str.split(',')]
-            
+
             # Resolve file
             target_file_id = await self.resolver.resolve_import(
                 import_path,
                 file,
                 file_path
             )
-            
+
             if target_file_id:
                 # Resolve each symbol
                 symbol_ids = []
@@ -763,29 +857,29 @@ class ImportRelationshipBuilder:
                     )
                     if symbol_id:
                         symbol_ids.append(symbol_id)
-                
+
                 imports.append({
                     'import_path': import_path,
                     'file_id': target_file_id,
                     'symbols': symbol_ids
                 })
-        
+
         # Match: import DefaultExport from 'path'
         default_imports = re.finditer(
             r'import\s+(\w+)\s+from\s+["\']([^"\']+)["\']',
             code
         )
-        
+
         for match in default_imports:
             symbol_name = match.group(1)
             import_path = match.group(2)
-            
+
             target_file_id = await self.resolver.resolve_import(
                 import_path,
                 file,
                 file_path
             )
-            
+
             if target_file_id:
                 symbol_id = await self.resolver.resolve_symbol_import(
                     import_path,
@@ -793,13 +887,13 @@ class ImportRelationshipBuilder:
                     file,
                     file_path
                 )
-                
+
                 if symbol_id:
                     imports.append({
                         'import_path': import_path,
                         'file_id': target_file_id,
                         'symbols': [symbol_id]
                     })
-        
+
         return imports
-    
+

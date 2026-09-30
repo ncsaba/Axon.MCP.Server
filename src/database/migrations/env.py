@@ -9,7 +9,9 @@ from sqlalchemy import engine_from_config, pool
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
-from src.database.models import Base  # noqa: E402
+from src.database.models_base import Base  # noqa: E402
+# Import git_tracking models to register them with Base.metadata
+from src.database.models import git_tracking  # noqa: F401, E402
 from src.config.settings import get_settings  # noqa: E402
 
 

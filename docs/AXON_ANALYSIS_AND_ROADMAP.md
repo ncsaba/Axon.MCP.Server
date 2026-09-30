@@ -54,18 +54,19 @@ Implementation plan for the current session direction:
 
 - `/workspaces/axon-mcp/axon-src/docs/architecture/python_quick_win_and_semantic_search_plan.md`
 
-## Strategic Plan: Build the Best Combined Indexer
+## Strategic Plan: Multi-Branch and Multi-Developer Tracking
 
-`✅` completed, `🧭` next action, `🔥` risk.
+`✅` completed, `🧭` next action, `🔥` risk, `⏸️` paused.
 
 | Phase | Status | Focus | Risk |
 | --- | --- | --- | --- |
-| Phase 1: File instance/content separation | `✅` | Runtime slice is landed: lifecycle/query correctness, shared-chunk association, incremental git parity, and schema validation are complete. Remaining follow-up is doc/test-environment alignment, not a runtime blocker. | `🔥` stale branch-status docs could make Phase 1 look less complete than the shipped runtime actually is. |
-| Phase 2: Python semantic parity | `🧭` | Reach practical Python parity for imports, calls, and framework endpoints using the language strategy seams already in the extractor layer. | `🔥` Python uses builtin AST today, so parity work must avoid hard-coding tree-sitter assumptions into shared extractor paths. |
-| Phase 3: Parser platform consolidation | `🧭` | Capability matrix integration, strategy interfaces, fallback policy. | `🔥` temporary extractor regressions during refactor. |
-| Phase 4: Java benchmark validation and precision closure | `🧭` | Confirm current Java breadth on shared repos and close any exposed edge cases. | `🔥` feature surface validation may expose parser/query gaps that were not covered by synthetic tests. |
-| Phase 5: Axon differentiation (surpass gate) | `🧭` | Exceed parity using graph-native relations, richer traversal context, and MCP retrieval quality. | `🔥` requires representative benchmark repos and stable scoring criteria. |
-| Phase 6: Integration validation at scale | `🧭` | Repeated end-to-end runs on real target repositories. | `🔥` infra/runtime variance can mask parser issues. |
+| Phase 1: File instance/content separation | `✅` | Runtime slice is landed: lifecycle/query correctness, shared-chunk association, incremental git parity, and schema validation are complete. | - |
+| Phase 2: Python semantic parity | `✅` | Python parity achieved: imports, calls, endpoints, re-exports all complete. Validation passed 2026-03-21. | - |
+| **Phase 2.5: Multi-branch and multi-developer tracking** | `🧭` | **NEW PRIORITY**: User registry, branch-aware indexing, local changes tracking, cross-version search. See [`docs/feature-ideas/multi-user-mcp-collaboration.md`](../../docs/feature-ideas/multi-user-mcp-collaboration.md). | `🔥` schema migration complexity; storage cost multiplication with branch-aware indexing. |
+| Phase 3: Parser platform consolidation | `⏸️` | Capability matrix integration, strategy interfaces, fallback policy. | `🔥` temporary extractor regressions during refactor. |
+| Phase 4: Java benchmark validation and precision closure | `⏸️` | Confirm current Java breadth on shared repos and close any exposed edge cases. | `🔥` feature surface validation may expose parser/query gaps that were not covered by synthetic tests. |
+| Phase 5: Axon differentiation (surpass gate) | `⏸️` | Exceed parity using graph-native relations, richer traversal context, and MCP retrieval quality. | `🔥` requires representative benchmark repos and stable scoring criteria. |
+| Phase 6: Integration validation at scale | `⏸️` | Repeated end-to-end runs on real target repositories. | `🔥` infra/runtime variance can mask parser issues. |
 
 ## Near-Term Execution Queue
 

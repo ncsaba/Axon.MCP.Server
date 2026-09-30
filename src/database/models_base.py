@@ -51,10 +51,10 @@ class Repository(Base):
 
     id = Column(Integer, primary_key=True)
     provider = Column(value_enum(SourceControlProviderEnum), nullable=False, index=True, default=SourceControlProviderEnum.GITLAB)
-    
+
     # GitLab specific fields
     gitlab_project_id = Column(Integer, index=True)
-    
+
     # Common fields
     name = Column(String(255), nullable=False)
     path_with_namespace = Column(String(500), nullable=False)
@@ -70,7 +70,7 @@ class Repository(Base):
     size_bytes = Column(BigInteger, default=0)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
-    
+
     # Repository Aggregation (Axon v3.4)
     manifesto = Column(Text)  # REPOSITORY_MANIFESTO.md content
     ai_summary = Column(JSONB)  # Structured business overview
@@ -83,6 +83,10 @@ class Repository(Base):
     services = relationship("Service", back_populates="repository", cascade="all, delete-orphan")
     index_runs = relationship("RepositoryIndexRun", back_populates="repository", cascade="all, delete-orphan")
     group_memberships = relationship("RepositoryGroupMember", back_populates="repository", cascade="all, delete-orphan")
+    # Git tracking relationships (Phase 2.5.1)
+    git_commits = relationship("GitCommit", back_populates="repository", cascade="all, delete-orphan")
+    branches = relationship("Branch", back_populates="repository", cascade="all, delete-orphan")
+    tags = relationship("Tag", back_populates="repository", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("idx_repo_status_updated", "status", "updated_at"),
@@ -93,28 +97,28 @@ class Repository(Base):
 
 class Service(Base):
     """Represents a detected service/bounded context (e.g., API, Worker)."""
-    
+
     __tablename__ = "services"
-    
+
     id = Column(Integer, primary_key=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(255), nullable=False, index=True)  # e.g., "Axon.Appointment.Service"
     service_type = Column(String(50), nullable=False, index=True)  # "API", "Worker", "Console", "Library"
     description = Column(Text)
-    
+
     # Structural info
     root_namespace = Column(String(255))
     project_path = Column(String(1000))  # Path to project metadata file
     entry_points = Column(JSON)  # List of detected controllers/endpoints
     framework_version = Column(String(50))  # e.g., "net8.0"
-    
+
     # Documentation
     documentation_path = Column(String(1000))
     last_documented_at = Column(DateTime(timezone=True))
-    
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
-    
+
     # Relationships
     repository = relationship("Repository", back_populates="services")
     symbols = relationship("Symbol", back_populates="service")
@@ -261,6 +265,8 @@ class FileInstance(Base):
     commit = relationship("Commit", back_populates="file_instances")
     current_content = relationship("FileContent", back_populates="file_instances")
     symbols = relationship("Symbol", back_populates="file", cascade="all, delete-orphan")
+    # Git tracking relationship (Phase 2.5.1)
+    tree_files = relationship("TreeFile", back_populates="file_instance")
 
     __table_args__ = (
         UniqueConstraint("repository_id", "path", name="uq_file_instances_repo_path"),
@@ -295,15 +301,15 @@ class Symbol(Base):
     attributes = Column(JSON)  # Language attributes/decorators
     parameters = Column(JSON)
     return_type = Column(String(1000))
-    
+
     # Generics support (Phase 2.3)
     generic_parameters = Column(JSON)  # [{"name": "T", "variance": "out"}, ...]
     constraints = Column(JSON)  # [{"parameter": "T", "constraints": ["class", "new()"]}]
-    
+
     parent_symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="SET NULL"), index=True)
     parent_name = Column(String(2000))  # Parent fully qualified name
     role_tags = Column(JSON)
-    
+
     # AI Enrichment (Phase 3)
     ai_enrichment = Column(JSONB)
     complexity = Column(Integer)
@@ -314,17 +320,17 @@ class Symbol(Base):
     usage_count = Column(Integer, default=0)  # How many symbols reference this
     last_modified_by = Column(String(255))  # Git author from last commit
     git_blame_commit = Column(String(40))  # Commit SHA from git blame
-    
+
     # Partial class support (Phase 2.1)
     is_partial = Column(Integer, default=0)  # Boolean: 1 if partial class/interface/struct
     partial_definition_files = Column(JSON)  # List of file_ids where this symbol is defined
     merged_from_partial_ids = Column(JSON)  # List of symbol_ids that were merged into this one
-    
+
     # LINQ/Lambda Analysis (Phase 3.1)
     is_lambda = Column(Integer, default=0)  # Boolean: 1 if lambda expression
     closure_variables = Column(JSON)  # List of captured variable names
     linq_pattern = Column(String(100))  # "Select", "Where", "Aggregate", etc.
-        
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
@@ -362,13 +368,13 @@ class Relation(Base):
     to_symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="CASCADE"), nullable=False, index=True)
     relation_type = Column(value_enum(RelationTypeEnum), nullable=False, index=True)
     relation_metadata = Column(JSON)
-    
+
     # Reference location (Phase 3.4)
     start_line = Column(Integer)
     end_line = Column(Integer)
     start_column = Column(Integer)
     end_column = Column(Integer)
-    
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     # Relationships
@@ -429,9 +435,9 @@ class ChunkSymbolLink(Base):
 
 class Document(Base):
     """Markdown documentation file."""
-    
+
     __tablename__ = "documents"
-    
+
     id = Column(Integer, primary_key=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
     file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), index=True)
@@ -444,7 +450,7 @@ class Document(Base):
     doc_metadata = Column(JSON)  # Additional metadata like author, date, etc.
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
-    
+
     __table_args__ = (
         Index("idx_document_repo_type", "repository_id", "doc_type"),
         Index("idx_document_path", "path"),
@@ -453,9 +459,9 @@ class Document(Base):
 
 class ConfigurationEntry(Base):
     """Configuration entry from appsettings.json or similar config files."""
-    
+
     __tablename__ = "configuration_entries"
-    
+
     id = Column(Integer, primary_key=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
     file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), index=True)
@@ -468,7 +474,7 @@ class ConfigurationEntry(Base):
     line_number = Column(Integer)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
-    
+
     __table_args__ = (
         Index("idx_config_key", "config_key"),
         Index("idx_config_repo_env", "repository_id", "environment"),
@@ -478,9 +484,9 @@ class ConfigurationEntry(Base):
 
 class Dependency(Base):
     """Package dependency from package managers (npm, pip, etc.)."""
-    
+
     __tablename__ = "dependencies"
-    
+
     id = Column(Integer, primary_key=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
     file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), index=True)
@@ -494,7 +500,7 @@ class Dependency(Base):
     file_path = Column(String(1000))
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
-    
+
     __table_args__ = (
         Index("idx_dep_package", "package_name"),
         Index("idx_dep_repo_type", "repository_id", "dependency_type"),
@@ -606,34 +612,34 @@ class ModuleSummary(Base):
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
     module_path = Column(String(1000), nullable=False)  # e.g., "src/api", "backend/auth"
     module_name = Column(String(255), nullable=False, index=True)  # e.g., "api", "auth"
-    
+
     # Module identification
     module_type = Column(String(50), nullable=False, index=True)  # "python_package", "typescript_module", "directory"
     is_package = Column(Integer, default=0)  # 1 if has __init__.py, package.json, etc.
-    
+
     # Summary content (AI-generated)
     summary = Column(Text, nullable=False)  # High-level overview
     purpose = Column(Text)  # What is this module for?
     key_components = Column(JSON)  # List of key classes/functions with brief descriptions
     dependencies = Column(JSON)  # Internal and external dependencies
     entry_points = Column(JSON)  # List of main entry point symbols
-    
+
     # Statistics
     file_count = Column(Integer, default=0)
     symbol_count = Column(Integer, default=0)
     line_count = Column(Integer, default=0)
     complexity_score = Column(Integer)  # 1-10 scale
-    
+
     # Metadata
     generated_by = Column(String(100))  # "openai:gpt-4", "anthropic:claude-3", etc.
     content_hash = Column(String(64))  # Hash of module content to detect changes
     generated_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     last_updated = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
     version = Column(Integer, default=1)  # Incremented when regenerated
-    
+
     # Relationships
     repository = relationship("Repository", back_populates="module_summaries")
-    
+
     __table_args__ = (
         Index("idx_module_repo_path", "repository_id", "module_path"),
         Index("idx_module_type", "module_type", "repository_id"),
@@ -665,27 +671,27 @@ class AuditLog(Base):
 
 class OutgoingApiCall(Base):
     """HTTP API calls made from code (frontend→backend or backend→backend)."""
-    
+
     __tablename__ = "outgoing_api_calls"
-    
+
     id = Column(Integer, primary_key=True)
     symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="CASCADE"), index=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
     file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), index=True)
-    
+
     # HTTP call details
     http_method = Column(String(10), nullable=False, index=True)  # GET, POST, PUT, DELETE, etc.
     url_pattern = Column(String(2000), nullable=False, index=True)  # /api/users/{id}
     call_type = Column(String(50), nullable=False, index=True)  # frontend_to_backend, backend_to_backend
     http_client_library = Column(String(100))  # fetch, axios, HttpClient, RestSharp, etc.
-    
+
     # Context
     line_number = Column(Integer)
     is_dynamic_url = Column(Integer, default=0)  # Boolean: 1 if URL contains variables
     context_metadata = Column(JSON)  # headers, body structure, query params, etc.
-    
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
-    
+
     __table_args__ = (
         Index("idx_api_call_repo", "repository_id"),
         Index("idx_api_call_url", "url_pattern"),
@@ -697,29 +703,29 @@ class OutgoingApiCall(Base):
 
 class PublishedEvent(Base):
     """Events/messages published to message queues or event buses."""
-    
+
     __tablename__ = "published_events"
-    
+
     id = Column(Integer, primary_key=True)
     symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="CASCADE"), index=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
     file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), index=True)
-    
+
     # Event details
     event_type_name = Column(String(500), nullable=False, index=True)  # UserCreatedEvent, OrderPlacedEvent
     messaging_library = Column(String(100), index=True)  # MassTransit, NServiceBus, Azure Service Bus, RabbitMQ
-    
+
     # Routing information
     topic_name = Column(String(500))  # Topic or queue name
     exchange_name = Column(String(500))  # For RabbitMQ
     routing_key = Column(String(500))  # For RabbitMQ
-    
+
     # Context
     line_number = Column(Integer)
     event_metadata = Column(JSON)  # Message structure, correlation ID patterns, etc.
-    
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
-    
+
     __table_args__ = (
         Index("idx_published_event_repo", "repository_id"),
         Index("idx_published_event_type", "event_type_name"),
@@ -730,27 +736,27 @@ class PublishedEvent(Base):
 
 class EventSubscription(Base):
     """Event/message handlers and subscribers."""
-    
+
     __tablename__ = "event_subscriptions"
-    
+
     id = Column(Integer, primary_key=True)
     symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="CASCADE"), nullable=True, index=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
     file_instance_id = Column(Integer, ForeignKey("file_instances.id", ondelete="CASCADE"), index=True)
-    
+
     # Subscription details
     event_type_name = Column(String(500), nullable=False, index=True)  # Event/message type being consumed
     messaging_library = Column(String(100), index=True)  # MassTransit, NServiceBus, etc.
     queue_name = Column(String(500))  # Queue or subscription name
     subscription_pattern = Column(String(500))  # Topic pattern or filter
-    
+
     # Context
     line_number = Column(Integer)
     handler_class_name = Column(String(500))  # Class implementing the handler
     handler_metadata = Column(JSON)  # Retry policies, error handling, etc.
-    
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
-    
+
     __table_args__ = (
         Index("idx_event_sub_repo", "repository_id"),
         Index("idx_event_sub_type", "event_type_name"),
@@ -762,31 +768,31 @@ class EventSubscription(Base):
 
 class ApiEndpointLink(Base):
     """Links between outgoing API calls and their target backend endpoints."""
-    
+
     __tablename__ = "api_endpoint_links"
-    
+
     id = Column(Integer, primary_key=True)
-    
+
     # Source (caller)
     outgoing_call_id = Column(Integer, ForeignKey("outgoing_api_calls.id", ondelete="CASCADE"), nullable=False, index=True)
     source_repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    
+
     # Target (endpoint)
     target_symbol_id = Column(Integer, ForeignKey("symbols.id", ondelete="SET NULL"), index=True)
     target_repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="SET NULL"), index=True)
-    
+
     # Matching metadata
     match_confidence = Column(Integer, nullable=False)  # 0-100 (stored as integer for SQLite compatibility)
     match_method = Column(String(50), nullable=False, index=True)  # 'exact', 'fuzzy', 'gateway_resolved', 'pattern'
     match_metadata = Column(JSON)  # Details about how the match was made
-    
+
     # Gateway routing (if applicable)
     gateway_repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="SET NULL"))
     gateway_route_pattern = Column(String(2000))  # Ocelot/Nginx route that was used
-    
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
-    
+
     __table_args__ = (
         Index("idx_api_link_outgoing", "outgoing_call_id"),
         Index("idx_api_link_target", "target_symbol_id"),
@@ -799,26 +805,26 @@ class ApiEndpointLink(Base):
 
 class EventLink(Base):
     """Links between event publishers and subscribers."""
-    
+
     __tablename__ = "event_links"
-    
+
     id = Column(Integer, primary_key=True)
-    
+
     # Publisher
     published_event_id = Column(Integer, ForeignKey("published_events.id", ondelete="CASCADE"), nullable=False, index=True)
     publisher_repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    
+
     # Subscriber
     event_subscription_id = Column(Integer, ForeignKey("event_subscriptions.id", ondelete="CASCADE"), nullable=False, index=True)
     subscriber_repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    
+
     # Matching metadata
     match_confidence = Column(Integer, nullable=False)  # 0-100
     match_method = Column(String(50), nullable=False, index=True)  # 'exact_type', 'topic_match', 'routing_key'
     match_metadata = Column(JSON)
-    
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
-    
+
     __table_args__ = (
         Index("idx_event_link_publisher", "published_event_id"),
         Index("idx_event_link_subscriber", "event_subscription_id"),
@@ -830,33 +836,33 @@ class EventLink(Base):
 
 class GatewayRoute(Base):
     """Parsed gateway routing rules from Ocelot/Nginx configurations."""
-    
+
     __tablename__ = "gateway_routes"
-    
+
     id = Column(Integer, primary_key=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
     file_path = Column(String(1000), nullable=False)  # Path to ocelot.json or nginx.conf
-    
+
     # Gateway type
     gateway_type = Column(String(50), nullable=False, index=True)  # 'ocelot', 'nginx', 'kong', etc.
-    
+
     # Route details
     downstream_path_template = Column(String(2000), index=True)  # Frontend-facing path
     upstream_path_template = Column(String(2000))    # Backend-facing path
     upstream_host = Column(String(500), index=True)  # Target service host
     upstream_port = Column(Integer)
-    
+
     # HTTP methods
     http_methods = Column(JSON)  # ['GET', 'POST']
-    
+
     # Additional metadata
     route_name = Column(String(500))
     priority = Column(Integer)
     route_metadata = Column(JSON)  # Rate limits, auth, transforms, etc.
-    
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
-    
+
     __table_args__ = (
         Index("idx_gateway_route_repo", "repository_id"),
         Index("idx_gateway_route_downstream", "downstream_path_template"),
@@ -873,52 +879,52 @@ class GatewayRoute(Base):
 
 class DockerService(Base):
     """Docker service from docker-compose.yml files."""
-    
+
     __tablename__ = "docker_services"
-    
+
     id = Column(Integer, primary_key=True)
     repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
     file_path = Column(String(1000), nullable=False)  # Path to docker-compose.yml
-    
+
     # Service details
     service_name = Column(String(255), nullable=False, index=True)
     image = Column(String(500))
     container_name = Column(String(255))
-    
+
     # Build configuration
     build_context = Column(String(1000))  # Build context path
     dockerfile = Column(String(500))  # Dockerfile path
     build_args = Column(JSON)  # Build arguments
-    
+
     # Network and ports
     ports = Column(JSON)  # [{"host": 8080, "container": 80, "protocol": "tcp"}]
     expose = Column(JSON)  # [80, 443]
     networks = Column(JSON)  # ["backend", "frontend"]
-    
+
     # Dependencies
     depends_on = Column(JSON)  # ["postgres", "redis"]
     links = Column(JSON)  # ["db:database"]
-    
+
     # Environment and volumes
     environment = Column(JSON)  # {"KEY": "value"}
     volumes = Column(JSON)  # [{"source": "/host", "target": "/container", "mode": "rw"}]
-    
+
     # Runtime configuration
     command = Column(Text)  # Override command
     entrypoint = Column(Text)  # Override entrypoint
     working_dir = Column(String(1000))
     user = Column(String(100))
     restart = Column(String(50))  # "always", "on-failure", etc.
-    
+
     # Health and labels
     healthcheck = Column(JSON)  # Healthcheck configuration
     labels = Column(JSON)  # Service labels
-    
+
     # Metadata
     service_metadata = Column(JSON)  # Additional metadata (extra_hosts, etc.)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
-    
+
     __table_args__ = (
         Index("idx_docker_service_repo", "repository_id"),
         Index("idx_docker_service_name", "service_name"),
@@ -933,29 +939,29 @@ class DockerService(Base):
 
 class ServiceRepositoryMapping(Base):
     """Maps Docker service names to repositories for URL resolution."""
-    
+
     __tablename__ = "service_repository_mappings"
-    
+
     id = Column(Integer, primary_key=True)
-    
+
     # Source service
     docker_service_id = Column(Integer, ForeignKey("docker_services.id", ondelete="CASCADE"), index=True)
     service_name = Column(String(255), nullable=False, index=True)  # Denormalized for quick lookup
-    
+
     # Target repository
     target_repository_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    
+
     # Mapping metadata
     confidence = Column(Integer, nullable=False)  # 0-100
     mapping_method = Column(String(50), nullable=False, index=True)  # "exact_name", "image_match", "path_match", "manual"
     mapping_metadata = Column(JSON)  # Details about how the mapping was made
-    
+
     # Manual override
     is_manual = Column(Integer, default=0)  # Boolean: 1 if manually set, 0 if auto-detected
-    
+
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
-    
+
     __table_args__ = (
         Index("idx_service_mapping_docker_service", "docker_service_id"),
         Index("idx_service_mapping_target_repo", "target_repository_id"),
@@ -967,3 +973,47 @@ class ServiceRepositoryMapping(Base):
             name="uq_service_mapping_service_repo"
         ),
     )
+
+
+# Phase 2.5.1 - Git tracking models
+# Note: GitCommit, TreeFile, Branch, Tag are defined in src.database.models.git_tracking
+# They are registered with SQLAlchemy via string references in relationships above.
+# Import them directly from src.database.models.git_tracking or src.database.models package.
+
+__all__ = [
+    # Original models
+    "Base",
+    "utcnow",
+    "value_enum",
+    "Repository",
+    "Service",
+    "RepositoryGroup",
+    "RepositoryGroupMember",
+    "Commit",
+    "RepositoryIndexRun",
+    "FileContent",
+    "FileInstance",
+    "Symbol",
+    "Relation",
+    "Chunk",
+    "ChunkSymbolLink",
+    "Document",
+    "ConfigurationEntry",
+    "Dependency",
+    "Embedding",
+    "Job",
+    "Worker",
+    "PersonalAccessToken",
+    "ModuleSummary",
+    "AuditLog",
+    "OutgoingApiCall",
+    "PublishedEvent",
+    "EventSubscription",
+    "ApiEndpointLink",
+    "EventLink",
+    "GatewayRoute",
+    "DockerService",
+    "ServiceRepositoryMapping",
+    # Phase 2.5.1 - Git tracking models are in src.database.models.git_tracking
+    # Import from src.database.models package for convenience exports
+]

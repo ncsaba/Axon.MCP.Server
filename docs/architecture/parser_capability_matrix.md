@@ -99,11 +99,11 @@
 | Gap | Status | Why it is still open |
 | --- | --- | --- |
 | Module-relative and absolute import string capture | `✅` | Current builtin-AST parser emits enough flat import strings to support the first `IMPORTS` graph slice. |
-| Structured import records (`module`, `symbol`, `alias`, `is_wildcard`) | `🧭` | Parser output is still a flat string list, which limits downstream precision and chunk-context quality. |
-| Alias capture (`import x as y`, `from x import y as z`) | `🧭` | Alias targets are not preserved explicitly in parse output today. |
-| Wildcard vs symbol-vs-module distinction | `🧭` | `from x import *` and `from x import y` are not represented as typed import records at parse level. |
-| Dynamic/runtime import detection (`importlib.import_module`, `__import__`) | `🧭` | Current parser intentionally focuses on static AST imports only. |
-| Re-export semantics through `__init__.py` / package surfaces | `🧭` | Parse output does not yet model package-level re-exports as a first-class import surface. |
+| Structured import records (`module`, `symbol`, `alias`, `is_wildcard`) | `✅` | Implemented 2026-03-22: `ImportRecord` and `ImportedSymbol` dataclasses in `base_parser.py`. |
+| Alias capture (`import x as y`, `from x import y as z`) | `✅` | Implemented 2026-03-22: Aliases preserved in structured import records. |
+| Wildcard vs symbol-vs-module distinction | `✅` | Implemented 2026-03-22: `is_wildcard` flag in `ImportedSymbol`. |
+| Dynamic/runtime import detection (`importlib.import_module`, `__import__`) | `✅` | Implemented 2026-03-22: `is_dynamic` flag in `ImportRecord`. |
+| Re-export semantics through `__init__.py` / package surfaces | `✅` | Implemented 2026-03-22: `ReexportResolver` module handles package-level re-exports. |
 
 ## Acceptance Criteria for "Java Semantic Parity v1"
 
