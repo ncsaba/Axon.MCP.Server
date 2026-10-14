@@ -437,7 +437,7 @@ make db-reset-test
 
 ## 8. Next Steps After Completion
 
-1. **Proceed to Phase 2.5.1** - User Registry Foundation
+1. **Proceed to Phase 2.5.1** - Commit, Branch, Tag and TREE_FILE schema (renumbered 2026-10-14; user registry is now 2.5.2)
 2. **Preserve baseline artifacts** - Do not modify or delete
 3. **Update implementation plan** - Mark Phase 2.5.0 as `✅` complete
 

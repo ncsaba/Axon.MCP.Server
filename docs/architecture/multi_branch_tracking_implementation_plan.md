@@ -1,8 +1,8 @@
 # Multi-Branch and Multi-Developer Tracking Implementation Plan
 
-**Status**: `🧭` Next Priority  
+**Status**: `🚧` In progress (2.5.0 done, 2.5.1 partial)  
 **Created**: 2026-03-22  
-**Updated**: 2026-03-23  
+**Updated**: 2026-10-14  
 **Baseline**: [`plans/multi_branch_brainstorm_baseline.md`](../../../plans/multi_branch_brainstorm_baseline.md)
 
 ## Overview
@@ -168,41 +168,21 @@ erDiagram
 - Baseline metrics documented
 - Database snapshot saved for repeatable migration testing
 
-**⚠️ Do not proceed to Phase 2.5.1 until baseline data is prepared**
+**Status**: `✅` Completed 2026-03-23. See [`phase_2.5.0_completion_summary.md`](../validation/phase_2.5.0_completion_summary.md).
 
 ---
 
-### Phase 2.5.1: User Registry Foundation
+### Phase 2.5.1: Commit, Branch, Tag and TREE_FILE Schema
 
-**Goal**: Store user identities for LOCAL_STAGE ownership.
+**Status**: `🚧` Schema, migration and backfill landed in `6388af6` (2026-09-30); repository sync does not write these tables yet.
 
-**Schema Changes**:
-```sql
-CREATE TABLE users (
-    id VARCHAR(255) PRIMARY KEY,  -- Keycloak subject ID
-    external_subject VARCHAR(255) UNIQUE NOT NULL,
-    email VARCHAR(255),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+**Detailed design**: [`phase_2.5.1_technical_design.md`](./phase_2.5.1_technical_design.md)
 
-CREATE INDEX idx_users_external_subject ON users(external_subject);
-CREATE INDEX idx_users_email ON users(email);
-```
-
-**Implementation Steps**:
-1. Create `User` SQLAlchemy model in [`axon-src/src/database/models.py`](../../src/database/models.py)
-2. Create Alembic migration for `users` table
-3. Add user sync logic in Keycloak auth flow
-4. Add user management API endpoints (optional, for admin use)
-
-**Validation**:
-- User record created on first Keycloak login
-- User records queryable by `external_subject` and `email`
-
----
-
-### Phase 2.5.2: Commit and Branch Schema
+**As implemented** (migration `a1b2c3d4e5f1_add_git_tracking_tables.py`, models in `src/database/models/git_tracking.py`):
+- Table is named `git_commits` (not `commits`) and keeps a nullable `repository_id`.
+- `tree_files` was created in this phase (pulled forward from 2.5.3) and backfilled from existing `file_instances`.
+- One `branches` row per repository default branch is backfilled.
+- Open: sync-path writes for commits/branches/tags (implementation steps 3-4 below).
 
 **Goal**: Add COMMIT and BRANCH tables for branch-aware indexing.
 
@@ -259,7 +239,41 @@ CREATE INDEX idx_tags_commit ON tags(commit_sha);
 
 ---
 
+### Phase 2.5.2: User Registry Foundation
+
+**Status**: `🧭` Planned. No `users` table yet.
+
+**Goal**: Store user identities for LOCAL_STAGE ownership.
+
+**Schema Changes**:
+```sql
+CREATE TABLE users (
+    id VARCHAR(255) PRIMARY KEY,  -- Keycloak subject ID
+    external_subject VARCHAR(255) UNIQUE NOT NULL,
+    email VARCHAR(255),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_users_external_subject ON users(external_subject);
+CREATE INDEX idx_users_email ON users(email);
+```
+
+**Implementation Steps**:
+1. Create `User` SQLAlchemy model in the [`src/database/models/`](../../src/database/models/) package
+2. Create Alembic migration for `users` table
+3. Add user sync logic in Keycloak auth flow
+4. Add user management API endpoints (optional, for admin use)
+
+**Validation**:
+- User record created on first Keycloak login
+- User records queryable by `external_subject` and `email`
+
+---
+
 ### Phase 2.5.3: TREE_FILE Junction and FILE_INSTANCE Migration
+
+**Status**: `🧭` `tree_files` table and backfill already exist (Phase 2.5.1); remaining work is dropping legacy columns and switching queries to the TREE_FILE join.
 
 **Goal**: Replace direct FILE_INSTANCE → repository relationship with TREE_FILE junction.
 
@@ -503,24 +517,29 @@ async def index_local_files(
 
 ## Execution Order
 
-| Step | Phase | Description | Dependencies |
-|------|-------|-------------|--------------|
-| 0 | Phase 2.5.0 | Baseline Test Data Preparation | None |
-| 1 | Phase 2.5.1 | User Registry Foundation | Phase 2.5.0 |
-| 2 | Phase 2.5.2 | Commit and Branch Schema | Phase 2.5.1 |
-| 3 | Phase 2.5.3 | TREE_FILE Junction + Migration | Phase 2.5.2 |
-| 4 | Phase 2.5.4 | LOCAL_STAGE for Local Changes | Phase 2.5.3 |
-| 5 | Phase 2.5.5 | Delta Compression | Phase 2.5.3 |
-| 6 | Phase 2.5.6 | Cross-Version Search API | Phase 2.5.4, 2.5.5 |
+`✅` done, `🚧` partial, `🧭` next/planned.
+
+| Step | Phase | Description | Dependencies | Status |
+|------|-------|-------------|--------------|--------|
+| 0 | Phase 2.5.0 | Baseline Test Data Preparation | None | `✅` |
+| 1 | Phase 2.5.1 | Commit, Branch, Tag and TREE_FILE Schema | Phase 2.5.0 | `🚧` schema + backfill done, sync wiring open |
+| 2 | Phase 2.5.2 | User Registry Foundation | Phase 2.5.0 | `🧭` |
+| 3 | Phase 2.5.3 | FILE_INSTANCE Migration onto TREE_FILE | Phase 2.5.1 | `🧭` |
+| 4 | Phase 2.5.4 | LOCAL_STAGE for Local Changes | Phase 2.5.2, 2.5.3 | `🧭` |
+| 5 | Phase 2.5.5 | Delta Compression | Phase 2.5.3 | `🧭` |
+| 6 | Phase 2.5.6 | Cross-Version Search API | Phase 2.5.4, 2.5.5 | `🧭` |
+
+> **Numbering note (2026-10-14)**: Phases 2.5.1 and 2.5.2 were swapped to match the implementation order. The commit/branch schema was built first and is labelled Phase 2.5.1 in code, the migration, and the technical design; the user registry is only needed once LOCAL_STAGE ownership arrives.
 
 ## Dependency Graph
 
 ```mermaid
 graph TD
-    A0[Phase 2.5.0: Baseline Test Data] --> A[Phase 2.5.1: User Registry]
-    A --> B[Phase 2.5.2: Commit and Branch Schema]
-    B --> C[Phase 2.5.3: TREE_FILE Junction]
-    C --> D[Phase 2.5.4: LOCAL_STAGE]
+    A0[Phase 2.5.0: Baseline Test Data] --> B[Phase 2.5.1: Commit/Branch/TREE_FILE Schema]
+    A0 --> A[Phase 2.5.2: User Registry]
+    B --> C[Phase 2.5.3: FILE_INSTANCE Migration]
+    A --> D[Phase 2.5.4: LOCAL_STAGE]
+    C --> D
     C --> E[Phase 2.5.5: Delta Compression]
     D --> F[Phase 2.5.6: Cross-Version Search API]
     E --> F
